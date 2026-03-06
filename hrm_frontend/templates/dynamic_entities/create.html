@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}Add {{ dynamic_model.name }} - HRM System{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <a href="{{ url('dynamic_entity_list', args=[dynamic_model.id]) }}">{{ dynamic_model.name }}</a>
+    <span class="sep">></span>
+    <span class="current">Add</span>
+</div>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Add {{ dynamic_model.name }}</h1>
+        <p class="page-subtitle">Fill all required fields.</p>
+    </div>
+</div>
+
+{% if errors %}
+<ul class="error-list">
+    {% for err in errors %}<li>{{ err }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<div class="form-card">
+    <form method="post" action="{{ url('dynamic_entity_create', args=[dynamic_model.id]) }}">
+        {{ csrf_input }}
+
+        {% if is_attendance %}
+        <div class="form-group">
+            <label>Employee ID *</label>
+            <input type="number" name="employee_id" required>
+        </div>
+        <div class="form-group">
+            <label>Shift (optional)</label>
+            <input type="text" name="shift" placeholder="morning / evening / night">
+        </div>
+        <div class="form-group">
+            <label>Remarks (optional)</label>
+            <input type="text" name="remarks" placeholder="Notes">
+        </div>
+        <div class="form-group">
+            <label>Check In Time</label>
+            <input type="text" value="{{ current_time }}" readonly>
+            <small style="color:var(--text-muted);">Current server time is saved when you click Check In.</small>
+        </div>
+        {% else %}
+            {% for f in fields %}
+            <div class="form-group">
+                <label>{{ f.name }}{% if f.required %} *{% endif %}</label>
+                {% if f.choices_json and f.field_type != 'boolean' %}
+                <select name="df_{{ f.key }}" {% if f.required %}required{% endif %}>
+                    {% if not f.required %}<option value="">Select</option>{% endif %}
+                    {% for opt in f.choices_json %}
+                    <option value="{{ opt }}">{{ opt }}</option>
+                    {% endfor %}
+                </select>
+                {% elif f.field_type == 'number' %}
+                <input type="number" name="df_{{ f.key }}" {% if f.required %}required{% endif %}>
+                {% elif f.field_type == 'date' %}
+                <input type="date" name="df_{{ f.key }}" {% if f.required %}required{% endif %}>
+                {% elif f.field_type == 'boolean' %}
+                <select name="df_{{ f.key }}" {% if f.required %}required{% endif %}>
+                    <option value="false">No</option>
+                    <option value="true">Yes</option>
+                </select>
+                {% elif f.field_type == 'email' %}
+                <input type="email" name="df_{{ f.key }}" {% if f.required %}required{% endif %}>
+                {% else %}
+                <input type="text" name="df_{{ f.key }}" {% if f.required %}required{% endif %}>
+                {% endif %}
+            </div>
+            {% endfor %}
+        {% endif %}
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">{{ 'Check In' if is_attendance else 'Create' }}</button>
+            <a href="{{ url('dynamic_entity_list', args=[dynamic_model.id]) }}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

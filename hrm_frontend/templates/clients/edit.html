@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Client — HRM System{% endblock %}
+
+{% block content %}
+
+<div class="breadcrumb">
+    <a href="{{ url('client_list') }}">Clients</a>
+    <span class="sep">›</span>
+    <span class="current">Edit: {{ client.name }}</span>
+</div>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Edit Client</h1>
+        <p class="page-subtitle">Update details for {{ client.name }} (ID #{{ client.id }}).</p>
+    </div>
+</div>
+
+{% if errors %}
+<ul class="error-list">
+    {% for err in errors %}<li>⚠️ {{ err }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<div class="form-card">
+    <form method="post" action="{{ url('client_edit', args=[client.id]) }}">
+        {{ csrf_input }}
+
+        <div class="form-group">
+            <label>Client Name</label>
+            <input type="text" name="name" placeholder="e.g. Acme Corp"
+                value="{{ form.name.value() or client.name }}" required>
+        </div>
+
+        <div class="form-group">
+            <label>Domain</label>
+            <input type="text" name="domain" placeholder="e.g. acme.com"
+                value="{{ form.domain.value() or client.domain }}" required>
+        </div>
+        <div class="form-group">
+            <label>Password (Optional)</label>
+            <input type="password" name="password" placeholder="Leave blank to keep current password"
+                value="{{ form.password.value() or '' }}">
+        </div>
+        <div class="form-section">
+            <h3 class="section-title">Add-On Access</h3>
+            <p class="section-subtitle">Enable only modules this client can use.</p>
+            {% set selected_addons = form.enabled_addons.value() or client.enabled_addons or [] %}
+            <div class="addon-grid">
+                {% for key, label in form.enabled_addons.field.choices %}
+                <label class="addon-item">
+                    <input type="checkbox" name="enabled_addons" value="{{ key }}" {% if key in selected_addons %}checked{% endif %}>
+                    <span>{{ label }}</span>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">💾 Save Changes</button>
+            <a href="{{ url('client_list') }}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+
+{% endblock %}
+

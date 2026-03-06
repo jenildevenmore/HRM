@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}Dynamic Models - HRM System{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Dynamic Models</h1>
+        <p class="page-subtitle">Create client-specific custom models at runtime.</p>
+    </div>
+    <div style="display:flex; gap:8px;">
+        {% if role == 'superadmin' or 'attendance' in enabled_addons %}
+        <form method="post" action="{{ url('dynamic_model_create_attendance') }}">
+            {{ csrf_input }}
+            {% if role == 'superadmin' %}
+            <input type="number" name="client" placeholder="Client ID" style="width:110px; margin-right:8px;">
+            {% endif %}
+            <button type="submit" class="btn btn-secondary">+ Attendance Module</button>
+        </form>
+        {% endif %}
+        <a href="{{ url('dynamic_model_create') }}" class="btn btn-primary">+ Add Model</a>
+    </div>
+</div>
+
+{% if dynamic_models %}
+<div class="table-wrapper">
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Name</th>
+                <th>Slug</th>
+                <th>Show In Employee Form</th>
+                {% if role == 'superadmin' %}
+                <th>Client ID</th>
+                {% endif %}
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for m in dynamic_models %}
+            <tr>
+                <td>{{ m.id }}</td>
+                <td><strong>{{ m.name }}</strong></td>
+                <td>{{ m.slug }}</td>
+                <td>{{ 'Yes' if m.show_in_employee_form else 'No' }}</td>
+                {% if role == 'superadmin' %}
+                <td>{{ m.client }}</td>
+                {% endif %}
+                <td>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <a href="{{ url('dynamic_entity_list', args=[m.id]) }}" class="btn btn-primary btn-sm">Open</a>
+                        <a href="{{ url('dynamic_field_list', args=[m.id]) }}" class="btn btn-secondary btn-sm">Fields</a>
+                        <a href="{{ url('dynamic_record_list', args=[m.id]) }}" class="btn btn-secondary btn-sm">Records</a>
+                        <a href="{{ url('dynamic_model_edit', args=[m.id]) }}" class="btn btn-secondary btn-sm">Edit</a>
+                        <form method="post" action="{{ url('dynamic_model_delete', args=[m.id]) }}" style="display:inline;">
+                            {{ csrf_input }}
+                            <button type="submit" class="btn btn-danger btn-sm"
+                                onclick="return confirm('Delete dynamic model {{ m.name }}?')">Delete</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card">
+    <div class="empty-state">
+        <p>No dynamic models found. <a href="{{ url('dynamic_model_create') }}">Create one</a>.</p>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

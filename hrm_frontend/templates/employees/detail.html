@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+
+{% block title %}Employee #{{ employee.id }} — HRM System{% endblock %}
+
+{% block content %}
+
+<div class="breadcrumb">
+    <a href="{{ url('employee_list') }}">Employees</a>
+    <span class="sep">›</span>
+    <span class="current">{{ employee.first_name }} {{ employee.last_name }}</span>
+</div>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">{{ employee.first_name }} {{ employee.last_name }}</h1>
+        <p class="page-subtitle">Employee #{{ employee.id }}</p>
+    </div>
+    <div style="display:flex;gap:10px;">
+        <a href="{{ url('employee_edit', args=[employee.id]) }}" class="btn btn-secondary">✏️ Edit</a>
+        <form id="del-emp-{{ employee.id }}" method="post" action="{{ url('employee_delete', args=[employee.id]) }}">
+            {{ csrf_input }}
+            <button type="button" class="btn btn-danger"
+                onclick="confirmDelete('del-emp-{{ employee.id }}', '{{ employee.first_name }} {{ employee.last_name }}')">
+                🗑 Delete
+            </button>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="detail-grid">
+        <div class="detail-item">
+            <div class="detail-label">First Name</div>
+            <div class="detail-value">{{ employee.first_name }}</div>
+        </div>
+        <div class="detail-item">
+            <div class="detail-label">Last Name</div>
+            <div class="detail-value">{{ employee.last_name }}</div>
+        </div>
+        <div class="detail-item">
+            <div class="detail-label">Email</div>
+            <div class="detail-value">{{ employee.email }}</div>
+        </div>
+        <div class="detail-item">
+            <div class="detail-label">Client ID</div>
+            <div class="detail-value">{{ employee.client }}</div>
+        </div>
+        <div class="detail-item">
+            <div class="detail-label">Joining Date</div>
+            <div class="detail-value">{{ employee.joining_date }}</div>
+        </div>
+    </div>
+</div>
+
+{% if attendance_calendar %}
+<div class="card" style="margin-top:20px;">
+    <div class="attendance-toggle-head">
+        <div>
+            <h3 class="section-title" style="margin-bottom:4px;">Attendance</h3>
+            <p class="section-subtitle" style="margin-bottom:0;">Monthly status and worked hours.</p>
+        </div>
+        <div class="attendance-toggle-actions">
+            <div class="attendance-summary-mini">
+                <span>Present: {{ attendance_calendar.present_days }}</span>
+                <span>Absent: {{ attendance_calendar.absent_days }}</span>
+                <span>Hours: {{ attendance_calendar.worked_hours }}</span>
+            </div>
+            <button type="button" class="btn btn-secondary" onclick="toggleAttendanceCalendar()">
+                <span class="attendance-toggle-icon">&#128197;</span>
+                <span id="attendanceToggleLabel">Show Calendar</span>
+            </button>
+        </div>
+    </div>
+
+    <div id="attendanceCalendarPanel" class="attendance-calendar-panel" style="display:none;">
+        <div class="attendance-calendar-head">
+            <div class="attendance-summary">
+                <div class="attendance-summary-card">
+                    <div class="attendance-summary-label">Present Days</div>
+                    <div class="attendance-summary-value">{{ attendance_calendar.present_days }}</div>
+                </div>
+                <div class="attendance-summary-card">
+                    <div class="attendance-summary-label">Absent Days</div>
+                    <div class="attendance-summary-value">{{ attendance_calendar.absent_days }}</div>
+                </div>
+                <div class="attendance-summary-card">
+                    <div class="attendance-summary-label">Worked Hours</div>
+                    <div class="attendance-summary-value">{{ attendance_calendar.worked_hours }}</div>
+                </div>
+            </div>
+            <div class="attendance-calendar-nav">
+                <a href="{{ url('employee_detail', args=[employee.id]) }}?month={{ attendance_calendar.prev_month }}&year={{ attendance_calendar.prev_year }}&show_calendar=1" class="btn btn-secondary btn-sm">Previous</a>
+                <div class="attendance-calendar-month">{{ attendance_calendar.label }}</div>
+                <a href="{{ url('employee_detail', args=[employee.id]) }}?month={{ attendance_calendar.next_month }}&year={{ attendance_calendar.next_year }}&show_calendar=1" class="btn btn-secondary btn-sm">Next</a>
+            </div>
+        </div>
+
+        <div class="attendance-calendar-grid attendance-calendar-weekdays">
+            <div>Mon</div>
+            <div>Tue</div>
+            <div>Wed</div>
+            <div>Thu</div>
+            <div>Fri</div>
+            <div>Sat</div>
+            <div>Sun</div>
+        </div>
+
+        {% for week in attendance_calendar.weeks %}
+        <div class="attendance-calendar-grid">
+            {% for day in week %}
+            <div class="attendance-day {% if not day.in_month %}is-outside{% endif %} {% if day.is_today %}is-today{% endif %} {% if day.status == 'present' %}is-present{% elif day.status %}is-absent{% endif %}">
+                <div class="attendance-day-number">{{ day.day_number }}</div>
+                {% if day.in_month and not day.before_joining %}
+                    {% if day.status == 'present' %}
+                    <div class="attendance-day-status">Present</div>
+                    <div class="attendance-day-hours">{{ day.hours or '00:00:00' }}</div>
+                    {% elif day.status == 'absent' %}
+                    <div class="attendance-day-status">Absent</div>
+                    {% elif day.is_future %}
+                    <div class="attendance-day-muted">Upcoming</div>
+                    {% else %}
+                    <div class="attendance-day-muted">No entry</div>
+                    {% endif %}
+                {% elif day.before_joining %}
+                <div class="attendance-day-muted">Before joining</div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% if dynamic_employee_records %}
+<div class="card" style="margin-top:20px;">
+    <h3 style="margin-bottom:1rem;">Dynamic Data</h3>
+    {% for item in dynamic_employee_records %}
+    <div style="margin-bottom:1rem;">
+        <h4 style="margin-bottom:0.5rem;">{{ item.model.name }}</h4>
+        <div class="detail-grid">
+            {% for key, value in item.visible_items %}
+            <div class="detail-item">
+                <div class="detail-label">{{ key|replace('_', ' ')|title }}</div>
+                <div class="detail-value">{{ value }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div style="margin-top:20px;">
+    <a href="{{ url('employee_list') }}" class="btn btn-secondary">← Back to Employees</a>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function setAttendanceCalendarState(isOpen) {
+    var panel = document.getElementById('attendanceCalendarPanel');
+    var label = document.getElementById('attendanceToggleLabel');
+    var params = new URLSearchParams(window.location.search);
+
+    panel.style.display = isOpen ? 'block' : 'none';
+    label.textContent = isOpen ? 'Hide Calendar' : 'Show Calendar';
+
+    if (isOpen) {
+        params.set('show_calendar', '1');
+    } else {
+        params.delete('show_calendar');
+    }
+
+    var query = params.toString();
+    var nextUrl = window.location.pathname + (query ? '?' + query : '');
+    window.history.replaceState({}, '', nextUrl);
+}
+
+function toggleAttendanceCalendar() {
+    var panel = document.getElementById('attendanceCalendarPanel');
+    var isHidden = panel.style.display === 'none';
+    setAttendanceCalendarState(isHidden);
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    var params = new URLSearchParams(window.location.search);
+    setAttendanceCalendarState(params.get('show_calendar') === '1');
+});
+</script>
+{% endblock %}

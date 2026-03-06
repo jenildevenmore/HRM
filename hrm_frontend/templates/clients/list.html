@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}Clients — HRM System{% endblock %}
+
+{% block content %}
+
+<div class="breadcrumb">
+    <span class="current">Clients</span>
+</div>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Clients</h1>
+        <p class="page-subtitle">Manage all clients in the system.</p>
+    </div>
+    <a href="{{ url('client_create') }}" class="btn btn-primary">+ Add Client</a>
+</div>
+
+{% if messages %}
+<ul class="error-list">
+    {% for msg in messages %}
+    <li>{% if msg.level == 'success' %}✅{% else %}❌{% endif %} {{ msg.message }}</li>
+    {% endfor %}
+</ul>
+{% endif %}
+
+<div class="table-card">
+    {% if clients %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Name</th>
+                <th>Domain</th>
+                <th>Enabled Add-Ons</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for client in clients %}
+            <tr>
+                <td>{{ client.id }}</td>
+                <td>{{ client.name }}</td>
+                <td>{{ client.domain }}</td>
+                <td>{{ (client.enabled_addons or [])|join(', ') if client.enabled_addons else '-' }}</td>
+                <td>
+                    <a href="{{ url('client_edit', args=[client.id]) }}" class="btn btn-secondary btn-sm">✏️ Edit</a>
+                    <form method="post" action="{{ url('client_delete', args=[client.id]) }}" style="display:inline;">
+                        {{ csrf_input }}
+                        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Are you sure?')">🗑️ Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <p>No clients found.</p>
+        <a href="{{ url('client_create') }}" class="btn btn-primary">Create your first client</a>
+    </div>
+    {% endif %}
+</div>
+
+{% endblock %}

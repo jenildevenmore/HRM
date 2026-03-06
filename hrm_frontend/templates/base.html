@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}HRM System{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="{{ static('css/style.css') }}" rel="stylesheet">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">H</div>
+      <span class="logo-text">HRM System</span>
+    </div>
+
+    <span class="nav-section-label">Main</span>
+
+    <a href="{{ url('dashboard') }}"
+       class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
+      <span class="nav-icon">DB</span>
+      <span class="nav-label">Dashboard</span>
+    </a>
+
+    {% if role in ['superadmin', 'admin'] or 'employees.view' in module_permissions %}
+    <a href="{{ url('employee_list') }}"
+       class="nav-link {% if 'employee' in request.resolver_match.url_name %}active{% endif %}">
+      <span class="nav-icon">EM</span>
+      <span class="nav-label">Employees</span>
+    </a>
+    {% endif %}
+
+    {% for dm in nav_dynamic_models %}
+    <a href="{{ url('dynamic_entity_list', args=[dm.id]) }}"
+       class="nav-link {% if request.resolver_match.url_name in ['dynamic_entity_list', 'dynamic_entity_create', 'dynamic_entity_edit'] and request.resolver_match.kwargs.get('model_id') == dm.id %}active{% endif %}">
+      <span class="nav-icon">MD</span>
+      <span class="nav-label">{{ dm.name }}</span>
+    </a>
+    {% endfor %}
+
+    <span class="nav-section-label" style="margin-top:16px;">Configuration</span>
+
+    {% if role == 'superadmin' %}
+    <a href="{{ url('client_list') }}"
+       class="nav-link {% if 'client' in request.resolver_match.url_name %}active{% endif %}">
+      <span class="nav-icon">CL</span>
+      <span class="nav-label">Clients</span>
+    </a>
+    {% endif %}
+
+    {% if role in ['superadmin', 'admin'] or ('custom_fields' in enabled_addons and 'custom_fields.view' in module_permissions) %}
+    <a href="{{ url('custom_field_list') }}"
+       class="nav-link {% if 'custom_field' in request.resolver_match.url_name %}active{% endif %}">
+      <span class="nav-icon">CF</span>
+      <span class="nav-label">Custom Fields</span>
+    </a>
+    {% endif %}
+
+    {% if role in ['superadmin', 'admin'] or ('dynamic_models' in enabled_addons and 'dynamic_models.view' in module_permissions) %}
+    <a href="{{ url('dynamic_model_list') }}"
+       class="nav-link {% if 'dynamic_' in request.resolver_match.url_name %}active{% endif %}">
+      <span class="nav-icon">DM</span>
+      <span class="nav-label">Dynamic Models</span>
+    </a>
+    {% endif %}
+
+    {% if role == 'admin' %}
+    <a href="{{ url('permission_list') }}"
+       class="nav-link {% if 'permission' in request.resolver_match.url_name %}active{% endif %}">
+      <span class="nav-icon">PM</span>
+      <span class="nav-label">Permissions</span>
+    </a>
+    {% endif %}
+
+    <div class="sidebar-footer">
+      <div class="user-info">
+        <div class="user-avatar">{{ username[0]|upper if username else 'U' }}</div>
+        <div>
+          <div class="user-name">{{ username or 'User' }}</div>
+          <div class="user-role">
+            {% if role == 'superadmin' %}Super Admin{% elif role == 'admin' %}Client Admin{% else %}User{% endif %}
+          </div>
+        </div>
+      </div>
+      <a href="{{ url('logout') }}" class="btn btn-secondary btn-sm" style="width:100%;justify-content:center;">
+        Logout
+      </a>
+    </div>
+  </aside>
+
+  <main class="main-content">
+    {% block content %}{% endblock %}
+  </main>
+</div>
+
+{% if messages %}
+<div class="flash-container">
+  {% for msg in messages %}
+  <div class="flash flash-{{ msg.level }}">
+    {{ '[OK]' if msg.level == 'success' else '[X]' }}
+    {{ msg.message }}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="confirm-overlay" id="confirmOverlay">
+  <div class="confirm-dialog">
+    <h3>Confirm Delete</h3>
+    <p>Are you sure you want to delete <strong id="confirmItemName">this item</strong>? This action cannot be undone.</p>
+    <div class="confirm-actions">
+      <button class="btn btn-danger" onclick="proceedDelete()">Yes, Delete</button>
+      <button class="btn btn-secondary" onclick="cancelDelete()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script src="{{ static('js/main.js') }}"></script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

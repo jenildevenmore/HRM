@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard — HRM System{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Dashboard</h1>
+        <p class="page-subtitle">Welcome back, {{ username }}! Here's your overview.</p>
+    </div>
+</div>
+
+<!-- Stats -->
+<div class="stat-grid">
+    <div class="stat-card">
+        <div class="stat-icon">👥</div>
+        <div>
+            <div class="stat-value">{{ emp_count }}</div>
+            <div class="stat-label">Total Employees</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">⚙️</div>
+        <div>
+            <div class="stat-value">{{ cf_count }}</div>
+            <div class="stat-label">Custom Fields</div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Employees -->
+<div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+        <h2 style="font-size:17px;font-weight:700;">Recent Employees</h2>
+        <a href="{{ url('employee_list') }}" class="btn btn-secondary btn-sm">View All →</a>
+    </div>
+
+    {% if recent_employees %}
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Joining Date</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for emp in recent_employees %}
+                <tr>
+                    <td style="color:var(--text-dim);">{{ emp.id }}</td>
+                    <td><strong>{{ emp.first_name }} {{ emp.last_name }}</strong></td>
+                    <td style="color:var(--text-muted);">{{ emp.email }}</td>
+                    <td style="color:var(--text-muted);">{{ emp.joining_date }}</td>
+                    <td>
+                        <a href="{{ url('employee_detail', args=[emp.id]) }}" class="btn btn-secondary btn-sm">View</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-icon">👤</div>
+        <p>No employees yet. <a href="{{ url('employee_create') }}">Add the first one →</a></p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
