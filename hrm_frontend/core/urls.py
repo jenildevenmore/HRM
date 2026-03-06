@@ -23,6 +23,13 @@ urlpatterns = [
     path('employees/<int:pk>/edit/', views.employee_edit, name='employee_edit'),
     path('employees/<int:pk>/delete/', views.employee_delete, name='employee_delete'),
 
+    # Leaves
+    path('leaves/', views.leave_list, name='leave_list'),
+    path('leaves/create/', views.leave_create, name='leave_create'),
+    path('leaves/<int:pk>/review/', views.leave_review, name='leave_review'),
+    path('leaves/<int:pk>/cancel/', views.leave_cancel, name='leave_cancel'),
+    path('leaves/<int:pk>/delete/', views.leave_delete, name='leave_delete'),
+
     # Custom Fields
     path('custom-fields/', views.custom_field_list, name='custom_field_list'),
     path('custom-fields/create/', views.custom_field_create, name='custom_field_create'),

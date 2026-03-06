@@ -3,11 +3,13 @@ from django.contrib.auth.models import User
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 import re
 from .models import UserProfile, ClientPermissionGroup
+from clients.models import Client
 
 
 STATIC_PERMISSION_KEYS = {
     'employees.view', 'employees.create', 'employees.edit', 'employees.delete',
     'attendance.view', 'attendance.create', 'attendance.edit', 'attendance.delete',
+    'leaves.view', 'leaves.create', 'leaves.edit', 'leaves.delete', 'leaves.approve',
     'custom_fields.view', 'custom_fields.create', 'custom_fields.edit', 'custom_fields.delete',
     'dynamic_models.view', 'dynamic_models.create', 'dynamic_models.edit', 'dynamic_models.delete',
 }
@@ -15,6 +17,7 @@ STATIC_PERMISSION_KEYS = {
 LEGACY_PERMISSION_MAP = {
     'employees': ['employees.view', 'employees.create', 'employees.edit', 'employees.delete'],
     'attendance': ['attendance.view', 'attendance.create', 'attendance.edit', 'attendance.delete'],
+    'leaves': ['leaves.view', 'leaves.create', 'leaves.edit', 'leaves.delete', 'leaves.approve'],
     'custom_fields': ['custom_fields.view', 'custom_fields.create', 'custom_fields.edit', 'custom_fields.delete'],
     'dynamic_models': ['dynamic_models.view', 'dynamic_models.create', 'dynamic_models.edit', 'dynamic_models.delete'],
 }
@@ -67,6 +70,10 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
 
 class ClientPermissionGroupSerializer(serializers.ModelSerializer):
+    client = serializers.PrimaryKeyRelatedField(
+        queryset=Client.objects.all(),
+        required=False,
+    )
     module_permissions = serializers.ListField(
         child=serializers.CharField(),
         required=False,
@@ -80,6 +87,20 @@ class ClientPermissionGroupSerializer(serializers.ModelSerializer):
 
     def validate_module_permissions(self, value):
         return normalize_permission_keys(value)
+
+    def validate(self, attrs):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        profile = getattr(user, 'profile', None) if user else None
+
+        if user and not user.is_superuser and profile and profile.role == 'admin':
+            attrs['client'] = profile.client
+            return attrs
+
+        if not attrs.get('client') and not (user and user.is_superuser):
+            raise serializers.ValidationError({'client': 'This field is required.'})
+
+        return attrs
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):

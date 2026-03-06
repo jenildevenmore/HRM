@@ -12,6 +12,7 @@ class ClientSerializer(serializers.ModelSerializer):
         'attendance',
         'attendance_location',
         'attendance_selfie_location',
+        'leave_management',
     }
 
     class Meta:

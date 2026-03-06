@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% block title %}Leaves - HRM System{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <span class="current">Leaves</span>
+</div>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Leave Management</h1>
+        <p class="page-subtitle">Track leave requests and approvals.</p>
+    </div>
+    {% if role in ['superadmin', 'admin'] or 'leaves.create' in module_permissions %}
+    <a href="{{ url('leave_create') }}" class="btn btn-primary">+ New Leave Request</a>
+    {% endif %}
+</div>
+
+{% if errors %}
+<ul class="error-list">
+    {% for err in errors %}<li>{{ err }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<div class="card" style="margin-bottom:20px;">
+    <form method="get" class="form-row">
+        <div class="form-group">
+            <label>Status</label>
+            <select name="status">
+                <option value="">All</option>
+                <option value="pending" {% if selected_status == 'pending' %}selected{% endif %}>Pending</option>
+                <option value="approved" {% if selected_status == 'approved' %}selected{% endif %}>Approved</option>
+                <option value="rejected" {% if selected_status == 'rejected' %}selected{% endif %}>Rejected</option>
+                <option value="cancelled" {% if selected_status == 'cancelled' %}selected{% endif %}>Cancelled</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Employee</label>
+            <select name="employee">
+                <option value="">All</option>
+                {% for e in employees %}
+                <option value="{{ e.id }}" {% if selected_employee == (e.id ~ '') %}selected{% endif %}>
+                    {{ e.first_name }} {{ e.last_name }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-actions" style="margin-top:28px;">
+            <button type="submit" class="btn btn-secondary">Apply Filters</button>
+            <a href="{{ url('leave_list') }}" class="btn btn-secondary">Reset</a>
+        </div>
+    </form>
+</div>
+
+{% if leaves %}
+<div class="table-wrapper">
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Employee</th>
+                <th>Type</th>
+                <th>From</th>
+                <th>To</th>
+                <th>Days</th>
+                <th>Status</th>
+                <th>Pending With</th>
+                <th>Manager</th>
+                <th>HR</th>
+                <th>Reason</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for leave in leaves %}
+            <tr>
+                <td>{{ leave.id }}</td>
+                <td>{{ leave.employee_name }}</td>
+                <td>{{ leave.leave_type }}</td>
+                <td>{{ leave.start_date }}</td>
+                <td>{{ leave.end_date }}</td>
+                <td>{{ leave.total_days }}</td>
+                <td>{{ leave.status|upper }}</td>
+                <td>{{ leave.pending_with or '-' }}</td>
+                <td>{{ leave.manager_name or '-' }} ({{ leave.manager_status|upper }})</td>
+                <td>{{ leave.hr_name or '-' }} ({{ leave.hr_status|upper }})</td>
+                <td>{{ leave.reason or '-' }}</td>
+                <td>
+                    {% if leave.status == 'pending' and leave.can_review %}
+                    <form method="post" action="{{ url('leave_review', args=[leave.id]) }}" style="display:inline;">
+                        {{ csrf_input }}
+                        <input type="hidden" name="status" value="approved">
+                        <button type="submit" class="btn btn-secondary btn-sm">Approve</button>
+                    </form>
+                    <form method="post" action="{{ url('leave_review', args=[leave.id]) }}" style="display:inline;">
+                        {{ csrf_input }}
+                        <input type="hidden" name="status" value="rejected">
+                        <button type="submit" class="btn btn-danger btn-sm">Reject</button>
+                    </form>
+                    {% endif %}
+                    {% if leave.status == 'pending' and (role in ['superadmin', 'admin'] or 'leaves.edit' in module_permissions) %}
+                    <form method="post" action="{{ url('leave_cancel', args=[leave.id]) }}" style="display:inline;">
+                        {{ csrf_input }}
+                        <button type="submit" class="btn btn-secondary btn-sm">Cancel</button>
+                    </form>
+                    {% endif %}
+                    {% if role in ['superadmin', 'admin'] or 'leaves.delete' in module_permissions %}
+                    <form method="post" action="{{ url('leave_delete', args=[leave.id]) }}" style="display:inline;">
+                        {{ csrf_input }}
+                        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this leave request?')">Delete</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card"><div class="empty-state"><p>No leave requests found.</p></div></div>
+{% endif %}
+{% endblock %}

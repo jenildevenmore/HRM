@@ -23,7 +23,7 @@
 {% endif %}
 
 <div class="form-card">
-    <form method="post" action="{{ url('dynamic_entity_edit', args=[dynamic_model.id, record.id]) }}">
+    <form method="post" action="{{ url('dynamic_entity_edit', args=[dynamic_model.id, record.id]) }}" enctype="multipart/form-data">
         {{ csrf_input }}
 
         {% if is_attendance %}
@@ -82,6 +82,16 @@
                 </select>
                 {% elif f.field_type == 'email' %}
                 <input type="email" name="df_{{ f.key }}" value="{{ value }}" {% if f.required %}required{% endif %}>
+                {% elif f.field_type == 'image' %}
+                {% if value %}
+                <small style="display:block;margin-bottom:6px;color:var(--text-muted);">Current: <a href="{{ value }}" target="_blank" rel="noopener">View image</a></small>
+                {% endif %}
+                <input type="file" name="df_{{ f.key }}" accept="image/*" {% if f.required and not value %}required{% endif %}>
+                {% elif f.field_type == 'file' %}
+                {% if value %}
+                <small style="display:block;margin-bottom:6px;color:var(--text-muted);">Current: <a href="{{ value }}" target="_blank" rel="noopener">View file</a></small>
+                {% endif %}
+                <input type="file" name="df_{{ f.key }}" {% if f.required and not value %}required{% endif %}>
                 {% else %}
                 <input type="text" name="df_{{ f.key }}" value="{{ value }}" {% if f.required %}required{% endif %}>
                 {% endif %}

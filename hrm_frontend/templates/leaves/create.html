@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Create Leave Request - HRM System{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <a href="{{ url('leave_list') }}">Leaves</a>
+    <span class="sep">></span>
+    <span class="current">Create</span>
+</div>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Create Leave Request</h1>
+        <p class="page-subtitle">Submit a leave request for an employee.</p>
+    </div>
+</div>
+
+{% if errors %}
+<ul class="error-list">
+    {% for err in errors %}<li>{{ err }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<div class="form-card">
+    <form method="post" action="{{ url('leave_create') }}">
+        {{ csrf_input }}
+        <div class="form-group">
+            <label>Employee *</label>
+            <select name="employee" required>
+                <option value="">Select employee</option>
+                {% for e in employees %}
+                <option value="{{ e.id }}">{{ e.first_name }} {{ e.last_name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Leave Type *</label>
+            <input type="text" name="leave_type" placeholder="e.g. Casual, Sick, Annual" required>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Start Date *</label>
+                <input type="date" name="start_date" required>
+            </div>
+            <div class="form-group">
+                <label>End Date *</label>
+                <input type="date" name="end_date" required>
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Reason</label>
+            <textarea name="reason" rows="3" placeholder="Reason for leave"></textarea>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Assign Manager *</label>
+                <select name="manager" required>
+                    <option value="">Select manager</option>
+                    {% for p in approvers %}
+                    <option value="{{ p.user.id }}">{{ p.user.username }} ({{ p.role_display }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Assign HR *</label>
+                <select name="hr" required>
+                    <option value="">Select HR</option>
+                    {% for p in approvers %}
+                    <option value="{{ p.user.id }}">{{ p.user.username }} ({{ p.role_display }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Submit Leave</button>
+            <a href="{{ url('leave_list') }}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

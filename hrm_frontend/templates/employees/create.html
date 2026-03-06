@@ -24,7 +24,7 @@
 {% endif %}
 
 <div class="form-card employee-form-card">
-    <form method="post" action="{{ url('employee_create') }}">
+    <form method="post" action="{{ url('employee_create') }}" enctype="multipart/form-data">
         {{ csrf_input }}
 
         <div class="form-row">
@@ -108,6 +108,10 @@
                 </select>
                 {% elif field.field_type == 'email' %}
                 <input type="email" name="dm_{{ model.id }}_{{ field.key }}" {% if field.required %}required{% endif %}>
+                {% elif field.field_type == 'image' %}
+                <input type="file" name="dm_{{ model.id }}_{{ field.key }}" accept="image/*" {% if field.required %}required{% endif %}>
+                {% elif field.field_type == 'file' %}
+                <input type="file" name="dm_{{ model.id }}_{{ field.key }}" {% if field.required %}required{% endif %}>
                 {% else %}
                 <input type="text" name="dm_{{ model.id }}_{{ field.key }}" {% if field.required %}required{% endif %}>
                 {% endif %}

@@ -26,6 +26,8 @@ class DynamicField(models.Model):
         ('date', 'Date'),
         ('boolean', 'Boolean'),
         ('email', 'Email'),
+        ('file', 'File'),
+        ('image', 'Image'),
     )
 
     dynamic_model = models.ForeignKey(

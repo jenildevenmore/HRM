@@ -43,7 +43,16 @@
             <tr>
                 <td>{{ r.id }}</td>
                 {% for f in fields %}
-                <td>{{ r.data.get(f.key, '-') }}</td>
+                {% set cell_value = r.data.get(f.key, '-') %}
+                <td>
+                    {% if f.field_type == 'image' and cell_value not in ['-', '', None] %}
+                    <a href="{{ cell_value }}" target="_blank" rel="noopener">View Image</a>
+                    {% elif f.field_type == 'file' and cell_value not in ['-', '', None] %}
+                    <a href="{{ cell_value }}" target="_blank" rel="noopener">View File</a>
+                    {% else %}
+                    {{ cell_value }}
+                    {% endif %}
+                </td>
                 {% endfor %}
                 {% if dynamic_model.slug == 'attendance' %}
                 <td>{{ r.total_time or '-' }}</td>

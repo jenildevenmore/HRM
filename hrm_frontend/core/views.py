@@ -3,9 +3,13 @@ import json
 import datetime
 import calendar
 import re
+import os
+import uuid
 from django.conf import settings
 from django.shortcuts import render, redirect
 from django.views.decorators.http import require_POST
+from django.core.files.storage import default_storage
+from django.utils.text import slugify
 
 from core.forms import (
     LoginForm,
@@ -25,11 +29,13 @@ ADDON_KEYS = {
     'attendance',
     'attendance_location',
     'attendance_selfie_location',
+    'leave_management',
 }
 
 STATIC_PERMISSION_KEYS = {
     'employees.view', 'employees.create', 'employees.edit', 'employees.delete',
     'attendance.view', 'attendance.create', 'attendance.edit', 'attendance.delete',
+    'leaves.view', 'leaves.create', 'leaves.edit', 'leaves.delete', 'leaves.approve',
     'custom_fields.view', 'custom_fields.create', 'custom_fields.edit', 'custom_fields.delete',
     'dynamic_models.view', 'dynamic_models.create', 'dynamic_models.edit', 'dynamic_models.delete',
 }
@@ -37,6 +43,7 @@ STATIC_PERMISSION_KEYS = {
 LEGACY_PERMISSION_MAP = {
     'employees': ['employees.view', 'employees.create', 'employees.edit', 'employees.delete'],
     'attendance': ['attendance.view', 'attendance.create', 'attendance.edit', 'attendance.delete'],
+    'leaves': ['leaves.view', 'leaves.create', 'leaves.edit', 'leaves.delete', 'leaves.approve'],
     'custom_fields': ['custom_fields.view', 'custom_fields.create', 'custom_fields.edit', 'custom_fields.delete'],
     'dynamic_models': ['dynamic_models.view', 'dynamic_models.create', 'dynamic_models.edit', 'dynamic_models.delete'],
 }
@@ -102,6 +109,16 @@ def _serialize_data(data):
         else:
             serialized[key] = value
     return serialized
+
+
+def _store_uploaded_dynamic_file(uploaded_file, folder='dynamic_uploads'):
+    """Store uploaded file in frontend media and return public URL path."""
+    ext = os.path.splitext(uploaded_file.name or '')[1].lower()
+    base_name = slugify(os.path.splitext(uploaded_file.name or 'file')[0]) or 'file'
+    stamp = datetime.datetime.now().strftime('%Y/%m')
+    rel_path = f'{folder}/{stamp}/{base_name}-{uuid.uuid4().hex[:10]}{ext}'
+    saved_path = default_storage.save(rel_path, uploaded_file)
+    return default_storage.url(saved_path)
 
 
 def _parse_time_to_datetime(value):
@@ -276,6 +293,28 @@ def _normalize_module_permissions(permissions):
     return cleaned
 
 
+def _load_client_addons(request, access_token=None, client_id=None):
+    target_client_id = client_id or request.session.get('client_id')
+    if not target_client_id:
+        return []
+
+    headers = _auth_headers(request)
+    if access_token:
+        headers = {'Authorization': f'Bearer {access_token}'}
+
+    try:
+        resp = requests.get(
+            f'{API}/api/clients/{target_client_id}/',
+            headers=headers,
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            return _normalize_enabled_addons(resp.json().get('enabled_addons') or [])
+    except requests.exceptions.RequestException:
+        return []
+    return []
+
+
 def _get_context(request):
     """Return common context data for all views"""
     role = request.session.get('role', 'employee')
@@ -292,26 +331,23 @@ def _get_context(request):
     elif role == 'admin':
         module_permissions = sorted(STATIC_PERMISSION_KEYS)
         request.session['module_permissions'] = module_permissions
+        enabled_addons = _load_client_addons(request)
+        request.session['enabled_addons'] = enabled_addons
         request.session.modified = True
-    elif request.session.get('access_token') and request.session.get('client_id') and not enabled_addons:
-        try:
-            client_resp = _api_get(request, f"/api/clients/{request.session.get('client_id')}/")
-            if client_resp.status_code == 200:
-                enabled_addons = _normalize_enabled_addons(client_resp.json().get('enabled_addons') or [])
-                request.session['enabled_addons'] = enabled_addons
-                request.session.modified = True
-        except requests.exceptions.RequestException:
-            enabled_addons = []
+    elif request.session.get('access_token') and request.session.get('client_id'):
+        enabled_addons = _load_client_addons(request)
+        request.session['enabled_addons'] = enabled_addons
+        request.session.modified = True
 
     nav_dynamic_models = []
     can_view_dynamic_models = (
-        role in ('superadmin', 'admin')
+        role == 'superadmin'
         or 'dynamic_models.view' in module_permissions
         or 'attendance.view' in module_permissions
         or any(p.startswith('dynamic_model.') and p.endswith('.view') for p in module_permissions)
     )
     if request.session.get('access_token') and can_view_dynamic_models and (
-        role in ('superadmin', 'admin')
+        role == 'superadmin'
         or 'dynamic_models' in enabled_addons
         or 'attendance' in enabled_addons
     ):
@@ -323,15 +359,20 @@ def _get_context(request):
                     nav_data.get('results', nav_data)
                     if isinstance(nav_data, dict) else nav_data
                 )
-                if role not in ('superadmin', 'admin'):
-                    filtered = []
-                    for m in nav_dynamic_models:
-                        is_attendance = str(m.get('slug', '')).lower() == 'attendance'
-                        if is_attendance and 'attendance.view' in module_permissions and 'attendance' in enabled_addons:
+                filtered = []
+                for m in nav_dynamic_models:
+                    is_attendance = str(m.get('slug', '')).lower() == 'attendance'
+                    if is_attendance:
+                        if 'attendance' in enabled_addons and (
+                            role in ('superadmin', 'admin') or 'attendance.view' in module_permissions
+                        ):
                             filtered.append(m)
-                        elif not is_attendance and f"dynamic_model.{m.get('id')}.view" in module_permissions:
-                            filtered.append(m)
-                    nav_dynamic_models = filtered
+                    elif 'dynamic_models' in enabled_addons and (
+                        role in ('superadmin', 'admin')
+                        or f"dynamic_model.{m.get('id')}.view" in module_permissions
+                    ):
+                        filtered.append(m)
+                nav_dynamic_models = filtered
         except requests.exceptions.RequestException:
             nav_dynamic_models = []
 
@@ -468,21 +509,17 @@ def login_view(request):
                         request.session['module_permissions'] = sorted(STATIC_PERMISSION_KEYS)
                     elif data.get('role') == 'admin':
                         request.session['module_permissions'] = sorted(STATIC_PERMISSION_KEYS)
+                        request.session['enabled_addons'] = _load_client_addons(
+                            request,
+                            access_token=data['access'],
+                            client_id=data.get('client_id'),
+                        )
                     else:
-                        request.session['enabled_addons'] = []
-                        client_id = data.get('client_id')
-                        if client_id:
-                            try:
-                                client_resp = requests.get(
-                                    f'{API}/api/clients/{client_id}/',
-                                    headers={'Authorization': f"Bearer {data['access']}"},
-                                    timeout=10,
-                                )
-                                if client_resp.status_code == 200:
-                                    addons = client_resp.json().get('enabled_addons') or []
-                                    request.session['enabled_addons'] = _normalize_enabled_addons(addons)
-                            except requests.exceptions.RequestException:
-                                pass
+                        request.session['enabled_addons'] = _load_client_addons(
+                            request,
+                            access_token=data['access'],
+                            client_id=data.get('client_id'),
+                        )
                     return redirect('dashboard')
                 else:
                     error = 'Invalid username or password.'
@@ -909,20 +946,24 @@ def employee_list(request):
     })
 
 
-def _get_dynamic_models_with_fields(request):
+def _get_dynamic_models_with_fields(request, include_model_ids=None):
     if not _has_addon(request, 'dynamic_models'):
         return [], {}
 
     models = []
     fields_by_model = {}
+    include_ids = {int(x) for x in (include_model_ids or [])}
     try:
         dm_resp = _api_get(request, '/api/dynamic-models/')
         if dm_resp.status_code == 200:
             dm_data = dm_resp.json()
             all_models = dm_data.get('results', dm_data) if isinstance(dm_data, dict) else dm_data
-            models = [m for m in all_models if m.get('show_in_employee_form')]
-            if not _has_addon(request, 'attendance'):
-                models = [m for m in models if str(m.get('slug', '')).lower() != 'attendance']
+            models = [
+                m for m in all_models
+                if m.get('show_in_employee_form') or int(m.get('id') or 0) in include_ids
+            ]
+            # Attendance is managed via the Attendance module, never from Employee create/edit.
+            models = [m for m in models if str(m.get('slug', '')).lower() != 'attendance']
             for model in models:
                 model_id = model.get('id')
                 f_resp = _api_get(request, f'/api/dynamic-fields/?dynamic_model={model_id}')
@@ -976,6 +1017,11 @@ def _save_employee_dynamic_records(request, employee_id, dynamic_models, fields_
                 raw = request.POST.get(input_name)
                 if raw in ('true', 'false'):
                     data[key] = raw
+                    has_value = True
+            elif field_type in ('file', 'image'):
+                uploaded = request.FILES.get(input_name)
+                if uploaded:
+                    data[key] = _store_uploaded_dynamic_file(uploaded, folder=f'dynamic_uploads/model_{model_id}')
                     has_value = True
             else:
                 raw = request.POST.get(input_name, '').strip()
@@ -1212,7 +1258,6 @@ def employee_edit(request, pk):
             return render(request, 'errors/404.html', status=404)
 
         employee_data = get_resp.json()
-        dynamic_models, dynamic_fields_by_model = _get_dynamic_models_with_fields(request)
 
         dr_resp = _api_get(request, f'/api/dynamic-records/?employee={pk}')
         if dr_resp.status_code == 200:
@@ -1220,6 +1265,11 @@ def employee_edit(request, pk):
             dr_list = dr_data.get('results', dr_data) if isinstance(dr_data, dict) else dr_data
             for rec in dr_list:
                 dynamic_records_by_model[rec.get('dynamic_model')] = rec
+
+        dynamic_models, dynamic_fields_by_model = _get_dynamic_models_with_fields(
+            request,
+            include_model_ids=list(dynamic_records_by_model.keys()),
+        )
     except requests.exceptions.ConnectionError:
         return render(request, 'employees/edit.html', {
             'errors': ['Backend server unreachable.'],
@@ -1349,6 +1399,204 @@ def employee_delete(request, pk):
 # ─────────────────────────────────────────────────────────────────
 # Custom Fields
 # ─────────────────────────────────────────────────────────────────
+
+def leave_list(request):
+    permission_redirect = _require_module_permission(request, 'leaves.view')
+    if permission_redirect:
+        return permission_redirect
+    addon_redirect = _require_addon(request, 'leave_management')
+    if addon_redirect:
+        return addon_redirect
+
+    messages = _pop_messages(request)
+    errors = []
+    leaves = []
+    employees = []
+    approvers = []
+    selected_status = (request.GET.get('status') or '').strip()
+    selected_employee = (request.GET.get('employee') or '').strip()
+
+    params = {}
+    if selected_status:
+        params['status'] = selected_status
+    if selected_employee:
+        params['employee'] = selected_employee
+
+    try:
+        leaves_resp = _api_get(request, '/api/leaves/', params=params or None)
+        redir = _handle_unauthorized(leaves_resp, request)
+        if redir:
+            return redir
+        if leaves_resp.status_code == 200:
+            leave_data = leaves_resp.json()
+            leaves = leave_data.get('results', leave_data) if isinstance(leave_data, dict) else leave_data
+        else:
+            errors = _error_list_from_response(leaves_resp, 'Failed to load leave requests.')
+
+        employees_resp = _api_get(request, '/api/employees/')
+        redir = _handle_unauthorized(employees_resp, request)
+        if redir:
+            return redir
+        if employees_resp.status_code == 200:
+            emp_data = employees_resp.json()
+            employees = emp_data.get('results', emp_data) if isinstance(emp_data, dict) else emp_data
+
+        approvers_resp = _api_get(request, '/api/user-profiles/')
+        redir = _handle_unauthorized(approvers_resp, request)
+        if redir:
+            return redir
+        if approvers_resp.status_code == 200:
+            profile_data = approvers_resp.json()
+            profile_rows = profile_data.get('results', profile_data) if isinstance(profile_data, dict) else profile_data
+            approvers = [p for p in profile_rows if p.get('role') != 'superadmin']
+    except requests.exceptions.ConnectionError:
+        errors = ['Backend server unreachable.']
+
+    return render(request, 'leaves/list.html', {
+        'leaves': leaves,
+        'employees': employees,
+        'approvers': approvers,
+        'errors': errors,
+        'messages': messages,
+        'selected_status': selected_status,
+        'selected_employee': selected_employee,
+        **_get_context(request),
+    })
+
+
+def leave_create(request):
+    permission_redirect = _require_module_permission(request, 'leaves.create')
+    if permission_redirect:
+        return permission_redirect
+    addon_redirect = _require_addon(request, 'leave_management')
+    if addon_redirect:
+        return addon_redirect
+
+    messages = _pop_messages(request)
+    errors = []
+    employees = []
+    approvers = []
+
+    try:
+        employees_resp = _api_get(request, '/api/employees/')
+        redir = _handle_unauthorized(employees_resp, request)
+        if redir:
+            return redir
+        if employees_resp.status_code == 200:
+            emp_data = employees_resp.json()
+            employees = emp_data.get('results', emp_data) if isinstance(emp_data, dict) else emp_data
+        approvers_resp = _api_get(request, '/api/user-profiles/')
+        redir = _handle_unauthorized(approvers_resp, request)
+        if redir:
+            return redir
+        if approvers_resp.status_code == 200:
+            profile_data = approvers_resp.json()
+            profile_rows = profile_data.get('results', profile_data) if isinstance(profile_data, dict) else profile_data
+            approvers = [p for p in profile_rows if p.get('role') != 'superadmin']
+    except requests.exceptions.ConnectionError:
+        errors = ['Backend server unreachable.']
+
+    if request.method == 'POST':
+        payload = {
+            'employee': request.POST.get('employee'),
+            'leave_type': (request.POST.get('leave_type') or '').strip() or 'Casual',
+            'start_date': (request.POST.get('start_date') or '').strip(),
+            'end_date': (request.POST.get('end_date') or '').strip(),
+            'reason': (request.POST.get('reason') or '').strip(),
+            'manager': (request.POST.get('manager') or '').strip(),
+            'hr': (request.POST.get('hr') or '').strip(),
+        }
+        try:
+            resp = _api_post(request, '/api/leaves/', payload)
+            redir = _handle_unauthorized(resp, request)
+            if redir:
+                return redir
+            if resp.status_code == 201:
+                _flash(request, 'Leave request created successfully.', 'success')
+                return redirect('leave_list')
+            errors = _error_list_from_response(resp, 'Failed to create leave request.')
+        except requests.exceptions.ConnectionError:
+            errors = ['Backend server unreachable.']
+
+    return render(request, 'leaves/create.html', {
+        'employees': employees,
+        'approvers': approvers,
+        'errors': errors,
+        'messages': messages,
+        **_get_context(request),
+    })
+
+
+@require_POST
+def leave_review(request, pk):
+    addon_redirect = _require_addon(request, 'leave_management')
+    if addon_redirect:
+        return addon_redirect
+
+    payload = {
+        'status': (request.POST.get('status') or '').strip().lower(),
+        'reviewer_comment': (request.POST.get('reviewer_comment') or '').strip(),
+    }
+    try:
+        resp = _api_post(request, f'/api/leaves/{pk}/review/', payload)
+        redir = _handle_unauthorized(resp, request)
+        if redir:
+            return redir
+        if resp.status_code == 200:
+            _flash(request, 'Leave request updated.', 'success')
+        else:
+            _flash(request, '; '.join(_error_list_from_response(resp, 'Failed to review leave request.')), 'error')
+    except requests.exceptions.ConnectionError:
+        _flash(request, 'Backend server unreachable.', 'error')
+    return redirect('leave_list')
+
+
+@require_POST
+def leave_cancel(request, pk):
+    permission_redirect = _require_module_permission(request, 'leaves.edit')
+    if permission_redirect:
+        return permission_redirect
+    addon_redirect = _require_addon(request, 'leave_management')
+    if addon_redirect:
+        return addon_redirect
+
+    payload = {'reviewer_comment': (request.POST.get('reviewer_comment') or '').strip()}
+    try:
+        resp = _api_post(request, f'/api/leaves/{pk}/cancel/', payload)
+        redir = _handle_unauthorized(resp, request)
+        if redir:
+            return redir
+        if resp.status_code == 200:
+            _flash(request, 'Leave request cancelled.', 'success')
+        else:
+            _flash(request, '; '.join(_error_list_from_response(resp, 'Failed to cancel leave request.')), 'error')
+    except requests.exceptions.ConnectionError:
+        _flash(request, 'Backend server unreachable.', 'error')
+    return redirect('leave_list')
+
+
+@require_POST
+def leave_delete(request, pk):
+    permission_redirect = _require_module_permission(request, 'leaves.delete')
+    if permission_redirect:
+        return permission_redirect
+    addon_redirect = _require_addon(request, 'leave_management')
+    if addon_redirect:
+        return addon_redirect
+
+    try:
+        resp = _api_delete(request, f'/api/leaves/{pk}/')
+        redir = _handle_unauthorized(resp, request)
+        if redir:
+            return redir
+        if resp.status_code == 204:
+            _flash(request, 'Leave request deleted.', 'success')
+        else:
+            _flash(request, '; '.join(_error_list_from_response(resp, 'Failed to delete leave request.')), 'error')
+    except requests.exceptions.ConnectionError:
+        _flash(request, 'Backend server unreachable.', 'error')
+    return redirect('leave_list')
+
 
 def custom_field_list(request):
     permission_redirect = _require_module_permission(request, 'custom_fields.view')
@@ -2597,6 +2845,9 @@ def dynamic_entity_create(request, model_id):
                 if field_type == 'boolean':
                     raw = request.POST.get(form_key)
                     value = 'true' if raw in ('true', 'on', '1') else 'false'
+                elif field_type in ('file', 'image'):
+                    uploaded = request.FILES.get(form_key)
+                    value = _store_uploaded_dynamic_file(uploaded, folder=f'dynamic_uploads/model_{model_id}') if uploaded else ''
                 else:
                     value = request.POST.get(form_key, '').strip()
 
@@ -2724,6 +2975,9 @@ def dynamic_entity_edit(request, model_id, pk):
                 if field_type == 'boolean':
                     raw = request.POST.get(form_key)
                     value = 'true' if raw in ('true', 'on', '1') else 'false'
+                elif field_type in ('file', 'image'):
+                    uploaded = request.FILES.get(form_key)
+                    value = _store_uploaded_dynamic_file(uploaded, folder=f'dynamic_uploads/model_{model_id}') if uploaded else ''
                 else:
                     value = request.POST.get(form_key, '').strip()
 

@@ -137,7 +137,10 @@
     <h3 style="margin-bottom:1rem;">Dynamic Data</h3>
     {% for item in dynamic_employee_records %}
     <div style="margin-bottom:1rem;">
-        <h4 style="margin-bottom:0.5rem;">{{ item.model.name }}</h4>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:0.5rem;">
+            <h4 style="margin:0;">{{ item.model.name }}</h4>
+            <a href="{{ url('employee_edit', args=[employee.id]) }}#dynamic-model-{{ item.model.id }}" class="btn btn-secondary btn-sm">Edit {{ item.model.name }}</a>
+        </div>
         <div class="detail-grid">
             {% for key, value in item.visible_items %}
             <div class="detail-item">

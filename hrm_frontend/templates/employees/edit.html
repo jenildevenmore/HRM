@@ -26,7 +26,7 @@
 {% endif %}
 
 <div class="form-card employee-form-card">
-    <form method="post" action="{{ url('employee_edit', args=[employee.id]) }}">
+    <form method="post" action="{{ url('employee_edit', args=[employee.id]) }}" enctype="multipart/form-data">
         {{ csrf_input }}
 
         <div class="form-row">
@@ -87,7 +87,7 @@
             {% set model_record = dynamic_records_by_model.get(model.id) %}
             {% set model_data = model_record.data if model_record else {} %}
             {% if model_fields %}
-            <section class="dynamic-model-block">
+            <section class="dynamic-model-block" id="dynamic-model-{{ model.id }}">
             <div class="dynamic-model-head">
                 <h4>{{ model.name }}</h4>
             </div>
@@ -114,6 +114,16 @@
                 </select>
                 {% elif field.field_type == 'email' %}
                 <input type="email" name="dm_{{ model.id }}_{{ field.key }}" value="{{ value }}" {% if field.required %}required{% endif %}>
+                {% elif field.field_type == 'image' %}
+                {% if value %}
+                <small style="display:block;margin-bottom:6px;color:var(--text-muted);">Current: <a href="{{ value }}" target="_blank" rel="noopener">View image</a></small>
+                {% endif %}
+                <input type="file" name="dm_{{ model.id }}_{{ field.key }}" accept="image/*" {% if field.required and not value %}required{% endif %}>
+                {% elif field.field_type == 'file' %}
+                {% if value %}
+                <small style="display:block;margin-bottom:6px;color:var(--text-muted);">Current: <a href="{{ value }}" target="_blank" rel="noopener">View file</a></small>
+                {% endif %}
+                <input type="file" name="dm_{{ model.id }}_{{ field.key }}" {% if field.required and not value %}required{% endif %}>
                 {% else %}
                 <input type="text" name="dm_{{ model.id }}_{{ field.key }}" value="{{ value }}" {% if field.required %}required{% endif %}>
                 {% endif %}

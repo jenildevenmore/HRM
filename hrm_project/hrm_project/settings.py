@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     'employees',
     'custom_fields',
     'dynamic_models',
+    'leaves',
 ]
 
 MIDDLEWARE = [

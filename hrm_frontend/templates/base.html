@@ -31,6 +31,14 @@
     </a>
     {% endif %}
 
+    {% if role == 'superadmin' or ('leave_management' in enabled_addons and (role == 'admin' or 'leaves.view' in module_permissions)) %}
+    <a href="{{ url('leave_list') }}"
+       class="nav-link {% if 'leave' in request.resolver_match.url_name %}active{% endif %}">
+      <span class="nav-icon">LV</span>
+      <span class="nav-label">Leaves</span>
+    </a>
+    {% endif %}
+
     {% for dm in nav_dynamic_models %}
     <a href="{{ url('dynamic_entity_list', args=[dm.id]) }}"
        class="nav-link {% if request.resolver_match.url_name in ['dynamic_entity_list', 'dynamic_entity_create', 'dynamic_entity_edit'] and request.resolver_match.kwargs.get('model_id') == dm.id %}active{% endif %}">
@@ -49,7 +57,7 @@
     </a>
     {% endif %}
 
-    {% if role in ['superadmin', 'admin'] or ('custom_fields' in enabled_addons and 'custom_fields.view' in module_permissions) %}
+    {% if role == 'superadmin' or ('custom_fields' in enabled_addons and (role == 'admin' or 'custom_fields.view' in module_permissions)) %}
     <a href="{{ url('custom_field_list') }}"
        class="nav-link {% if 'custom_field' in request.resolver_match.url_name %}active{% endif %}">
       <span class="nav-icon">CF</span>
@@ -57,7 +65,7 @@
     </a>
     {% endif %}
 
-    {% if role in ['superadmin', 'admin'] or ('dynamic_models' in enabled_addons and 'dynamic_models.view' in module_permissions) %}
+    {% if role == 'superadmin' or ('dynamic_models' in enabled_addons and (role == 'admin' or 'dynamic_models.view' in module_permissions)) %}
     <a href="{{ url('dynamic_model_list') }}"
        class="nav-link {% if 'dynamic_' in request.resolver_match.url_name %}active{% endif %}">
       <span class="nav-icon">DM</span>

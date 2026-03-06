@@ -168,6 +168,16 @@ class UserProfileViewSet(viewsets.ModelViewSet):
                 ],
             },
             {
+                'title': 'Leave Management',
+                'permissions': [
+                    {'key': 'leaves.view', 'label': 'Can view Leaves'},
+                    {'key': 'leaves.create', 'label': 'Can create Leaves'},
+                    {'key': 'leaves.edit', 'label': 'Can edit Leaves'},
+                    {'key': 'leaves.delete', 'label': 'Can delete Leaves'},
+                    {'key': 'leaves.approve', 'label': 'Can approve/reject Leaves'},
+                ],
+            },
+            {
                 'title': 'Custom Fields',
                 'permissions': [
                     {'key': 'custom_fields.view', 'label': 'Can view Custom Fields'},
@@ -293,6 +303,25 @@ class ClientPermissionGroupViewSet(viewsets.ModelViewSet):
         invalid = sorted(set(dynamic_ids) - valid_ids)
         if invalid:
             raise PermissionDenied(f'Invalid dynamic model permissions for this client: {invalid}')
+
+    def create(self, request, *args, **kwargs):
+        user = request.user
+        payload = request.data.copy()
+
+        if self._is_superadmin(user):
+            if not payload.get('client'):
+                return Response({'client': 'This field is required for superadmin.'}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            profile = getattr(user, 'profile', None)
+            if not self._is_client_admin(user) or not profile or not profile.client_id:
+                return Response({'detail': 'Only client admin can create groups.'}, status=status.HTTP_403_FORBIDDEN)
+            payload['client'] = profile.client_id
+
+        serializer = self.get_serializer(data=payload)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     def perform_create(self, serializer):
         user = self.request.user

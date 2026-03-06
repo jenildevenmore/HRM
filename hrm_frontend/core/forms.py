@@ -18,6 +18,7 @@ class ClientForm(forms.Form):
         ('attendance', 'Attendance'),
         ('attendance_location', 'Attendance + Location'),
         ('attendance_selfie_location', 'Attendance + Selfie + Location'),
+        ('leave_management', 'Leave Management'),
     ]
 
     name = forms.CharField(
@@ -138,6 +139,8 @@ class DynamicFieldForm(forms.Form):
         ('date', 'Date'),
         ('boolean', 'Boolean'),
         ('email', 'Email'),
+        ('file', 'File'),
+        ('image', 'Image'),
     ]
 
     name = forms.CharField(

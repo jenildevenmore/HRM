@@ -135,4 +135,9 @@ class DynamicRecordSerializer(serializers.ModelSerializer):
                 return True, email_field.run_validation(value), ''
             except serializers.ValidationError:
                 return False, None, 'Must be a valid email address.'
+        if ft in ('file', 'image'):
+            as_text = str(value).strip()
+            if not as_text:
+                return False, None, 'Must be a valid file path or URL.'
+            return True, as_text, ''
         return False, None, 'Unsupported field type.'

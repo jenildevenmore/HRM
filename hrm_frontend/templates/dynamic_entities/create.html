@@ -23,7 +23,7 @@
 {% endif %}
 
 <div class="form-card">
-    <form method="post" action="{{ url('dynamic_entity_create', args=[dynamic_model.id]) }}">
+    <form method="post" action="{{ url('dynamic_entity_create', args=[dynamic_model.id]) }}" enctype="multipart/form-data">
         {{ csrf_input }}
 
         {% if is_attendance %}
@@ -66,6 +66,10 @@
                 </select>
                 {% elif f.field_type == 'email' %}
                 <input type="email" name="df_{{ f.key }}" {% if f.required %}required{% endif %}>
+                {% elif f.field_type == 'image' %}
+                <input type="file" name="df_{{ f.key }}" accept="image/*" {% if f.required %}required{% endif %}>
+                {% elif f.field_type == 'file' %}
+                <input type="file" name="df_{{ f.key }}" {% if f.required %}required{% endif %}>
                 {% else %}
                 <input type="text" name="df_{{ f.key }}" {% if f.required %}required{% endif %}>
                 {% endif %}

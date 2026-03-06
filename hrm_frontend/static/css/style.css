@@ -492,26 +492,77 @@ td {
 .permissions-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 16px;
+  gap: 18px;
+}
+
+.permissions-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.permission-editor-card {
+  padding: 22px;
+}
+
+.permission-panel-head {
+  margin-bottom: 12px;
+}
+
+.permission-panel-subtitle {
+  color: var(--text-muted);
+  font-size: 14px;
+  margin-top: 4px;
 }
 
 .permission-card {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: rgba(255,255,255,0.02);
-  padding: 18px;
+  padding: 20px;
 }
 
 .permission-card-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 16px;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.permission-group-name-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.permission-group-name-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+}
+
+.permission-group-name-input {
+  width: 100%;
+  min-height: 42px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 14px;
+  padding: 10px 12px;
+  outline: none;
+}
+
+.permission-group-name-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(108,99,255,0.16);
 }
 
 .permission-card-head h3 {
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 700;
   color: var(--text);
 }
@@ -523,30 +574,30 @@ td {
 }
 
 .permission-section-title {
-  font-size: 15px;
+  font-size: 20px;
   font-weight: 700;
   color: var(--text);
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .permission-sections-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-  margin-top: 16px;
+  gap: 14px;
+  margin-top: 14px;
 }
 
 .permission-section-card {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: rgba(255,255,255,0.02);
-  padding: 16px;
+  padding: 18px;
 }
 
 .permission-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .permission-list-item {
@@ -554,13 +605,85 @@ td {
   align-items: center;
   gap: 10px;
   color: var(--text);
-  font-size: 14px;
+  font-size: 16px;
+  line-height: 1.3;
+  border-radius: 8px;
+  padding: 7px 8px;
+  transition: background 0.2s ease;
+}
+
+.permission-list-item:hover {
+  background: rgba(255,255,255,0.04);
 }
 
 .permission-list-item input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   flex-shrink: 0;
+  accent-color: var(--accent);
+}
+
+.permission-group-actions {
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.permission-users-badge {
+  margin-top: 20px;
+}
+
+.permission-group-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.permission-group-tab-btn {
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.02);
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.permission-group-tab-btn:hover {
+  border-color: rgba(108,99,255,0.5);
+  color: var(--text);
+}
+
+.permission-group-tab-btn.active {
+  background: rgba(108,99,255,0.18);
+  border-color: rgba(108,99,255,0.6);
+  color: #d9d3ff;
+}
+
+.permission-group-panels {
+  display: flex;
+  flex-direction: column;
+}
+
+.permission-group-panel {
+  display: none;
+  margin-top: 2px;
+}
+
+.permission-group-panel.active {
+  display: block;
+}
+
+.permission-group-panel.is-readonly .permission-section-card {
+  opacity: 0.9;
+}
+
+.is-hidden {
+  display: none !important;
 }
 
 /* ── Search Bar ────────────────────────────────────────────── */
@@ -990,4 +1113,6 @@ td {
   .attendance-calendar-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .attendance-calendar-weekdays { display: none; }
   .permission-sections-grid { grid-template-columns: 1fr; }
+  .permission-card-head { flex-direction: column; align-items: flex-start; }
+  .permission-group-actions { flex-direction: column; align-items: stretch; }
 }
