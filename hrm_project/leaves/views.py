@@ -1,5 +1,7 @@
+from django.db.models import Sum
 from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework.views import APIView
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
@@ -7,21 +9,13 @@ from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import LeaveRequest
-from .serializers import LeaveRequestSerializer
+from employees.models import Employee
+
+from .models import LeaveRequest, LeaveType
+from .serializers import LeaveRequestSerializer, LeaveTypeSerializer
 
 
-class LeaveRequestViewSet(viewsets.ModelViewSet):
-    serializer_class = LeaveRequestSerializer
-    permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = [
-        'employee', 'status', 'leave_type', 'start_date', 'end_date',
-        'manager', 'hr', 'manager_status', 'hr_status',
-    ]
-    search_fields = ['leave_type', 'employee__first_name', 'employee__last_name']
-    ordering_fields = ['created_at', 'start_date', 'end_date', 'status']
-
+class _LeaveAccessMixin:
     def _profile(self):
         try:
             return self.request.user.profile
@@ -35,6 +29,77 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
     def _is_client_admin(self):
         profile = self._profile()
         return bool(profile and profile.role == 'admin')
+
+    def _client_id_from_auth(self):
+        auth = getattr(self.request, 'auth', None)
+        try:
+            return auth.get('client_id') if auth is not None else None
+        except Exception:
+            return None
+
+
+class LeaveTypeViewSet(_LeaveAccessMixin, viewsets.ModelViewSet):
+    serializer_class = LeaveTypeSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [SearchFilter, OrderingFilter, DjangoFilterBackend]
+    search_fields = ['name']
+    ordering_fields = ['name', 'max_days_per_year', 'created_at']
+    filterset_fields = ['is_paid', 'is_active']
+
+    def get_queryset(self):
+        qs = LeaveType.objects.all()
+        if self._is_superadmin():
+            return qs
+        profile = self._profile()
+        client_id = profile.client_id if profile and profile.client_id else self._client_id_from_auth()
+        if not client_id:
+            return LeaveType.objects.none()
+        return qs.filter(client_id=client_id)
+
+    def perform_create(self, serializer):
+        if self._is_superadmin():
+            if not serializer.validated_data.get('client'):
+                raise PermissionDenied('Client is required for superadmin.')
+            serializer.save()
+            return
+        profile = self._profile()
+        client_id = profile.client_id if profile and profile.client_id else self._client_id_from_auth()
+        if not client_id:
+            raise PermissionDenied('User profile not found.')
+        serializer.save(client_id=client_id)
+
+    def perform_update(self, serializer):
+        instance = serializer.instance
+        if self._is_superadmin():
+            serializer.save()
+            return
+        profile = self._profile()
+        client_id = profile.client_id if profile and profile.client_id else self._client_id_from_auth()
+        if not client_id or client_id != instance.client_id:
+            raise PermissionDenied('Not allowed.')
+        serializer.save(client_id=instance.client_id)
+
+    def perform_destroy(self, instance):
+        if self._is_superadmin():
+            instance.delete()
+            return
+        profile = self._profile()
+        client_id = profile.client_id if profile and profile.client_id else self._client_id_from_auth()
+        if not client_id or client_id != instance.client_id:
+            raise PermissionDenied('Not allowed.')
+        instance.delete()
+
+
+class LeaveRequestViewSet(_LeaveAccessMixin, viewsets.ModelViewSet):
+    serializer_class = LeaveRequestSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = [
+        'employee', 'status', 'leave_type', 'start_date', 'end_date',
+        'manager', 'hr', 'manager_status', 'hr_status',
+    ]
+    search_fields = ['leave_type', 'employee__first_name', 'employee__last_name']
+    ordering_fields = ['created_at', 'start_date', 'end_date', 'status']
 
     def get_queryset(self):
         qs = LeaveRequest.objects.select_related(
@@ -191,3 +256,48 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
             if not profile or not profile.client_id or instance.client_id != profile.client_id:
                 raise PermissionDenied('Not allowed.')
         return super().destroy(request, *args, **kwargs)
+
+
+class LeaveBalanceView(_LeaveAccessMixin, APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if self._is_superadmin():
+            employees = Employee.objects.all().order_by('first_name', 'last_name')
+            leave_types = LeaveType.objects.filter(is_active=True).order_by('name')
+        else:
+            profile = self._profile()
+            if not profile or not profile.client_id:
+                return Response([], status=status.HTTP_200_OK)
+            employees = Employee.objects.filter(client_id=profile.client_id).order_by('first_name', 'last_name')
+            leave_types = LeaveType.objects.filter(client_id=profile.client_id, is_active=True).order_by('name')
+
+        leave_types_list = list(leave_types)
+        rows = []
+        for employee in employees:
+            type_rows = []
+            for leave_type in leave_types_list:
+                used = LeaveRequest.objects.filter(
+                    employee_id=employee.id,
+                    status=LeaveRequest.STATUS_APPROVED,
+                    leave_type=leave_type.name,
+                ).aggregate(total=Sum('total_days')).get('total') or 0
+                total = int(leave_type.max_days_per_year or 0)
+                available = total - int(used)
+                if available < 0:
+                    available = 0
+                type_rows.append({
+                    'leave_type': leave_type.name,
+                    'is_paid': leave_type.is_paid,
+                    'total': total,
+                    'used': int(used),
+                    'available': available,
+                })
+            rows.append({
+                'employee_id': employee.id,
+                'employee_name': f'{employee.first_name} {employee.last_name}'.strip(),
+                'role': employee.role,
+                'balances': type_rows,
+            })
+
+        return Response(rows, status=status.HTTP_200_OK)

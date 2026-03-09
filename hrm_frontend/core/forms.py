@@ -66,6 +66,12 @@ class ClientForm(forms.Form):
 
 
 class EmployeeForm(forms.Form):
+    ROLE_CHOICES = [
+        ('employee', 'Employee'),
+        ('hr', 'HR'),
+        ('manager', 'Manager'),
+    ]
+
     first_name = forms.CharField(
         max_length=100,
         widget=forms.TextInput(attrs={'placeholder': 'First Name'}),
@@ -76,6 +82,10 @@ class EmployeeForm(forms.Form):
     )
     email = forms.EmailField(
         widget=forms.EmailInput(attrs={'placeholder': 'Email Address'}),
+    )
+    role = forms.ChoiceField(
+        choices=ROLE_CHOICES,
+        initial='employee',
     )
     joining_date = forms.DateField(
         widget=forms.DateInput(attrs={'type': 'date'}),

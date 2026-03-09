@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}Leave Types - HRM System{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <span class="current">Leave Management</span>
+</div>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Manage Leave Types</h1>
+        <p class="page-subtitle">Define yearly limits and paid/unpaid leave categories.</p>
+    </div>
+</div>
+
+<div class="permission-group-tabs" style="margin-bottom:20px;">
+    <a href="{{ url('leave_type_list') }}" class="permission-group-tab-btn active">Leave Types</a>
+    <a href="{{ url('leave_list') }}" class="permission-group-tab-btn">Applications</a>
+    <a href="{{ url('leave_balance') }}" class="permission-group-tab-btn">Leave Balance</a>
+</div>
+
+{% if errors %}
+<ul class="error-list">
+    {% for err in errors %}<li>{{ err }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<div class="card" style="margin-bottom:20px;">
+    <form method="get" class="search-form" action="{{ url('leave_type_list') }}">
+        <input class="search-input" type="text" name="q" value="{{ search_q or '' }}" placeholder="Search leave types...">
+        <button type="submit" class="btn btn-secondary">Search</button>
+        {% if search_q %}
+        <a href="{{ url('leave_type_list') }}" class="btn btn-secondary">Clear</a>
+        {% endif %}
+    </form>
+</div>
+
+{% if role in ['superadmin', 'admin'] or 'leaves.create' in module_permissions %}
+<div class="form-card" style="max-width:900px;margin-bottom:20px;">
+    <form method="post" action="{{ url('leave_type_list') }}">
+        {{ csrf_input }}
+        <input type="hidden" name="edit_id" value="{{ edit_item.id if edit_item else '' }}">
+        <div class="form-row">
+            <div class="form-group">
+                <label>Leave Type Name *</label>
+                <input type="text" name="name" placeholder="e.g. Annual Leave" value="{{ edit_item.name if edit_item else '' }}" required>
+            </div>
+            <div class="form-group">
+                <label>Max Days Per Year *</label>
+                <input type="number" name="max_days_per_year" min="0" placeholder="e.g. 21" value="{{ edit_item.max_days_per_year if edit_item else '' }}" required>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Color (optional)</label>
+                <input type="text" name="color" placeholder="e.g. #34d399" value="{{ edit_item.color if edit_item else '' }}">
+            </div>
+            <div class="form-group">
+                <label>Paid Leave</label>
+                <select name="is_paid">
+                    <option value="true" {% if not edit_item or edit_item.is_paid %}selected{% endif %}>Yes</option>
+                    <option value="false" {% if edit_item and not edit_item.is_paid %}selected{% endif %}>No</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">{{ 'Update Leave Type' if edit_item else 'Create Leave Type' }}</button>
+            {% if edit_item %}
+            <a href="{{ url('leave_type_list') }}" class="btn btn-secondary">Cancel Edit</a>
+            {% endif %}
+        </div>
+    </form>
+</div>
+{% endif %}
+
+{% if leave_types %}
+<div class="table-wrapper">
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Max Days Per Year</th>
+                <th>Is Paid</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for lt in leave_types %}
+            <tr>
+                <td>
+                    {% if lt.color %}
+                    <span style="display:inline-block;width:10px;height:10px;border-radius:999px;background:{{ lt.color }};margin-right:8px;"></span>
+                    {% endif %}
+                    {{ lt.name }}
+                </td>
+                <td>{{ lt.max_days_per_year }}</td>
+                <td>
+                    {% if lt.is_paid %}
+                    <span class="badge badge-number">Paid</span>
+                    {% else %}
+                    <span class="badge" style="background:rgba(248,113,113,0.16);color:var(--error);">Unpaid</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if role in ['superadmin', 'admin'] or 'leaves.edit' in module_permissions %}
+                    <a href="{{ url('leave_type_list') }}?edit={{ lt.id }}" class="btn btn-secondary btn-sm">Edit</a>
+                    {% endif %}
+                    {% if role in ['superadmin', 'admin'] or 'leaves.delete' in module_permissions %}
+                    <form method="post" action="{{ url('leave_type_delete', args=[lt.id]) }}" style="display:inline;">
+                        {{ csrf_input }}
+                        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this leave type?')">Delete</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card"><div class="empty-state"><p>No leave types configured yet.</p></div></div>
+{% endif %}
+{% endblock %}

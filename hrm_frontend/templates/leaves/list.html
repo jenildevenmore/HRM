@@ -1,20 +1,26 @@
 {% extends "base.html" %}
 
-{% block title %}Leaves - HRM System{% endblock %}
+{% block title %}Leave Applications - HRM System{% endblock %}
 
 {% block content %}
 <div class="breadcrumb">
-    <span class="current">Leaves</span>
+    <span class="current">Leave Management</span>
 </div>
 
 <div class="page-header">
     <div>
-        <h1 class="page-title">Leave Management</h1>
-        <p class="page-subtitle">Track leave requests and approvals.</p>
+        <h1 class="page-title">Manage Leave Applications</h1>
+        <p class="page-subtitle">Track requests, status, approval stage, and payment type.</p>
     </div>
     {% if role in ['superadmin', 'admin'] or 'leaves.create' in module_permissions %}
-    <a href="{{ url('leave_create') }}" class="btn btn-primary">+ New Leave Request</a>
+    <a href="{{ url('leave_create') }}" class="btn btn-primary">+ New Application</a>
     {% endif %}
+</div>
+
+<div class="permission-group-tabs" style="margin-bottom:20px;">
+    <a href="{{ url('leave_type_list') }}" class="permission-group-tab-btn">Leave Types</a>
+    <a href="{{ url('leave_list') }}" class="permission-group-tab-btn active">Applications</a>
+    <a href="{{ url('leave_balance') }}" class="permission-group-tab-btn">Leave Balance</a>
 </div>
 
 {% if errors %}
@@ -47,7 +53,7 @@
             </select>
         </div>
         <div class="form-actions" style="margin-top:28px;">
-            <button type="submit" class="btn btn-secondary">Apply Filters</button>
+            <button type="submit" class="btn btn-secondary">Search</button>
             <a href="{{ url('leave_list') }}" class="btn btn-secondary">Reset</a>
         </div>
     </form>
@@ -58,34 +64,48 @@
     <table>
         <thead>
             <tr>
-                <th>#</th>
                 <th>Employee</th>
-                <th>Type</th>
-                <th>From</th>
-                <th>To</th>
+                <th>Leave Type</th>
+                <th>Start Date</th>
+                <th>End Date</th>
                 <th>Days</th>
+                <th>Applied On</th>
+                <th>Is Paid</th>
                 <th>Status</th>
                 <th>Pending With</th>
-                <th>Manager</th>
-                <th>HR</th>
-                <th>Reason</th>
                 <th>Actions</th>
             </tr>
         </thead>
         <tbody>
             {% for leave in leaves %}
             <tr>
-                <td>{{ leave.id }}</td>
                 <td>{{ leave.employee_name }}</td>
                 <td>{{ leave.leave_type }}</td>
                 <td>{{ leave.start_date }}</td>
                 <td>{{ leave.end_date }}</td>
                 <td>{{ leave.total_days }}</td>
-                <td>{{ leave.status|upper }}</td>
+                <td>{{ leave.created_at[:10] if leave.created_at else '-' }}</td>
+                <td>
+                    {% if leave.leave_type_is_paid %}
+                    <span class="badge badge-number">Paid</span>
+                    {% elif leave.leave_type_is_paid is sameas false %}
+                    <span class="badge" style="background:rgba(248,113,113,0.16);color:var(--error);">Unpaid</span>
+                    {% else %}
+                    <span class="badge badge-text">Unknown</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if leave.status == 'approved' %}
+                    <span class="badge badge-number">Approved</span>
+                    {% elif leave.status == 'rejected' %}
+                    <span class="badge" style="background:rgba(248,113,113,0.16);color:var(--error);">Rejected</span>
+                    {% elif leave.status == 'pending' %}
+                    <span class="badge badge-date">Pending</span>
+                    {% else %}
+                    <span class="badge badge-text">{{ leave.status|upper }}</span>
+                    {% endif %}
+                </td>
                 <td>{{ leave.pending_with or '-' }}</td>
-                <td>{{ leave.manager_name or '-' }} ({{ leave.manager_status|upper }})</td>
-                <td>{{ leave.hr_name or '-' }} ({{ leave.hr_status|upper }})</td>
-                <td>{{ leave.reason or '-' }}</td>
                 <td>
                     {% if leave.status == 'pending' and leave.can_review %}
                     <form method="post" action="{{ url('leave_review', args=[leave.id]) }}" style="display:inline;">
@@ -118,6 +138,6 @@
     </table>
 </div>
 {% else %}
-<div class="card"><div class="empty-state"><p>No leave requests found.</p></div></div>
+<div class="card"><div class="empty-state"><p>No leave applications found.</p></div></div>
 {% endif %}
 {% endblock %}

@@ -49,6 +49,16 @@
         </div>
 
         <div class="form-group">
+            <label>Role</label>
+            {% set current_role = form.role.value() or employee.role or 'employee' %}
+            <select name="role" required>
+                <option value="employee" {% if current_role == 'employee' %}selected{% endif %}>Employee</option>
+                <option value="hr" {% if current_role == 'hr' %}selected{% endif %}>HR</option>
+                <option value="manager" {% if current_role == 'manager' %}selected{% endif %}>Manager</option>
+            </select>
+        </div>
+
+        <div class="form-group">
             <label>Joining Date</label>
             <input type="date" name="joining_date" value="{{ form.joining_date.value() or employee.joining_date }}"
                 required>

@@ -5,6 +5,24 @@ from clients.models import Client
 from employees.models import Employee
 
 
+class LeaveType(models.Model):
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='leave_types')
+    name = models.CharField(max_length=80)
+    max_days_per_year = models.PositiveIntegerField(default=0)
+    is_paid = models.BooleanField(default=True)
+    color = models.CharField(max_length=20, blank=True, default='')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ('name',)
+        unique_together = ('client', 'name')
+
+    def __str__(self):
+        return f'{self.client_id}:{self.name}'
+
+
 class LeaveRequest(models.Model):
     APPROVAL_PENDING = 'pending'
     APPROVAL_APPROVED = 'approved'

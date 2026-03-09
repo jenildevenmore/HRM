@@ -42,6 +42,10 @@
             <div class="detail-value">{{ employee.email }}</div>
         </div>
         <div class="detail-item">
+            <div class="detail-label">Role</div>
+            <div class="detail-value">{{ (employee.role or 'employee')|upper }}</div>
+        </div>
+        <div class="detail-item">
             <div class="detail-label">Client ID</div>
             <div class="detail-value">{{ employee.client }}</div>
         </div>

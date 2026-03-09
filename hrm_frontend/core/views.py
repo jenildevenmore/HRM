@@ -922,9 +922,12 @@ def employee_list(request):
         return permission_redirect
     messages = _pop_messages(request)
     search_q = request.GET.get('q', '')
+    selected_role = (request.GET.get('role') or '').strip().lower()
     params   = {}
     if search_q:
         params['search'] = search_q
+    if selected_role in ('employee', 'hr', 'manager'):
+        params['role'] = selected_role
 
     try:
         resp = _api_get(request, '/api/employees/', params=params)
@@ -941,6 +944,7 @@ def employee_list(request):
     return render(request, 'employees/list.html', {
         'employees': employees,
         'search_q': search_q,
+        'selected_role': selected_role,
         'messages': messages,
         **_get_context(request),
     })
@@ -1400,6 +1404,99 @@ def employee_delete(request, pk):
 # Custom Fields
 # ─────────────────────────────────────────────────────────────────
 
+def leave_type_list(request):
+    permission_redirect = _require_module_permission(request, 'leaves.view')
+    if permission_redirect:
+        return permission_redirect
+    addon_redirect = _require_addon(request, 'leave_management')
+    if addon_redirect:
+        return addon_redirect
+
+    messages = _pop_messages(request)
+    errors = []
+    leave_types = []
+    edit_item = None
+    search_q = (request.GET.get('q') or '').strip()
+    edit_id = (request.GET.get('edit') or '').strip()
+
+    params = {}
+    if search_q:
+        params['search'] = search_q
+
+    try:
+        resp = _api_get(request, '/api/leave-types/', params=params or None)
+        redir = _handle_unauthorized(resp, request)
+        if redir:
+            return redir
+        if resp.status_code == 200:
+            payload = resp.json()
+            leave_types = payload.get('results', payload) if isinstance(payload, dict) else payload
+        else:
+            errors = _error_list_from_response(resp, 'Failed to load leave types.')
+    except requests.exceptions.ConnectionError:
+        errors = ['Backend server unreachable.']
+
+    if edit_id:
+        edit_item = next((row for row in leave_types if str(row.get('id')) == edit_id), None)
+
+    if request.method == 'POST':
+        permission_redirect = _require_module_permission(request, 'leaves.create')
+        if permission_redirect:
+            return permission_redirect
+        payload = {
+            'name': (request.POST.get('name') or '').strip(),
+            'max_days_per_year': (request.POST.get('max_days_per_year') or '').strip() or 0,
+            'is_paid': str(request.POST.get('is_paid') or '').strip().lower() in ('1', 'true', 'yes', 'on'),
+            'color': (request.POST.get('color') or '').strip(),
+        }
+        edit_id = (request.POST.get('edit_id') or '').strip()
+        try:
+            if edit_id:
+                save_resp = _api_put(request, f'/api/leave-types/{edit_id}/', payload)
+            else:
+                save_resp = _api_post(request, '/api/leave-types/', payload)
+            redir = _handle_unauthorized(save_resp, request)
+            if redir:
+                return redir
+            if save_resp.status_code in (200, 201):
+                _flash(request, 'Leave type saved successfully.', 'success')
+                return redirect('leave_type_list')
+            errors = _error_list_from_response(save_resp, 'Failed to save leave type.')
+        except requests.exceptions.ConnectionError:
+            errors = ['Backend server unreachable.']
+
+    return render(request, 'leaves/types.html', {
+        'leave_types': leave_types,
+        'errors': errors,
+        'messages': messages,
+        'search_q': search_q,
+        'edit_item': edit_item,
+        **_get_context(request),
+    })
+
+
+@require_POST
+def leave_type_delete(request, pk):
+    permission_redirect = _require_module_permission(request, 'leaves.delete')
+    if permission_redirect:
+        return permission_redirect
+    addon_redirect = _require_addon(request, 'leave_management')
+    if addon_redirect:
+        return addon_redirect
+    try:
+        resp = _api_delete(request, f'/api/leave-types/{pk}/')
+        redir = _handle_unauthorized(resp, request)
+        if redir:
+            return redir
+        if resp.status_code == 204:
+            _flash(request, 'Leave type deleted.', 'success')
+        else:
+            _flash(request, '; '.join(_error_list_from_response(resp, 'Failed to delete leave type.')), 'error')
+    except requests.exceptions.ConnectionError:
+        _flash(request, 'Backend server unreachable.', 'error')
+    return redirect('leave_type_list')
+
+
 def leave_list(request):
     permission_redirect = _require_module_permission(request, 'leaves.view')
     if permission_redirect:
@@ -1412,7 +1509,7 @@ def leave_list(request):
     errors = []
     leaves = []
     employees = []
-    approvers = []
+    leave_types = []
     selected_status = (request.GET.get('status') or '').strip()
     selected_employee = (request.GET.get('employee') or '').strip()
 
@@ -1441,21 +1538,25 @@ def leave_list(request):
             emp_data = employees_resp.json()
             employees = emp_data.get('results', emp_data) if isinstance(emp_data, dict) else emp_data
 
-        approvers_resp = _api_get(request, '/api/user-profiles/')
-        redir = _handle_unauthorized(approvers_resp, request)
+        leave_type_resp = _api_get(request, '/api/leave-types/')
+        redir = _handle_unauthorized(leave_type_resp, request)
         if redir:
             return redir
-        if approvers_resp.status_code == 200:
-            profile_data = approvers_resp.json()
-            profile_rows = profile_data.get('results', profile_data) if isinstance(profile_data, dict) else profile_data
-            approvers = [p for p in profile_rows if p.get('role') != 'superadmin']
+        if leave_type_resp.status_code == 200:
+            leave_type_data = leave_type_resp.json()
+            leave_types = leave_type_data.get('results', leave_type_data) if isinstance(leave_type_data, dict) else leave_type_data
     except requests.exceptions.ConnectionError:
         errors = ['Backend server unreachable.']
+
+    leave_type_map = {str(row.get('name', '')).lower(): row for row in leave_types}
+    for leave in leaves:
+        leave_type = leave_type_map.get(str(leave.get('leave_type', '')).lower())
+        leave['leave_type_is_paid'] = leave_type.get('is_paid') if leave_type else leave.get('leave_type_is_paid')
 
     return render(request, 'leaves/list.html', {
         'leaves': leaves,
         'employees': employees,
-        'approvers': approvers,
+        'leave_types': leave_types,
         'errors': errors,
         'messages': messages,
         'selected_status': selected_status,
@@ -1476,6 +1577,7 @@ def leave_create(request):
     errors = []
     employees = []
     approvers = []
+    leave_types = []
 
     try:
         employees_resp = _api_get(request, '/api/employees/')
@@ -1493,13 +1595,21 @@ def leave_create(request):
             profile_data = approvers_resp.json()
             profile_rows = profile_data.get('results', profile_data) if isinstance(profile_data, dict) else profile_data
             approvers = [p for p in profile_rows if p.get('role') != 'superadmin']
+
+        leave_type_resp = _api_get(request, '/api/leave-types/')
+        redir = _handle_unauthorized(leave_type_resp, request)
+        if redir:
+            return redir
+        if leave_type_resp.status_code == 200:
+            leave_type_data = leave_type_resp.json()
+            leave_types = leave_type_data.get('results', leave_type_data) if isinstance(leave_type_data, dict) else leave_type_data
     except requests.exceptions.ConnectionError:
         errors = ['Backend server unreachable.']
 
     if request.method == 'POST':
         payload = {
             'employee': request.POST.get('employee'),
-            'leave_type': (request.POST.get('leave_type') or '').strip() or 'Casual',
+            'leave_type': (request.POST.get('leave_type') or '').strip(),
             'start_date': (request.POST.get('start_date') or '').strip(),
             'end_date': (request.POST.get('end_date') or '').strip(),
             'reason': (request.POST.get('reason') or '').strip(),
@@ -1521,6 +1631,7 @@ def leave_create(request):
     return render(request, 'leaves/create.html', {
         'employees': employees,
         'approvers': approvers,
+        'leave_types': leave_types,
         'errors': errors,
         'messages': messages,
         **_get_context(request),
@@ -1596,6 +1707,38 @@ def leave_delete(request, pk):
     except requests.exceptions.ConnectionError:
         _flash(request, 'Backend server unreachable.', 'error')
     return redirect('leave_list')
+
+
+def leave_balance(request):
+    permission_redirect = _require_module_permission(request, 'leaves.view')
+    if permission_redirect:
+        return permission_redirect
+    addon_redirect = _require_addon(request, 'leave_management')
+    if addon_redirect:
+        return addon_redirect
+
+    messages = _pop_messages(request)
+    errors = []
+    balances = []
+    try:
+        resp = _api_get(request, '/api/leave-balance/')
+        redir = _handle_unauthorized(resp, request)
+        if redir:
+            return redir
+        if resp.status_code == 200:
+            payload = resp.json()
+            balances = payload.get('results', payload) if isinstance(payload, dict) else payload
+        else:
+            errors = _error_list_from_response(resp, 'Failed to load leave balances.')
+    except requests.exceptions.ConnectionError:
+        errors = ['Backend server unreachable.']
+
+    return render(request, 'leaves/balance.html', {
+        'balances': balances,
+        'errors': errors,
+        'messages': messages,
+        **_get_context(request),
+    })
 
 
 def custom_field_list(request):

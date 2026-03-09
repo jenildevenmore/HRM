@@ -25,6 +25,9 @@ urlpatterns = [
 
     # Leaves
     path('leaves/', views.leave_list, name='leave_list'),
+    path('leaves/types/', views.leave_type_list, name='leave_type_list'),
+    path('leaves/types/<int:pk>/delete/', views.leave_type_delete, name='leave_type_delete'),
+    path('leaves/balance/', views.leave_balance, name='leave_balance'),
     path('leaves/create/', views.leave_create, name='leave_create'),
     path('leaves/<int:pk>/review/', views.leave_review, name='leave_review'),
     path('leaves/<int:pk>/cancel/', views.leave_cancel, name='leave_cancel'),
