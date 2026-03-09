@@ -542,21 +542,22 @@ def login_view(request):
     selected_client = None
     clients_load_failed = False
 
-    try:
-        clients_resp = requests.get(f'{API}/api/clients/public/', timeout=10)
-        if clients_resp.status_code == 200:
-            clients = clients_resp.json()
-        else:
+    if login_mode != 'superadmin':
+        try:
+            clients_resp = requests.get(f'{API}/api/clients/public/', timeout=10)
+            if clients_resp.status_code == 200:
+                clients = clients_resp.json()
+            else:
+                clients_load_failed = True
+                try:
+                    payload = clients_resp.json()
+                    detail = payload.get('detail') if isinstance(payload, dict) else None
+                except ValueError:
+                    detail = None
+                error = detail or f'Failed to load clients from backend (HTTP {clients_resp.status_code}).'
+        except requests.exceptions.RequestException:
             clients_load_failed = True
-            try:
-                payload = clients_resp.json()
-                detail = payload.get('detail') if isinstance(payload, dict) else None
-            except ValueError:
-                detail = None
-            error = detail or f'Failed to load clients from backend (HTTP {clients_resp.status_code}).'
-    except requests.exceptions.ConnectionError:
-        clients_load_failed = True
-        error = 'Cannot connect to backend. Start backend server on http://127.0.0.1:8000'
+            error = 'Backend API timeout/unreachable while loading clients.'
 
     if login_mode != 'superadmin' and selected_client_id:
         selected_client = next(
@@ -616,8 +617,8 @@ def login_view(request):
                     return redirect('dashboard')
                 else:
                     error = 'Invalid username or password.'
-            except requests.exceptions.ConnectionError:
-                error = 'Cannot connect to the backend server. Is it running on port 8000?'
+            except requests.exceptions.RequestException:
+                error = 'Backend API timeout/unreachable during login. Please try again.'
 
     return render(request, 'login.html', {
         'form': form,
