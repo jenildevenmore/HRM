@@ -58,6 +58,29 @@
             </select>
         </div>
 
+        <div class="form-row">
+            <div class="form-group">
+                <label>Assigned HR</label>
+                {% set selected_hr = form.hr.value() or (employee.hr|string if employee.hr else '') %}
+                <select name="hr">
+                    <option value="">Select HR (Optional)</option>
+                    {% for item in hr_options %}
+                    <option value="{{ item.id }}" {% if selected_hr|string == item.id|string %}selected{% endif %}>{{ item.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Assigned Manager</label>
+                {% set selected_manager = form.manager.value() or (employee.manager|string if employee.manager else '') %}
+                <select name="manager">
+                    <option value="">Select Manager (Optional)</option>
+                    {% for item in manager_options %}
+                    <option value="{{ item.id }}" {% if selected_manager|string == item.id|string %}selected{% endif %}>{{ item.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
         <div class="form-group">
             <label>Joining Date</label>
             <input type="date" name="joining_date" value="{{ form.joining_date.value() or employee.joining_date }}"

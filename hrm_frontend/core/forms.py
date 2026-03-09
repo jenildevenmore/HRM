@@ -87,6 +87,14 @@ class EmployeeForm(forms.Form):
         choices=ROLE_CHOICES,
         initial='employee',
     )
+    hr = forms.ChoiceField(
+        required=False,
+        choices=[],
+    )
+    manager = forms.ChoiceField(
+        required=False,
+        choices=[],
+    )
     joining_date = forms.DateField(
         widget=forms.DateInput(attrs={'type': 'date'}),
     )

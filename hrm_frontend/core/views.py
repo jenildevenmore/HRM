@@ -537,6 +537,44 @@ def login_view(request):
     })
 
 
+def reset_password_view(request):
+    uid = (request.GET.get('uid') or request.POST.get('uid') or '').strip()
+    token = (request.GET.get('token') or request.POST.get('token') or '').strip()
+    error = None
+    success = None
+
+    if request.method == 'POST':
+        password = request.POST.get('password', '')
+        confirm_password = request.POST.get('confirm_password', '')
+
+        if not uid or not token:
+            error = 'Invalid reset link. Please use the link from email.'
+        elif not password:
+            error = 'Password is required.'
+        elif password != confirm_password:
+            error = 'Password and confirm password do not match.'
+        else:
+            try:
+                resp = requests.post(
+                    f'{API}/api/accounts/password-setup-confirm/',
+                    json={'uid': uid, 'token': token, 'new_password': password},
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    success = 'Password set successfully. You can now login.'
+                else:
+                    error = '; '.join(_error_list_from_response(resp, 'Failed to set password.'))
+            except requests.exceptions.ConnectionError:
+                error = 'Backend server unreachable.'
+
+    return render(request, 'reset_password.html', {
+        'uid': uid,
+        'token': token,
+        'error': error,
+        'success': success,
+    })
+
+
 def logout_view(request):
     request.session.flush()
     return redirect('login')
@@ -1057,6 +1095,43 @@ def _save_employee_dynamic_records(request, employee_id, dynamic_models, fields_
             _api_post(request, '/api/dynamic-records/', payload)
 
 
+def _employee_error_list(resp, fallback):
+    errors = _error_list_from_response(
+        resp,
+        fallback,
+        include_keys=['email', 'first_name', 'last_name', 'role', 'joining_date', 'hr', 'manager'],
+    )
+    friendly = []
+    for msg in errors:
+        low = str(msg).lower()
+        if 'email:' in low and 'already exists' in low:
+            friendly.append('An employee with this email already exists. Please use a different email address.')
+        else:
+            friendly.append(msg)
+    return friendly
+
+
+def _employee_assignment_options(request, role):
+    try:
+        resp = _api_get(request, '/api/employees/', params={'role': role})
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+        employees = data.get('results', data) if isinstance(data, dict) else data
+    except requests.exceptions.ConnectionError:
+        return []
+
+    options = []
+    for emp in employees:
+        full_name = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
+        label = f"{full_name} ({emp.get('email', '-')})" if full_name else str(emp.get('id'))
+        options.append({
+            'id': str(emp.get('id')),
+            'label': label,
+        })
+    return options
+
+
 def employee_detail(request, pk):
     permission_redirect = _require_module_permission(request, 'employees.view')
     if permission_redirect:
@@ -1167,11 +1242,26 @@ def employee_create(request):
     custom_field_values = {}
     dynamic_models = []
     dynamic_fields_by_model = {}
+    hr_options = _employee_assignment_options(request, 'hr')
+    manager_options = _employee_assignment_options(request, 'manager')
+
+    form.fields['hr'].choices = [('', 'Select HR (Optional)')] + [
+        (item['id'], item['label']) for item in hr_options
+    ]
+    form.fields['manager'].choices = [('', 'Select Manager (Optional)')] + [
+        (item['id'], item['label']) for item in manager_options
+    ]
 
     dynamic_models, dynamic_fields_by_model = _get_dynamic_models_with_fields(request)
 
     if request.method == 'POST':
         form = EmployeeForm(request.POST)
+        form.fields['hr'].choices = [('', 'Select HR (Optional)')] + [
+            (item['id'], item['label']) for item in hr_options
+        ]
+        form.fields['manager'].choices = [('', 'Select Manager (Optional)')] + [
+            (item['id'], item['label']) for item in manager_options
+        ]
         if form.is_valid():
             try:
                 # Get client_id from session (authenticated user's client)
@@ -1181,7 +1271,11 @@ def employee_create(request):
                     errors = ['You are not assigned to any client. Contact your administrator.']
                 else:
                     employee_data = form.cleaned_data.copy()
+                    hr_value = employee_data.pop('hr', '')
+                    manager_value = employee_data.pop('manager', '')
                     employee_data['client'] = client_id
+                    employee_data['hr'] = int(hr_value) if hr_value else None
+                    employee_data['manager'] = int(manager_value) if manager_value else None
                     employee_data = _serialize_data(employee_data)
                     
                     # Save employee
@@ -1215,7 +1309,7 @@ def employee_create(request):
                         _flash(request, 'Employee created successfully!', 'success')
                         return redirect('employee_list')
                     else:
-                        errors = [f'{k}: {v}' for k, v in resp.json().items()]
+                        errors = _employee_error_list(resp, 'Failed to create employee.')
             except requests.exceptions.ConnectionError:
                 errors = ['Backend server unreachable.']
 
@@ -1234,6 +1328,8 @@ def employee_create(request):
         'messages': messages,
         'custom_fields': custom_fields,
         'custom_field_values': custom_field_values,
+        'hr_options': hr_options,
+        'manager_options': manager_options,
         'dynamic_models': dynamic_models,
         'dynamic_fields_by_model': dynamic_fields_by_model,
         **_get_context(request),
@@ -1251,6 +1347,8 @@ def employee_edit(request, pk):
     dynamic_models = []
     dynamic_fields_by_model = {}
     dynamic_records_by_model = {}
+    hr_options = _employee_assignment_options(request, 'hr')
+    manager_options = _employee_assignment_options(request, 'manager')
 
     try:
         get_resp = _api_get(request, f'/api/employees/{pk}/')
@@ -1283,6 +1381,12 @@ def employee_edit(request, pk):
 
     if request.method == 'POST':
         form = EmployeeForm(request.POST)
+        form.fields['hr'].choices = [('', 'Select HR (Optional)')] + [
+            (item['id'], item['label']) for item in hr_options
+        ]
+        form.fields['manager'].choices = [('', 'Select Manager (Optional)')] + [
+            (item['id'], item['label']) for item in manager_options
+        ]
         if form.is_valid():
             try:
                 # Get client_id from session (authenticated user's client)
@@ -1292,7 +1396,11 @@ def employee_edit(request, pk):
                     errors = ['You are not assigned to any client. Contact your administrator.']
                 else:
                     emp_update_data = form.cleaned_data.copy()
+                    hr_value = emp_update_data.pop('hr', '')
+                    manager_value = emp_update_data.pop('manager', '')
                     emp_update_data['client'] = client_id
+                    emp_update_data['hr'] = int(hr_value) if hr_value else None
+                    emp_update_data['manager'] = int(manager_value) if manager_value else None
                     emp_update_data = _serialize_data(emp_update_data)
                     
                     resp = _api_put(request, f'/api/employees/{pk}/', emp_update_data)
@@ -1341,12 +1449,21 @@ def employee_edit(request, pk):
                         _flash(request, 'Employee updated successfully!', 'success')
                         return redirect('employee_list')
                     else:
-                        errors = [f'{k}: {v}' for k, v in resp.json().items()]
+                        errors = _employee_error_list(resp, 'Failed to update employee.')
             except requests.exceptions.ConnectionError:
                 errors = ['Backend server unreachable.']
     else:
         # Pre-fill form with existing data
-        form = EmployeeForm(initial=employee_data)
+        initial_data = employee_data.copy()
+        initial_data['hr'] = str(employee_data.get('hr') or '')
+        initial_data['manager'] = str(employee_data.get('manager') or '')
+        form = EmployeeForm(initial=initial_data)
+        form.fields['hr'].choices = [('', 'Select HR (Optional)')] + [
+            (item['id'], item['label']) for item in hr_options
+        ]
+        form.fields['manager'].choices = [('', 'Select Manager (Optional)')] + [
+            (item['id'], item['label']) for item in manager_options
+        ]
 
     # Fetch custom fields for Employee model
     try:
@@ -1372,6 +1489,8 @@ def employee_edit(request, pk):
         'messages': messages,
         'custom_fields': custom_fields,
         'custom_field_values': custom_field_values,
+        'hr_options': hr_options,
+        'manager_options': manager_options,
         'dynamic_models': dynamic_models,
         'dynamic_fields_by_model': dynamic_fields_by_model,
         'dynamic_records_by_model': dynamic_records_by_model,
@@ -1576,7 +1695,6 @@ def leave_create(request):
     messages = _pop_messages(request)
     errors = []
     employees = []
-    approvers = []
     leave_types = []
 
     try:
@@ -1587,14 +1705,6 @@ def leave_create(request):
         if employees_resp.status_code == 200:
             emp_data = employees_resp.json()
             employees = emp_data.get('results', emp_data) if isinstance(emp_data, dict) else emp_data
-        approvers_resp = _api_get(request, '/api/user-profiles/')
-        redir = _handle_unauthorized(approvers_resp, request)
-        if redir:
-            return redir
-        if approvers_resp.status_code == 200:
-            profile_data = approvers_resp.json()
-            profile_rows = profile_data.get('results', profile_data) if isinstance(profile_data, dict) else profile_data
-            approvers = [p for p in profile_rows if p.get('role') != 'superadmin']
 
         leave_type_resp = _api_get(request, '/api/leave-types/')
         redir = _handle_unauthorized(leave_type_resp, request)
@@ -1613,8 +1723,6 @@ def leave_create(request):
             'start_date': (request.POST.get('start_date') or '').strip(),
             'end_date': (request.POST.get('end_date') or '').strip(),
             'reason': (request.POST.get('reason') or '').strip(),
-            'manager': (request.POST.get('manager') or '').strip(),
-            'hr': (request.POST.get('hr') or '').strip(),
         }
         try:
             resp = _api_post(request, '/api/leaves/', payload)
@@ -1630,7 +1738,6 @@ def leave_create(request):
 
     return render(request, 'leaves/create.html', {
         'employees': employees,
-        'approvers': approvers,
         'leave_types': leave_types,
         'errors': errors,
         'messages': messages,

@@ -9,6 +9,7 @@ from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from accounts.models import UserProfile
 from employees.models import Employee
 
 from .models import LeaveRequest, LeaveType
@@ -101,6 +102,19 @@ class LeaveRequestViewSet(_LeaveAccessMixin, viewsets.ModelViewSet):
     search_fields = ['leave_type', 'employee__first_name', 'employee__last_name']
     ordering_fields = ['created_at', 'start_date', 'end_date', 'status']
 
+    def _resolve_approver_user(self, approver_employee):
+        if not approver_employee:
+            return None
+        profile = (
+            UserProfile.objects.select_related('user')
+            .filter(
+                client_id=approver_employee.client_id,
+                user__email__iexact=(approver_employee.email or ''),
+            )
+            .first()
+        )
+        return profile.user if profile else None
+
     def get_queryset(self):
         qs = LeaveRequest.objects.select_related(
             'employee', 'client', 'applied_by', 'approved_by', 'manager', 'hr'
@@ -122,17 +136,33 @@ class LeaveRequestViewSet(_LeaveAccessMixin, viewsets.ModelViewSet):
             if employee.client_id != profile.client_id:
                 raise PermissionDenied('Employee must belong to your client.')
 
-            manager = serializer.validated_data.get('manager')
-            hr = serializer.validated_data.get('hr')
-            for label, user_obj in (('manager', manager), ('hr', hr)):
-                try:
-                    target_profile = user_obj.profile
-                except Exception:
-                    target_profile = None
-                if not target_profile or target_profile.client_id != profile.client_id:
-                    raise PermissionDenied(f'{label.title()} must belong to your client.')
+        if not employee.manager_id:
+            raise PermissionDenied('Selected employee has no manager assigned.')
+        if not employee.hr_id:
+            raise PermissionDenied('Selected employee has no HR assigned.')
 
-        serializer.save(client=employee.client, applied_by=self.request.user)
+        manager_user = self._resolve_approver_user(employee.manager)
+        hr_user = self._resolve_approver_user(employee.hr)
+
+        if not manager_user:
+            raise PermissionDenied(
+                f'No user profile found for assigned manager ({employee.manager.email}). '
+                'Create a user account with the same email.'
+            )
+        if not hr_user:
+            raise PermissionDenied(
+                f'No user profile found for assigned HR ({employee.hr.email}). '
+                'Create a user account with the same email.'
+            )
+        if manager_user.id == hr_user.id:
+            raise PermissionDenied('Assigned manager and HR must be different users.')
+
+        serializer.save(
+            client=employee.client,
+            applied_by=self.request.user,
+            manager=manager_user,
+            hr=hr_user,
+        )
 
     def perform_update(self, serializer):
         instance = serializer.instance
@@ -151,26 +181,6 @@ class LeaveRequestViewSet(_LeaveAccessMixin, viewsets.ModelViewSet):
             return Response({'detail': 'Only pending leave requests can be reviewed.'}, status=status.HTTP_400_BAD_REQUEST)
 
         reviewer_comment = str(request.data.get('reviewer_comment', '')).strip()
-        is_admin_reviewer = self._is_superadmin() or self._is_client_admin()
-
-        if is_admin_reviewer:
-            if new_status == LeaveRequest.STATUS_REJECTED:
-                instance.manager_status = LeaveRequest.APPROVAL_REJECTED
-                instance.hr_status = LeaveRequest.APPROVAL_REJECTED
-            else:
-                instance.manager_status = LeaveRequest.APPROVAL_APPROVED
-                instance.hr_status = LeaveRequest.APPROVAL_APPROVED
-            instance.manager_comment = reviewer_comment
-            instance.hr_comment = reviewer_comment
-            instance.status = new_status
-            instance.reviewer_comment = reviewer_comment
-            instance.approved_by = request.user
-            instance.approved_at = timezone.now()
-            instance.save(update_fields=[
-                'manager_status', 'hr_status', 'manager_comment', 'hr_comment',
-                'status', 'reviewer_comment', 'approved_by', 'approved_at', 'updated_at',
-            ])
-            return Response(self.get_serializer(instance).data)
 
         if instance.manager_id == request.user.id:
             if instance.manager_status != LeaveRequest.APPROVAL_PENDING:
@@ -180,16 +190,14 @@ class LeaveRequestViewSet(_LeaveAccessMixin, viewsets.ModelViewSet):
                 if new_status == LeaveRequest.STATUS_APPROVED else LeaveRequest.APPROVAL_REJECTED
             )
             instance.manager_comment = reviewer_comment
-            if new_status == LeaveRequest.STATUS_REJECTED:
-                instance.status = LeaveRequest.STATUS_REJECTED
-                instance.reviewer_comment = reviewer_comment
-                instance.approved_by = request.user
-                instance.approved_at = timezone.now()
-            elif instance.hr_status == LeaveRequest.APPROVAL_APPROVED:
-                instance.status = LeaveRequest.STATUS_APPROVED
-                instance.reviewer_comment = reviewer_comment
-                instance.approved_by = request.user
-                instance.approved_at = timezone.now()
+            instance.status = (
+                LeaveRequest.STATUS_APPROVED
+                if new_status == LeaveRequest.STATUS_APPROVED
+                else LeaveRequest.STATUS_REJECTED
+            )
+            instance.reviewer_comment = reviewer_comment
+            instance.approved_by = request.user
+            instance.approved_at = timezone.now()
             instance.save(update_fields=[
                 'manager_status', 'manager_comment', 'status',
                 'reviewer_comment', 'approved_by', 'approved_at', 'updated_at',
@@ -197,8 +205,6 @@ class LeaveRequestViewSet(_LeaveAccessMixin, viewsets.ModelViewSet):
             return Response(self.get_serializer(instance).data)
 
         if instance.hr_id == request.user.id:
-            if instance.manager_status != LeaveRequest.APPROVAL_APPROVED:
-                return Response({'detail': 'HR can review only after manager approval.'}, status=status.HTTP_400_BAD_REQUEST)
             if instance.hr_status != LeaveRequest.APPROVAL_PENDING:
                 return Response({'detail': 'HR approval is already submitted.'}, status=status.HTTP_400_BAD_REQUEST)
             instance.hr_status = (

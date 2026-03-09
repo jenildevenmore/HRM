@@ -1,7 +1,7 @@
 from django.shortcuts import redirect
 
 # URLs that do NOT require authentication
-PUBLIC_URLS = ['/login/', '/logout/']
+PUBLIC_URLS = ['/login/', '/logout/', '/reset-password/']
 
 
 class AuthRequiredMiddleware:

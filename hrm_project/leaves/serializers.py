@@ -128,8 +128,10 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
             'client',
             'total_days',
             'status',
+            'manager',
             'manager_status',
             'hr_status',
+            'hr',
             'manager_comment',
             'hr_comment',
             'reviewer_comment',
@@ -163,18 +165,9 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
         if obj.status != LeaveRequest.STATUS_PENDING:
             return False
 
-        profile = getattr(user, 'profile', None)
-        is_admin = bool(user.is_superuser or (profile and profile.role in ('superadmin', 'admin')))
-        if is_admin:
-            return True
-
         if obj.manager_id == user.id and obj.manager_status == LeaveRequest.APPROVAL_PENDING:
             return True
-        if (
-            obj.hr_id == user.id
-            and obj.manager_status == LeaveRequest.APPROVAL_APPROVED
-            and obj.hr_status == LeaveRequest.APPROVAL_PENDING
-        ):
+        if obj.hr_id == user.id and obj.hr_status == LeaveRequest.APPROVAL_PENDING:
             return True
         return False
 
@@ -191,18 +184,19 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
     def get_pending_with(self, obj):
         if obj.status != LeaveRequest.STATUS_PENDING:
             return '-'
+        pending_roles = []
         if obj.manager_status == LeaveRequest.APPROVAL_PENDING:
-            return 'Manager'
+            pending_roles.append('Manager')
         if obj.hr_status == LeaveRequest.APPROVAL_PENDING:
-            return 'HR'
+            pending_roles.append('HR')
+        if pending_roles:
+            return ' / '.join(pending_roles)
         return '-'
 
     def validate(self, attrs):
         employee = attrs.get('employee') or getattr(self.instance, 'employee', None)
         start_date = attrs.get('start_date') or getattr(self.instance, 'start_date', None)
         end_date = attrs.get('end_date') or getattr(self.instance, 'end_date', None)
-        manager = attrs.get('manager') or getattr(self.instance, 'manager', None)
-        hr = attrs.get('hr') or getattr(self.instance, 'hr', None)
         leave_type_name = str(attrs.get('leave_type') or getattr(self.instance, 'leave_type', '')).strip()
 
         if not employee:
@@ -213,12 +207,6 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'end_date': 'This field is required.'})
         if not leave_type_name:
             raise serializers.ValidationError({'leave_type': 'This field is required.'})
-        if not manager:
-            raise serializers.ValidationError({'manager': 'Manager is required.'})
-        if not hr:
-            raise serializers.ValidationError({'hr': 'HR is required.'})
-        if manager.id == hr.id:
-            raise serializers.ValidationError({'hr': 'Manager and HR must be different users.'})
         if end_date < start_date:
             raise serializers.ValidationError({'end_date': 'End date must be same or after start date.'})
 
@@ -229,14 +217,6 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
         ).only('id').first()
         if not leave_type:
             raise serializers.ValidationError({'leave_type': 'Select a valid active leave type.'})
-
-        for label, user_obj in (('manager', manager), ('hr', hr)):
-            try:
-                profile = user_obj.profile
-            except Exception:
-                profile = None
-            if not profile or profile.client_id != employee.client_id:
-                raise serializers.ValidationError({label: f'{label.upper()} user must belong to the same client as employee.'})
 
         attrs['total_days'] = (end_date - start_date + timedelta(days=1)).days
         return attrs

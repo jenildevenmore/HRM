@@ -33,12 +33,17 @@
         {{ csrf_input }}
         <div class="form-group">
             <label>Employee *</label>
-            <select name="employee" required>
+            <select name="employee" id="employeeSelect" required>
                 <option value="">Select employee</option>
                 {% for e in employees %}
-                <option value="{{ e.id }}">{{ e.first_name }} {{ e.last_name }}</option>
+                <option value="{{ e.id }}" data-manager="{{ e.manager_name or '-' }}" data-hr="{{ e.hr_name or '-' }}">
+                    {{ e.first_name }} {{ e.last_name }}
+                </option>
                 {% endfor %}
             </select>
+            <small id="assignmentPreview" style="display:block;margin-top:6px;color:var(--text-muted);">
+                Manager: - | HR: -
+            </small>
         </div>
         <div class="form-group">
             <label>Leave Type *</label>
@@ -63,30 +68,31 @@
             <label>Reason</label>
             <textarea name="reason" rows="3" placeholder="Reason for leave"></textarea>
         </div>
-        <div class="form-row">
-            <div class="form-group">
-                <label>Assign Manager *</label>
-                <select name="manager" required>
-                    <option value="">Select manager</option>
-                    {% for p in approvers %}
-                    <option value="{{ p.user.id }}">{{ p.user.username }} ({{ p.role_display }})</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="form-group">
-                <label>Assign HR *</label>
-                <select name="hr" required>
-                    <option value="">Select HR</option>
-                    {% for p in approvers %}
-                    <option value="{{ p.user.id }}">{{ p.user.username }} ({{ p.role_display }})</option>
-                    {% endfor %}
-                </select>
-            </div>
-        </div>
         <div class="form-actions">
             <button type="submit" class="btn btn-primary">Submit Leave</button>
             <a href="{{ url('leave_list') }}" class="btn btn-secondary">Cancel</a>
         </div>
     </form>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var employeeSelect = document.getElementById('employeeSelect');
+    var preview = document.getElementById('assignmentPreview');
+
+    function renderAssignment() {
+        var selected = employeeSelect.options[employeeSelect.selectedIndex];
+        if (!selected || !selected.value) {
+            preview.textContent = 'Manager: - | HR: -';
+            return;
+        }
+        var manager = selected.getAttribute('data-manager') || '-';
+        var hr = selected.getAttribute('data-hr') || '-';
+        preview.textContent = 'Manager: ' + manager + ' | HR: ' + hr;
+    }
+
+    employeeSelect.addEventListener('change', renderAssignment);
+    renderAssignment();
+});
+</script>
 {% endblock %}

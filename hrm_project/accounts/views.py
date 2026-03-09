@@ -4,7 +4,11 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.exceptions import PermissionDenied
 from django.contrib.auth.models import User
+from django.contrib.auth.password_validation import validate_password
+from django.contrib.auth.tokens import default_token_generator
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Count
+from django.utils.http import urlsafe_base64_decode
 import re
 from .models import UserProfile, ClientPermissionGroup
 from .serializers import UserProfileSerializer, UserSerializer, ClientPermissionGroupSerializer
@@ -132,6 +136,36 @@ class UserProfileViewSet(viewsets.ModelViewSet):
                 {'error': str(e)},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+    @action(detail=False, methods=['post'], permission_classes=[AllowAny], url_path='password-setup-confirm')
+    def password_setup_confirm(self, request):
+        uid = str(request.data.get('uid') or '').strip()
+        token = str(request.data.get('token') or '').strip()
+        new_password = str(request.data.get('new_password') or '')
+
+        if not uid or not token or not new_password:
+            return Response(
+                {'detail': 'uid, token and new_password are required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            user_id = urlsafe_base64_decode(uid).decode()
+            user = User.objects.get(pk=user_id)
+        except Exception:
+            return Response({'detail': 'Invalid reset link.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not default_token_generator.check_token(user, token):
+            return Response({'detail': 'Reset link is invalid or expired.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            validate_password(new_password, user=user)
+        except DjangoValidationError as exc:
+            return Response({'new_password': list(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.set_password(new_password)
+        user.save(update_fields=['password'])
+        return Response({'detail': 'Password set successfully.'}, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['get'], url_path='permission-options')
     def permission_options(self, request):

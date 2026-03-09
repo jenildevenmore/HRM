@@ -53,6 +53,14 @@
             <div class="detail-label">Joining Date</div>
             <div class="detail-value">{{ employee.joining_date }}</div>
         </div>
+        <div class="detail-item">
+            <div class="detail-label">Assigned HR</div>
+            <div class="detail-value">{{ employee.hr_name or '-' }}</div>
+        </div>
+        <div class="detail-item">
+            <div class="detail-label">Assigned Manager</div>
+            <div class="detail-value">{{ employee.manager_name or '-' }}</div>
+        </div>
     </div>
 </div>
 
