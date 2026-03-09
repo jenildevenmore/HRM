@@ -20,27 +20,30 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
+def _env_bool(name, default=False):
+    raw = str(os.getenv(name, str(default))).strip().lower()
+    return raw in ('1', 'true', 'yes', 'on')
+
+
+def _env_csv(name, default=''):
+    return [part.strip() for part in os.getenv(name, default).split(',') if part.strip()]
+
+
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-p)h$8g$x0q@7@68(zak$)$m#*%+4210=kjk3h*_z0b1zn7wou%'
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-change-me-in-production')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = _env_bool('DJANGO_DEBUG', True)
 
-ALLOWED_HOSTS = [
-    '127.0.0.1',
-    'localhost',
-    '192.168.1.66',
-    '*',
-]
+ALLOWED_HOSTS = _env_csv(
+    'DJANGO_ALLOWED_HOSTS',
+    '127.0.0.1,localhost,192.168.1.66',
+)
 
-CSRF_TRUSTED_ORIGINS = [
-    'http://127.0.0.1:8000',
-    'http://127.0.0.1:8001',
-    'http://localhost:8000',
-    'http://localhost:8001',
-    'http://192.168.1.66:8000',
-    'http://192.168.1.66:8001',
-]
+CSRF_TRUSTED_ORIGINS = _env_csv(
+    'DJANGO_CSRF_TRUSTED_ORIGINS',
+    'http://127.0.0.1:8000,http://127.0.0.1:8001,http://localhost:8000,http://localhost:8001,http://192.168.1.66:8000,http://192.168.1.66:8001',
+)
 
 
 # Application definition
@@ -111,7 +114,7 @@ WSGI_APPLICATION = 'hrm_project.wsgi.application'
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": "HRM_db.sqlite3",
+        "NAME": os.getenv('DJANGO_DB_NAME', str(BASE_DIR / 'HRM_db.sqlite3')),
     }
 }
 
@@ -149,7 +152,10 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = os.getenv('DJANGO_STATIC_URL', '/backend-static/')
+STATIC_ROOT = os.getenv('DJANGO_STATIC_ROOT', str(BASE_DIR / 'staticfiles'))
+MEDIA_URL = os.getenv('DJANGO_MEDIA_URL', '/backend-media/')
+MEDIA_ROOT = os.getenv('DJANGO_MEDIA_ROOT', str(BASE_DIR / 'media'))
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -180,16 +186,26 @@ CLIENT_SCHEMA_AUTO_PROVISION = True
 CLIENT_SCHEMA_MIGRATE_DATABASE = 'default'
 
 
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'miral.g.evenmore@gmail.com'
-EMAIL_HOST_PASSWORD = 'ekmukaijivcuyfka'
-DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
+EMAIL_USE_TLS = _env_bool('EMAIL_USE_TLS', True)
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER or 'no-reply@example.com')
+
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', not DEBUG)
+CSRF_COOKIE_SECURE = _env_bool('CSRF_COOKIE_SECURE', not DEBUG)
+SECURE_SSL_REDIRECT = _env_bool('SECURE_SSL_REDIRECT', False)
+
 FRONTEND_BASE_URLS = [
     url.strip().rstrip('/')
-    for url in os.getenv('FRONTEND_BASE_URLS', 'http://127.0.0.1:8001,http://192.168.1.66:8001').split(',')
+    for url in os.getenv(
+        'FRONTEND_BASE_URLS',
+        'http://127.0.0.1:8001,http://192.168.1.66:8001'
+    ).split(',')
     if url.strip()
 ]
 FRONTEND_BASE_URL = os.getenv(
