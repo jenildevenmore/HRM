@@ -46,7 +46,7 @@ ALLOWED_HOSTS = ['*']
 
 CSRF_TRUSTED_ORIGINS = _env_csv(
     'DJANGO_CSRF_TRUSTED_ORIGINS',
-    'http://127.0.0.1:8000,http://127.0.0.1:8001,http://localhost:8000,http://localhost:8001,http://192.168.1.66:8000,http://192.168.1.66:8001',
+    'http://127.0.0.1:8000,http://127.0.0.1:8001,http://localhost:8000,http://localhost:8001,http://192.168.1.66:8000,http://192.168.1.66:8001,https://jenilevenmore.pythonanywhere.com'
 )
 
 
@@ -214,7 +214,7 @@ USE_X_FORWARDED_HOST = True
 SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', not DEBUG)
 CSRF_COOKIE_SECURE = _env_bool('CSRF_COOKIE_SECURE', not DEBUG)
 SECURE_SSL_REDIRECT = _env_bool('SECURE_SSL_REDIRECT', False)
-BACKEND_API_URL = os.getenv('BACKEND_API_URL', 'http://127.0.0.1:8000')
+BACKEND_API_URL = os.getenv('BACKEND_API_URL', 'https://jenilevenmore.pythonanywhere.com')
 
 FRONTEND_BASE_URLS = [
     url.strip().rstrip('/')

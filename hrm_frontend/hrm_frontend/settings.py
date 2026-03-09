@@ -68,7 +68,7 @@ MEDIA_ROOT = BASE_DIR / 'media'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Backend API base URL
-BACKEND_API_URL = os.getenv('BACKEND_API_URL', 'http://127.0.0.1:8000')
+BACKEND_API_URL = os.getenv('BACKEND_API_URL', 'https://jenilevenmore.pythonanywhere.com')
 
 SESSION_COOKIE_SECURE = _env_bool('FRONTEND_SESSION_COOKIE_SECURE', not DEBUG)
 CSRF_COOKIE_SECURE = _env_bool('FRONTEND_CSRF_COOKIE_SECURE', not DEBUG)
