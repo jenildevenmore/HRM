@@ -45,6 +45,7 @@ DEBUG = _env_bool('DJANGO_DEBUG', True)
 ALLOWED_HOSTS = _env_csv(
     'DJANGO_ALLOWED_HOSTS',
     '127.0.0.1,localhost,192.168.1.66',
+    '*'
 )
 
 CSRF_TRUSTED_ORIGINS = _env_csv(
