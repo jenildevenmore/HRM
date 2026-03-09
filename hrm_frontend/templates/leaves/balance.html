@@ -15,7 +15,9 @@
 </div>
 
 <div class="permission-group-tabs" style="margin-bottom:20px;">
+    {% if role in ['superadmin', 'admin'] %}
     <a href="{{ url('leave_type_list') }}" class="permission-group-tab-btn">Leave Types</a>
+    {% endif %}
     <a href="{{ url('leave_list') }}" class="permission-group-tab-btn">Applications</a>
     <a href="{{ url('leave_balance') }}" class="permission-group-tab-btn active">Leave Balance</a>
 </div>

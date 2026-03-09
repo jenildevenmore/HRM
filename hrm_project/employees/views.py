@@ -78,16 +78,25 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             return
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
-        frontend_base_url = getattr(settings, 'FRONTEND_BASE_URL', 'http://127.0.0.1:8001').rstrip('/')
-        reset_link = f'{frontend_base_url}/reset-password/?uid={uid}&token={token}'
+        base_urls = getattr(settings, 'FRONTEND_BASE_URLS', None) or [
+            getattr(settings, 'FRONTEND_BASE_URL', 'http://127.0.0.1:8001')
+        ]
+        reset_links = [
+            f"{str(base_url).rstrip('/')}/reset-password/?uid={uid}&token={token}"
+            for base_url in base_urls
+            if str(base_url).strip()
+        ]
+        if not reset_links:
+            reset_links = [f'http://127.0.0.1:8001/reset-password/?uid={uid}&token={token}']
+        links_text = '\n'.join(reset_links)
 
         subject = 'Set your HRM account password'
         message = (
             f'Hi {user.first_name or user.username},\n\n'
             'Your employee account was created.\n'
             f'Username: {user.username}\n\n'
-            'Please set your password using this secure link:\n'
-            f'{reset_link}\n\n'
+            'Please set your password using one of these links:\n'
+            f'{links_text}\n\n'
             'If you did not expect this, please contact your HR admin.'
         )
         send_mail(

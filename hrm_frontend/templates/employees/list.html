@@ -27,6 +27,43 @@
     </form>
 </div>
 
+<div class="card" style="margin-bottom:20px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <h3 style="margin:0;">{{ 'Current Week Leave Report' if can_view_full_leave_report else 'My Leave This Week' }}</h3>
+        <span class="badge badge-text">{{ week_start }} to {{ week_end }}</span>
+    </div>
+    {% if current_week_leave_rows %}
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    {% if can_view_full_leave_report %}<th>Employee</th>{% endif %}
+                    <th>Leave Type</th>
+                    <th>Start Date</th>
+                    <th>End Date</th>
+                    <th>Days</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for lv in current_week_leave_rows %}
+                <tr>
+                    {% if can_view_full_leave_report %}<td>{{ lv.employee_name }}</td>{% endif %}
+                    <td>{{ lv.leave_type }}</td>
+                    <td>{{ lv.start_date }}</td>
+                    <td>{{ lv.end_date }}</td>
+                    <td>{{ lv.total_days }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state" style="padding:24px 10px;">
+        <p>No approved leave in current week.</p>
+    </div>
+    {% endif %}
+</div>
+
 {% if employees %}
 <div class="table-wrapper">
     <table>

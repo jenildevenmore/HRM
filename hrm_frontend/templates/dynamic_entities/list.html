@@ -14,14 +14,33 @@
         <h1 class="page-title">{{ dynamic_model.name }}</h1>
         <p class="page-subtitle">Manage {{ dynamic_model.name }} records.</p>
     </div>
-    <div style="display:flex; gap:8px;">
+    <div class="attendance-actions">
+        {% if dynamic_model.slug == 'attendance' and can_view_all_attendance %}
+        <form id="attendanceFilterForm" class="attendance-filter-inline" method="get" action="{{ url('dynamic_entity_list', args=[dynamic_model.id]) }}">
+            <select id="attendanceEmployeeFilter" name="employee" aria-label="Filter attendance by employee">
+                <option value="">All Employees (Today)</option>
+                {% for emp in attendance_employees %}
+                <option value="{{ emp.id }}" {% if selected_employee_id == (emp.id|string) %}selected{% endif %}>
+                    {{ emp.first_name }} {{ emp.last_name }}
+                </option>
+                {% endfor %}
+            </select>
+        </form>
+        {% endif %}
         <!-- {% if dynamic_model.slug == 'attendance' %}
         <button type="button" class="btn btn-secondary" onclick="openPunchModal()">Punch In / Punch Out</button>
         {% endif %} -->
         <a href="{{ url('dynamic_entity_create', args=[dynamic_model.id]) }}" class="btn btn-primary">+ Add {{ dynamic_model.name }}</a>
-        <a href="{{ url('dynamic_field_list', args=[dynamic_model.id]) }}" class="btn btn-secondary">Manage Fields</a>
     </div>
 </div>
+
+{% if dynamic_model.slug == 'attendance' and attendance_summary %}
+<div class="card" style="margin-bottom:14px;">
+    <strong>Today ({{ attendance_summary.date }})</strong>
+    <span style="margin-left:14px;color:var(--success);">Present: {{ attendance_summary.present }}</span>
+    <span style="margin-left:14px;color:var(--error);">Absent: {{ attendance_summary.absent }}</span>
+</div>
+{% endif %}
 
 {% if records %}
 <div class="table-wrapper">
@@ -29,6 +48,9 @@
         <thead>
             <tr>
                 <th>#</th>
+                {% if dynamic_model.slug == 'attendance' %}
+                <th>Employee</th>
+                {% endif %}
                 {% for f in fields %}
                 <th>{{ f.name }}</th>
                 {% endfor %}
@@ -42,6 +64,9 @@
             {% for r in records %}
             <tr>
                 <td>{{ r.id }}</td>
+                {% if dynamic_model.slug == 'attendance' %}
+                <td>{{ r.employee_name or '-' }}</td>
+                {% endif %}
                 {% for f in fields %}
                 {% set cell_value = r.data.get(f.key, '-') %}
                 <td>
@@ -129,6 +154,15 @@ function openPunchModal() {
 function closePunchModal() {
     document.getElementById('punchModal').style.display = 'none';
 }
+document.addEventListener('DOMContentLoaded', function () {
+    var employeeFilter = document.getElementById('attendanceEmployeeFilter');
+    var filterForm = document.getElementById('attendanceFilterForm');
+    if (employeeFilter && filterForm) {
+        employeeFilter.addEventListener('change', function () {
+            filterForm.submit();
+        });
+    }
+});
 </script>
 {% endblock %}
 {% endif %}

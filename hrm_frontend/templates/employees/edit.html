@@ -58,6 +58,24 @@
             </select>
         </div>
 
+        {% if can_manage_permission_group %}
+        <div class="form-group">
+            <label>Permission Group</label>
+            <input type="hidden" name="account_profile_id" value="{{ account_profile_id }}">
+            {% if account_profile_id %}
+            {% set selected_group_value = form.data.get('permission_group') if form and form.data else selected_permission_group %}
+            <select name="permission_group">
+                <option value="">No Group</option>
+                {% for group in group_options %}
+                <option value="{{ group.id }}" {% if selected_group_value|string == group.id|string %}selected{% endif %}>{{ group.name }}</option>
+                {% endfor %}
+            </select>
+            {% else %}
+            <div class="detail-value">No linked user account found for this employee email. Group assignment is unavailable.</div>
+            {% endif %}
+        </div>
+        {% endif %}
+
         <div class="form-row">
             <div class="form-group">
                 <label>Assigned HR</label>
@@ -176,4 +194,36 @@
     </form>
 </div>
 
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var groupSelect = document.querySelector('select[name="permission_group"]');
+    var roleSelect = document.querySelector('select[name="role"]');
+    if (!groupSelect || !roleSelect) {
+        return;
+    }
+
+    function inferRoleFromGroupName(name) {
+        var text = String(name || '').toLowerCase();
+        if (!text) return '';
+        if (text.indexOf('manager') !== -1) return 'manager';
+        if (/\bhr\b/.test(text) || text.indexOf('human resource') !== -1) return 'hr';
+        if (text.indexOf('employee') !== -1) return 'employee';
+        return '';
+    }
+
+    function syncRoleFromGroup() {
+        var selected = groupSelect.options[groupSelect.selectedIndex];
+        if (!selected) return;
+        var inferred = inferRoleFromGroupName(selected.textContent || '');
+        if (inferred) {
+            roleSelect.value = inferred;
+        }
+    }
+
+    groupSelect.addEventListener('change', syncRoleFromGroup);
+});
+</script>
 {% endblock %}

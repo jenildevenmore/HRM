@@ -17,6 +17,10 @@ class ClientViewSet(viewsets.ModelViewSet):
             return True
         profile = getattr(user, 'profile', None)
         return bool(profile and profile.role == 'superadmin')
+
+    def _is_client_admin(self):
+        profile = getattr(self.request.user, 'profile', None)
+        return bool(profile and profile.role == 'admin')
     
     def get_queryset(self):
         """Filter clients by user role"""
@@ -60,4 +64,35 @@ class ClientViewSet(viewsets.ModelViewSet):
         """Public client list for client-first login screen."""
         clients = Client.objects.order_by('name').values('id', 'name', 'domain')
         return Response(list(clients))
+
+    @action(detail=False, methods=['get', 'post'], url_path='settings')
+    def app_settings(self, request):
+        user = request.user
+        profile = getattr(user, 'profile', None)
+
+        if self._is_superadmin():
+            client_id = request.query_params.get('client_id') or request.data.get('client_id')
+            if not client_id:
+                return Response({'client_id': 'This field is required for superadmin.'}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                client = Client.objects.get(id=client_id)
+            except Client.DoesNotExist:
+                return Response({'detail': 'Client not found.'}, status=status.HTTP_404_NOT_FOUND)
+        elif self._is_client_admin() and profile and profile.client_id:
+            client = profile.client
+        else:
+            return Response({'detail': 'Only superadmin or client admin can manage settings.'}, status=status.HTTP_403_FORBIDDEN)
+
+        if request.method.lower() == 'get':
+            return Response(client.app_settings or {}, status=status.HTTP_200_OK)
+
+        incoming_settings = request.data.get('app_settings', {})
+        if incoming_settings is None:
+            incoming_settings = {}
+        if not isinstance(incoming_settings, dict):
+            return Response({'app_settings': 'app_settings must be an object.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        client.app_settings = incoming_settings
+        client.save(update_fields=['app_settings'])
+        return Response(client.app_settings, status=status.HTTP_200_OK)
 

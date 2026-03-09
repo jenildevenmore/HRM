@@ -3,16 +3,106 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  {% set brand_cfg = app_settings.brand or {} %}
+  {% set theme_cfg = app_settings.theme or {} %}
+  {% set ui_cfg = app_settings.ui or {} %}
+  {% set layout_dir = ui_cfg.layout_direction or 'ltr' %}
+  {% set sidebar_variant = ui_cfg.sidebar_variant or 'inset' %}
+  {% set sidebar_style = ui_cfg.sidebar_style or 'plain' %}
+  {% set theme_mode = ui_cfg.theme_mode or 'dark' %}
+  {% set font_family = ui_cfg.font_family or 'inter' %}
+  {% set font_family_custom = ui_cfg.font_family_custom or '' %}
+  {% set font_size_base = ui_cfg.font_size_base or 14 %}
   <title>{% block title %}HRM System{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Poppins:wght@300;400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Roboto:wght@400;500;700&family=Montserrat:wght@400;500;600;700;800&family=Nunito:wght@400;500;600;700;800&family=Work+Sans:wght@400;500;600;700;800&family=Lato:wght@400;700;900&family=Open+Sans:wght@400;600;700;800&family=Source+Sans+3:wght@400;500;600;700;800&family=Raleway:wght@400;500;600;700;800&family=Ubuntu:wght@400;500;700&family=Merriweather:wght@400;700;900&family=Playfair+Display:wght@400;600;700;800&family=Fira+Sans:wght@400;500;600;700&family=DM+Sans:wght@400;500;700&family=Rubik:wght@400;500;700&family=Karla:wght@400;500;700&display=swap" rel="stylesheet">
+  {% if brand_cfg.favicon_url %}
+  <link rel="icon" href="{{ brand_cfg.favicon_url }}">
+  {% endif %}
   <link href="{{ static('css/style.css') }}" rel="stylesheet">
+  <style>
+    :root {
+      --accent: {{ theme_cfg.primary_color or '#6c63ff' }};
+      --accent-2: {{ theme_cfg.secondary_color or '#a78bfa' }};
+      --accent-grad: linear-gradient(135deg, {{ theme_cfg.primary_color or '#6c63ff' }} 0%, {{ theme_cfg.secondary_color or '#a78bfa' }} 100%);
+      --bg: {{ theme_cfg.background_color or '#0d0d1a' }};
+      --font-size-base: {{ font_size_base }}px;
+      --font-main:
+        {% if font_family_custom %}{{ font_family_custom }}, sans-serif
+        {% elif font_family == 'poppins' %}'Poppins', sans-serif
+        {% elif font_family == 'manrope' %}'Manrope', sans-serif
+        {% elif font_family == 'outfit' %}'Outfit', sans-serif
+        {% elif font_family == 'roboto' %}'Roboto', sans-serif
+        {% elif font_family == 'montserrat' %}'Montserrat', sans-serif
+        {% elif font_family == 'nunito' %}'Nunito', sans-serif
+        {% elif font_family == 'worksans' %}'Work Sans', sans-serif
+        {% elif font_family == 'lato' %}'Lato', sans-serif
+        {% elif font_family == 'opensans' %}'Open Sans', sans-serif
+        {% elif font_family == 'sourcesans' %}'Source Sans 3', sans-serif
+        {% elif font_family == 'raleway' %}'Raleway', sans-serif
+        {% elif font_family == 'ubuntu' %}'Ubuntu', sans-serif
+        {% elif font_family == 'merriweather' %}'Merriweather', serif
+        {% elif font_family == 'playfair' %}'Playfair Display', serif
+        {% elif font_family == 'firasans' %}'Fira Sans', sans-serif
+        {% elif font_family == 'dmsans' %}'DM Sans', sans-serif
+        {% elif font_family == 'rubik' %}'Rubik', sans-serif
+        {% elif font_family == 'karla' %}'Karla', sans-serif
+        {% else %}'Inter', system-ui, sans-serif
+        {% endif %};
+    }
+    body { font-family: var(--font-main) !important; font-size: var(--font-size-base); }
+    {% if theme_mode == 'light' %}
+    :root {
+      --bg: #f4f5fb;
+      --bg-2: #ffffff;
+      --bg-card: rgba(255,255,255,0.95);
+      --bg-card-h: rgba(255,255,255,1);
+      --border: rgba(20,24,40,0.12);
+      --text: #111827;
+      --text-muted: #5b647a;
+      --text-dim: #7a8298;
+    }
+    {% elif theme_mode == 'system' %}
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f4f5fb;
+        --bg-2: #ffffff;
+        --bg-card: rgba(255,255,255,0.95);
+        --bg-card-h: rgba(255,255,255,1);
+        --border: rgba(20,24,40,0.12);
+        --text: #111827;
+        --text-muted: #5b647a;
+        --text-dim: #7a8298;
+      }
+    }
+    {% endif %}
+    body.layout-rtl .sidebar { left: auto; right: 0; }
+    body.layout-rtl .main-content { margin-left: 0; margin-right: var(--sidebar-w); }
+    body.layout-rtl .sidebar-logo,
+    body.layout-rtl .nav-link { direction: rtl; }
+    body.sidebar-variant-floating .sidebar {
+      top: 14px; left: 14px; height: calc(100vh - 28px);
+      border-radius: 16px; border: 1px solid var(--border);
+    }
+    body.layout-rtl.sidebar-variant-floating .sidebar { left: auto; right: 14px; }
+    body.sidebar-variant-floating .main-content { margin-left: calc(var(--sidebar-w) + 18px); }
+    body.layout-rtl.sidebar-variant-floating .main-content { margin-left: 0; margin-right: calc(var(--sidebar-w) + 18px); }
+    body.sidebar-variant-minimal { --sidebar-w: 220px; }
+    body.sidebar-style-colored .sidebar { background: color-mix(in srgb, var(--accent) 22%, #0f1021 78%); }
+    body.sidebar-style-gradient .sidebar { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 18%, #0f1021 82%) 0%, #0d0d1a 100%); }
+  </style>
 </head>
-<body>
+<body class="layout-{{ layout_dir }} sidebar-variant-{{ sidebar_variant }} sidebar-style-{{ sidebar_style }} theme-mode-{{ theme_mode }}">
 <div class="layout">
   <aside class="sidebar">
     <div class="sidebar-logo">
+      {% if brand_cfg.logo_url %}
+      <img src="{{ brand_cfg.logo_url }}" alt="Logo" style="width:40px;height:40px;border-radius:10px;object-fit:cover;flex-shrink:0;">
+      {% else %}
       <div class="logo-icon">H</div>
-      <span class="logo-text">HRM System</span>
+      {% endif %}
+      <span class="logo-text">{{ brand_cfg.brand_name or 'HRM System' }}</span>
     </div>
 
     <span class="nav-section-label">Main</span>
@@ -36,6 +126,22 @@
        class="nav-link {% if 'leave' in request.resolver_match.url_name %}active{% endif %}">
       <span class="nav-icon">LV</span>
       <span class="nav-label">Leaves</span>
+    </a>
+    {% endif %}
+
+    {% if role == 'superadmin' or ('holidays' in enabled_addons and (role == 'admin' or 'holidays.view' in module_permissions)) %}
+    <a href="{{ url('holiday_list') }}"
+       class="nav-link {% if 'holiday' in request.resolver_match.url_name %}active{% endif %}">
+      <span class="nav-icon">HD</span>
+      <span class="nav-label">Holidays</span>
+    </a>
+    {% endif %}
+
+    {% if role == 'superadmin' or 'policy' in enabled_addons %}
+    <a href="{{ url('policy_page') }}"
+       class="nav-link {% if 'policy' in request.resolver_match.url_name %}active{% endif %}">
+      <span class="nav-icon">PL</span>
+      <span class="nav-label">Policy</span>
     </a>
     {% endif %}
 
@@ -78,6 +184,14 @@
        class="nav-link {% if 'permission' in request.resolver_match.url_name %}active{% endif %}">
       <span class="nav-icon">PM</span>
       <span class="nav-label">Permissions</span>
+    </a>
+    {% endif %}
+
+    {% if role == 'superadmin' or (role == 'admin' and 'settings' in enabled_addons) %}
+    <a href="{{ url('settings_page') }}"
+       class="nav-link {% if 'settings' in request.resolver_match.url_name %}active{% endif %}">
+      <span class="nav-icon">ST</span>
+      <span class="nav-label">Settings</span>
     </a>
     {% endif %}
 

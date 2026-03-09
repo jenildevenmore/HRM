@@ -29,7 +29,12 @@
         {% if is_attendance %}
         <div class="form-group">
             <label>Employee ID *</label>
+            {% if attendance_locked_employee_id %}
+            <input type="number" name="employee_id" value="{{ attendance_locked_employee_id }}" readonly>
+            <small style="color:var(--text-muted);">Attendance will be created for your own employee profile.</small>
+            {% else %}
             <input type="number" name="employee_id" required>
+            {% endif %}
         </div>
         <div class="form-group">
             <label>Shift (optional)</label>

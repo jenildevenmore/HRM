@@ -4,12 +4,14 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 import re
 from .models import UserProfile, ClientPermissionGroup
 from clients.models import Client
+from employees.models import Employee
 
 
 STATIC_PERMISSION_KEYS = {
     'employees.view', 'employees.create', 'employees.edit', 'employees.delete',
     'attendance.view', 'attendance.create', 'attendance.edit', 'attendance.delete',
     'leaves.view', 'leaves.create', 'leaves.edit', 'leaves.delete', 'leaves.approve',
+    'holidays.view', 'holidays.create', 'holidays.edit', 'holidays.delete',
     'custom_fields.view', 'custom_fields.create', 'custom_fields.edit', 'custom_fields.delete',
     'dynamic_models.view', 'dynamic_models.create', 'dynamic_models.edit', 'dynamic_models.delete',
 }
@@ -18,9 +20,39 @@ LEGACY_PERMISSION_MAP = {
     'employees': ['employees.view', 'employees.create', 'employees.edit', 'employees.delete'],
     'attendance': ['attendance.view', 'attendance.create', 'attendance.edit', 'attendance.delete'],
     'leaves': ['leaves.view', 'leaves.create', 'leaves.edit', 'leaves.delete', 'leaves.approve'],
+    'holidays': ['holidays.view', 'holidays.create', 'holidays.edit', 'holidays.delete'],
     'custom_fields': ['custom_fields.view', 'custom_fields.create', 'custom_fields.edit', 'custom_fields.delete'],
     'dynamic_models': ['dynamic_models.view', 'dynamic_models.create', 'dynamic_models.edit', 'dynamic_models.delete'],
 }
+
+ALLOWED_ADDON_KEYS = {
+    'custom_fields',
+    'dynamic_models',
+    'attendance',
+    'attendance_location',
+    'attendance_selfie_location',
+    'leave_management',
+    'holidays',
+    'settings',
+    'policy',
+}
+
+
+def normalize_addon_keys(values):
+    cleaned = []
+    for item in values or []:
+        key = str(item).strip()
+        if not key:
+            continue
+        if key not in ALLOWED_ADDON_KEYS:
+            raise serializers.ValidationError(f'Invalid add-on: {key}')
+        if key not in cleaned:
+            cleaned.append(key)
+    if 'attendance_selfie_location' in cleaned and 'attendance_location' not in cleaned:
+        cleaned.append('attendance_location')
+    if ('attendance_location' in cleaned or 'attendance_selfie_location' in cleaned) and 'attendance' not in cleaned:
+        cleaned.append('attendance')
+    return cleaned
 
 
 def normalize_permission_keys(values):
@@ -55,18 +87,25 @@ class UserProfileSerializer(serializers.ModelSerializer):
         child=serializers.CharField(),
         required=False,
     )
+    enabled_addons = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+    )
     permission_group_name = serializers.CharField(source='permission_group.name', read_only=True)
     
     class Meta:
         model = UserProfile
         fields = (
             'id', 'user', 'client', 'role', 'role_display',
-            'module_permissions', 'permission_group', 'permission_group_name', 'created_at'
+            'module_permissions', 'enabled_addons', 'permission_group', 'permission_group_name', 'created_at'
         )
         read_only_fields = ('id', 'created_at')
 
     def validate_module_permissions(self, value):
         return normalize_permission_keys(value)
+
+    def validate_enabled_addons(self, value):
+        return normalize_addon_keys(value)
 
 
 class ClientPermissionGroupSerializer(serializers.ModelSerializer):
@@ -78,15 +117,22 @@ class ClientPermissionGroupSerializer(serializers.ModelSerializer):
         child=serializers.CharField(),
         required=False,
     )
+    enabled_addons = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+    )
     user_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = ClientPermissionGroup
-        fields = ('id', 'client', 'name', 'module_permissions', 'user_count', 'created_at', 'updated_at')
+        fields = ('id', 'client', 'name', 'module_permissions', 'enabled_addons', 'user_count', 'created_at', 'updated_at')
         read_only_fields = ('id', 'created_at', 'updated_at')
 
     def validate_module_permissions(self, value):
         return normalize_permission_keys(value)
+
+    def validate_enabled_addons(self, value):
+        return normalize_addon_keys(value)
 
     def validate(self, attrs):
         request = self.context.get('request')
@@ -127,7 +173,11 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                 data['role'] = 'superadmin'
                 data['user_id'] = user.id
                 data['username'] = user.username
+                data['user_email'] = user.email
                 data['module_permissions'] = list(STATIC_PERMISSION_KEYS)
+                data['enabled_addons'] = list(ALLOWED_ADDON_KEYS)
+                data['employee_id'] = None
+                data['employee_role'] = ''
                 return data
 
             # Client-admin login requires a selected client.
@@ -146,12 +196,30 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             data['role'] = profile.role
             data['user_id'] = user.id
             data['username'] = user.username
+            data['user_email'] = user.email
             group_permissions = normalize_permission_keys(profile.permission_group.module_permissions or []) if profile.permission_group else []
+            client_addons = normalize_addon_keys((profile.client.enabled_addons if profile.client else []) or [])
+            group_addons = normalize_addon_keys(profile.permission_group.enabled_addons or []) if profile.permission_group else []
+            user_addons = normalize_addon_keys(profile.enabled_addons or [])
             data['module_permissions'] = (
                 list(STATIC_PERMISSION_KEYS)
                 if profile.role == 'admin' else (group_permissions or normalize_permission_keys(profile.module_permissions or []))
             )
+            if profile.role == 'admin':
+                data['enabled_addons'] = client_addons
+            elif user_addons:
+                data['enabled_addons'] = [a for a in user_addons if a in client_addons]
+            elif group_addons:
+                data['enabled_addons'] = [a for a in group_addons if a in client_addons]
+            else:
+                data['enabled_addons'] = client_addons
             data['permission_group'] = profile.permission_group_id
+            employee_row = Employee.objects.filter(
+                client_id=profile.client_id,
+                email__iexact=(user.email or ''),
+            ).only('id', 'role').first()
+            data['employee_id'] = employee_row.id if employee_row else None
+            data['employee_role'] = employee_row.role if employee_row else ''
         except UserProfile.DoesNotExist:
             # Allow Django superusers even if profile row is missing.
             if login_mode == 'superadmin' and user.is_superuser:
@@ -159,7 +227,11 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                 data['role'] = 'superadmin'
                 data['user_id'] = user.id
                 data['username'] = user.username
+                data['user_email'] = user.email
                 data['module_permissions'] = list(STATIC_PERMISSION_KEYS)
+                data['enabled_addons'] = list(ALLOWED_ADDON_KEYS)
+                data['employee_id'] = None
+                data['employee_role'] = ''
                 return data
             raise serializers.ValidationError({'detail': 'User profile not found.'})
         

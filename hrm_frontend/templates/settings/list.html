@@ -1,0 +1,790 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - HRM System{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <a href="{{ url('dashboard') }}">Dashboard</a>
+    <span class="sep">></span>
+    <span class="current">Settings</span>
+</div>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Settings</h1>
+        <p class="page-subtitle">Manage brand, company, email and payment configuration.</p>
+    </div>
+</div>
+
+{% if errors %}
+<ul class="error-list">
+    {% for err in errors %}<li>{{ err }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<div class="card" style="display:grid;grid-template-columns:290px 1fr;gap:18px;">
+    <div>
+        <button type="button" class="permission-group-tab-btn settings-tab active" data-settings-tab="brand" style="width:100%;text-align:left;">Brand Settings</button>
+        <button type="button" class="permission-group-tab-btn settings-tab" data-settings-tab="system" style="width:100%;text-align:left;margin-top:8px;">System Settings</button>
+        <button type="button" class="permission-group-tab-btn settings-tab" data-settings-tab="company" style="width:100%;text-align:left;margin-top:8px;">Company Settings</button>
+        <button type="button" class="permission-group-tab-btn settings-tab" data-settings-tab="currency" style="width:100%;text-align:left;margin-top:8px;">Currency Settings</button>
+        <button type="button" class="permission-group-tab-btn settings-tab" data-settings-tab="email" style="width:100%;text-align:left;margin-top:8px;">Email Settings</button>
+        <button type="button" class="permission-group-tab-btn settings-tab" data-settings-tab="email_notifications" style="width:100%;text-align:left;margin-top:8px;">Email Notification Settings</button>
+        <button type="button" class="permission-group-tab-btn settings-tab" data-settings-tab="stripe" style="width:100%;text-align:left;margin-top:8px;">Stripe Settings</button>
+        <button type="button" class="permission-group-tab-btn settings-tab" data-settings-tab="paypal" style="width:100%;text-align:left;margin-top:8px;">PayPal Settings</button>
+    </div>
+
+    <form method="post" id="settingsForm" enctype="multipart/form-data" data-edit-mode="{{ '1' if is_edit_mode else '0' }}">
+        {{ csrf_input }}
+        <div class="form-actions" style="justify-content:flex-end;margin-bottom:10px;">
+            <button type="button" id="settingsEditBtn" class="btn btn-secondary">Edit</button>
+            <button type="button" id="settingsCancelBtn" class="btn btn-secondary is-hidden">Cancel</button>
+        </div>
+
+        <div class="settings-panel active" data-settings-panel="brand">
+            <h3 class="section-title">Brand Settings</h3>
+            <div class="form-group">
+                <label>Brand Name</label>
+                <input type="text" name="brand_name" value="{{ (settings_data.brand.brand_name if settings_data.brand else '') or '' }}">
+            </div>
+            <div class="form-group">
+                <label>Tagline</label>
+                <input type="text" name="tagline" value="{{ (settings_data.brand.tagline if settings_data.brand else '') or '' }}">
+            </div>
+            <div class="form-group">
+                <label>Logo URL</label>
+                <input type="url" name="logo_url" placeholder="https://example.com/logo.png" value="{{ (settings_data.brand.logo_url if settings_data.brand else '') or '' }}">
+            </div>
+            {% if settings_data.brand and settings_data.brand.logo_url %}
+            <div class="form-group">
+                <label>Current Logo</label>
+                <div style="display:flex;align-items:center;gap:12px;">
+                    <img src="{{ settings_data.brand.logo_url }}" alt="Current logo" style="width:48px;height:48px;border-radius:10px;object-fit:cover;border:1px solid var(--border);">
+                    <label class="addon-item" style="max-width:240px;">
+                        <input type="checkbox" name="remove_logo">
+                        <span>Remove logo</span>
+                    </label>
+                </div>
+            </div>
+            {% endif %}
+            <div class="form-group">
+                <label>Logo File (Local Upload)</label>
+                <input type="file" name="logo_file" accept="image/*">
+            </div>
+            <div class="form-group">
+                <label>Favicon URL</label>
+                <input type="url" name="favicon_url" placeholder="https://example.com/favicon.ico" value="{{ (settings_data.brand.favicon_url if settings_data.brand else '') or '' }}">
+            </div>
+            {% if settings_data.brand and settings_data.brand.favicon_url %}
+            <div class="form-group">
+                <label>Current Favicon</label>
+                <div style="display:flex;align-items:center;gap:12px;">
+                    <img src="{{ settings_data.brand.favicon_url }}" alt="Current favicon" style="width:24px;height:24px;border-radius:6px;object-fit:cover;border:1px solid var(--border);">
+                    <label class="addon-item" style="max-width:240px;">
+                        <input type="checkbox" name="remove_favicon">
+                        <span>Remove favicon</span>
+                    </label>
+                </div>
+            </div>
+            {% endif %}
+            <div class="form-group">
+                <label>Favicon File (Local Upload)</label>
+                <input type="file" name="favicon_file" accept=".ico,image/png,image/x-icon,image/svg+xml">
+            </div>
+            <div class="form-row">
+                {% set theme = settings_data.theme or {} %}
+                <div class="form-group">
+                    <label>Primary Color</label>
+                    <button type="button" class="settings-color-trigger" data-picker-target="primaryColor">
+                        <span class="settings-color-dot" id="primaryColorDot"></span>
+                        <span>Select primary color</span>
+                    </button>
+                    <input type="color" id="primaryColor" class="settings-color-picker-hidden" name="primary_color" value="{{ theme.primary_color or '#6c63ff' }}">
+                </div>
+                <div class="form-group">
+                    <label>Secondary Color</label>
+                    <button type="button" class="settings-color-trigger" data-picker-target="secondaryColor">
+                        <span class="settings-color-dot" id="secondaryColorDot"></span>
+                        <span>Select secondary color</span>
+                    </button>
+                    <input type="color" id="secondaryColor" class="settings-color-picker-hidden" name="secondary_color" value="{{ theme.secondary_color or '#a78bfa' }}">
+                </div>
+                <div class="form-group">
+                    <label>Background Color</label>
+                    <button type="button" class="settings-color-trigger" data-picker-target="backgroundColor">
+                        <span class="settings-color-dot" id="backgroundColorDot"></span>
+                        <span>Select background color</span>
+                    </button>
+                    <input type="color" id="backgroundColor" class="settings-color-picker-hidden" name="background_color" value="{{ theme.background_color or '#0d0d1a' }}">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Client Color Test</label>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <button type="button" class="btn btn-secondary btn-sm settings-color-preset" data-p="#6c63ff" data-s="#a78bfa" data-b="#0d0d1a">Indigo</button>
+                        <button type="button" class="btn btn-secondary btn-sm settings-color-preset" data-p="#10b981" data-s="#34d399" data-b="#052218">Emerald</button>
+                        <button type="button" class="btn btn-secondary btn-sm settings-color-preset" data-p="#0ea5e9" data-s="#38bdf8" data-b="#061826">Sky</button>
+                        <button type="button" class="btn btn-secondary btn-sm settings-color-preset" data-p="#ef4444" data-s="#f97316" data-b="#250909">Sunset</button>
+                    </div>
+                </div>
+            </div>
+            {% set ui = settings_data.ui or {} %}
+            <div class="form-section" style="margin-top:12px;">
+                <h3 class="section-title">Sidebar</h3>
+                <div class="form-group">
+                    <label>Sidebar Variant</label>
+                    <div class="settings-choice-row">
+                        <input id="sidebar_variant_inset" type="radio" name="sidebar_variant" value="inset" {% if (ui.sidebar_variant or 'inset') == 'inset' %}checked{% endif %}>
+                        <label class="settings-choice" for="sidebar_variant_inset">Inset</label>
+                        <input id="sidebar_variant_floating" type="radio" name="sidebar_variant" value="floating" {% if ui.sidebar_variant == 'floating' %}checked{% endif %}>
+                        <label class="settings-choice" for="sidebar_variant_floating">Floating</label>
+                        <input id="sidebar_variant_minimal" type="radio" name="sidebar_variant" value="minimal" {% if ui.sidebar_variant == 'minimal' %}checked{% endif %}>
+                        <label class="settings-choice" for="sidebar_variant_minimal">Minimal</label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Sidebar Style</label>
+                    <div class="settings-choice-row">
+                        <input id="sidebar_style_plain" type="radio" name="sidebar_style" value="plain" {% if (ui.sidebar_style or 'plain') == 'plain' %}checked{% endif %}>
+                        <label class="settings-choice" for="sidebar_style_plain">Plain</label>
+                        <input id="sidebar_style_colored" type="radio" name="sidebar_style" value="colored" {% if ui.sidebar_style == 'colored' %}checked{% endif %}>
+                        <label class="settings-choice" for="sidebar_style_colored">Colored</label>
+                        <input id="sidebar_style_gradient" type="radio" name="sidebar_style" value="gradient" {% if ui.sidebar_style == 'gradient' %}checked{% endif %}>
+                        <label class="settings-choice" for="sidebar_style_gradient">Gradient</label>
+                    </div>
+                </div>
+                <h3 class="section-title" style="margin-top:8px;">Layout</h3>
+                <div class="form-group">
+                    <label>Layout Direction</label>
+                    <div class="settings-choice-row">
+                        <input id="layout_direction_ltr" type="radio" name="layout_direction" value="ltr" {% if (ui.layout_direction or 'ltr') == 'ltr' %}checked{% endif %}>
+                        <label class="settings-choice" for="layout_direction_ltr">Left-to-Right</label>
+                        <input id="layout_direction_rtl" type="radio" name="layout_direction" value="rtl" {% if ui.layout_direction == 'rtl' %}checked{% endif %}>
+                        <label class="settings-choice" for="layout_direction_rtl">Right-to-Left</label>
+                    </div>
+                </div>
+                <h3 class="section-title" style="margin-top:8px;">Theme Mode</h3>
+                <div class="form-group">
+                    <div class="settings-choice-row">
+                        <input id="theme_mode_light" type="radio" name="theme_mode" value="light" {% if ui.theme_mode == 'light' %}checked{% endif %}>
+                        <label class="settings-choice" for="theme_mode_light">Light</label>
+                        <input id="theme_mode_dark" type="radio" name="theme_mode" value="dark" {% if (ui.theme_mode or 'dark') == 'dark' %}checked{% endif %}>
+                        <label class="settings-choice" for="theme_mode_dark">Dark</label>
+                        <input id="theme_mode_system" type="radio" name="theme_mode" value="system" {% if ui.theme_mode == 'system' %}checked{% endif %}>
+                        <label class="settings-choice" for="theme_mode_system">System</label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Font Style</label>
+                    <select name="font_family">
+                        {% set selected_font = ui.font_family or 'inter' %}
+                        <option value="inter" {% if selected_font == 'inter' %}selected{% endif %}>Inter</option>
+                        <option value="poppins" {% if selected_font == 'poppins' %}selected{% endif %}>Poppins</option>
+                        <option value="manrope" {% if selected_font == 'manrope' %}selected{% endif %}>Manrope</option>
+                        <option value="outfit" {% if selected_font == 'outfit' %}selected{% endif %}>Outfit</option>
+                        <option value="roboto" {% if selected_font == 'roboto' %}selected{% endif %}>Roboto</option>
+                        <option value="montserrat" {% if selected_font == 'montserrat' %}selected{% endif %}>Montserrat</option>
+                        <option value="nunito" {% if selected_font == 'nunito' %}selected{% endif %}>Nunito</option>
+                        <option value="worksans" {% if selected_font == 'worksans' %}selected{% endif %}>Work Sans</option>
+                        <option value="lato" {% if selected_font == 'lato' %}selected{% endif %}>Lato</option>
+                        <option value="opensans" {% if selected_font == 'opensans' %}selected{% endif %}>Open Sans</option>
+                        <option value="sourcesans" {% if selected_font == 'sourcesans' %}selected{% endif %}>Source Sans 3</option>
+                        <option value="raleway" {% if selected_font == 'raleway' %}selected{% endif %}>Raleway</option>
+                        <option value="ubuntu" {% if selected_font == 'ubuntu' %}selected{% endif %}>Ubuntu</option>
+                        <option value="merriweather" {% if selected_font == 'merriweather' %}selected{% endif %}>Merriweather</option>
+                        <option value="playfair" {% if selected_font == 'playfair' %}selected{% endif %}>Playfair Display</option>
+                        <option value="firasans" {% if selected_font == 'firasans' %}selected{% endif %}>Fira Sans</option>
+                        <option value="dmsans" {% if selected_font == 'dmsans' %}selected{% endif %}>DM Sans</option>
+                        <option value="rubik" {% if selected_font == 'rubik' %}selected{% endif %}>Rubik</option>
+                        <option value="karla" {% if selected_font == 'karla' %}selected{% endif %}>Karla</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Custom Font Family (Any)</label>
+                    <input type="text" name="font_family_custom" placeholder="Example: Nunito or 'Segoe UI'" value="{{ ui.font_family_custom or '' }}">
+                    <small style="color:var(--text-muted);display:block;margin-top:6px;">If provided, this overrides selected font style.</small>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Font Size (12px to 20px)</label>
+                    <div style="display:flex;align-items:center;gap:10px;">
+                        <input type="range" min="12" max="20" step="1" name="font_size_base" id="fontSizeRange" value="{{ ui.font_size_base or 14 }}" style="flex:1;">
+                        <input type="number" min="12" max="20" step="1" id="fontSizeNumber" value="{{ ui.font_size_base or 14 }}" style="width:88px;">
+                    </div>
+                </div>
+            </div>
+            <div class="card" style="margin-top:8px;">
+                <div style="font-weight:700;margin-bottom:8px;">Live Theme Preview</div>
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <span class="badge badge-text">Primary</span>
+                    <span class="badge badge-number">Accent</span>
+                    <button type="button" class="btn btn-primary btn-sm">Preview Button</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="settings-panel" data-settings-panel="system">
+            <h3 class="section-title">System Settings</h3>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Timezone</label>
+                    <input type="text" name="timezone" placeholder="Asia/Kolkata" value="{{ (settings_data.system.timezone if settings_data.system else '') or '' }}">
+                </div>
+                <div class="form-group">
+                    <label>Date Format</label>
+                    <input type="text" name="date_format" placeholder="DD-MM-YYYY" value="{{ (settings_data.system.date_format if settings_data.system else '') or '' }}">
+                </div>
+            </div>
+        </div>
+
+        <div class="settings-panel" data-settings-panel="company">
+            <h3 class="section-title">Company Settings</h3>
+            <div class="form-group">
+                <label>Company Name</label>
+                <input type="text" name="company_name" value="{{ (settings_data.company.company_name if settings_data.company else '') or '' }}">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Company Email</label>
+                    <input type="email" name="company_email" value="{{ (settings_data.company.company_email if settings_data.company else '') or '' }}">
+                </div>
+                <div class="form-group">
+                    <label>Company Phone</label>
+                    <input type="text" name="company_phone" value="{{ (settings_data.company.company_phone if settings_data.company else '') or '' }}">
+                </div>
+            </div>
+        </div>
+
+        <div class="settings-panel" data-settings-panel="currency">
+            <h3 class="section-title">Currency Settings</h3>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Currency Code</label>
+                    <input type="text" name="currency_code" placeholder="INR" value="{{ (settings_data.currency.currency_code if settings_data.currency else '') or '' }}">
+                </div>
+                <div class="form-group">
+                    <label>Currency Symbol</label>
+                    <input type="text" name="currency_symbol" placeholder="Rs" value="{{ (settings_data.currency.currency_symbol if settings_data.currency else '') or '' }}">
+                </div>
+            </div>
+        </div>
+
+        <div class="settings-panel" data-settings-panel="email">
+            <h3 class="section-title">Email Settings</h3>
+            <div class="form-group">
+                <label>From Email</label>
+                <input type="email" name="from_email" value="{{ (settings_data.email.from_email if settings_data.email else '') or '' }}">
+            </div>
+            <div class="form-group">
+                <label>Reply-To Email</label>
+                <input type="email" name="reply_to_email" value="{{ (settings_data.email.reply_to_email if settings_data.email else '') or '' }}">
+            </div>
+        </div>
+
+        <div class="settings-panel" data-settings-panel="email_notifications">
+            <h3 class="section-title">Email Notification Settings</h3>
+            <div class="addon-grid">
+                {% set n = settings_data.email_notifications or {} %}
+                <label class="addon-item"><input type="checkbox" name="leave_request_email" {% if n.leave_request_email %}checked{% endif %}><span>Leave request email</span></label>
+                <label class="addon-item"><input type="checkbox" name="leave_approval_email" {% if n.leave_approval_email %}checked{% endif %}><span>Leave approval email</span></label>
+                <label class="addon-item"><input type="checkbox" name="attendance_alert_email" {% if n.attendance_alert_email %}checked{% endif %}><span>Attendance alert email</span></label>
+            </div>
+        </div>
+
+        <div class="settings-panel" data-settings-panel="stripe">
+            <h3 class="section-title">Stripe Settings</h3>
+            {% set stripe = settings_data.stripe or {} %}
+            <div class="form-group">
+                <label>Publishable Key</label>
+                <input type="text" name="stripe_publishable_key" value="{{ stripe.publishable_key or '' }}">
+            </div>
+            <div class="form-group">
+                <label>Secret Key</label>
+                <input type="text" name="stripe_secret_key" value="{{ stripe.secret_key or '' }}">
+            </div>
+            <label class="addon-item" style="max-width:250px;"><input type="checkbox" name="stripe_enabled" {% if stripe.enabled %}checked{% endif %}><span>Enable Stripe</span></label>
+        </div>
+
+        <div class="settings-panel" data-settings-panel="paypal">
+            <h3 class="section-title">PayPal Settings</h3>
+            {% set paypal = settings_data.paypal or {} %}
+            <div class="form-group">
+                <label>Client ID</label>
+                <input type="text" name="paypal_client_id" value="{{ paypal.client_id or '' }}">
+            </div>
+            <div class="form-group">
+                <label>Secret Key</label>
+                <input type="text" name="paypal_secret_key" value="{{ paypal.secret_key or '' }}">
+            </div>
+            <label class="addon-item" style="max-width:250px;"><input type="checkbox" name="paypal_enabled" {% if paypal.enabled %}checked{% endif %}><span>Enable PayPal</span></label>
+        </div>
+
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var tabs = Array.prototype.slice.call(document.querySelectorAll('.settings-tab'));
+    var panels = Array.prototype.slice.call(document.querySelectorAll('.settings-panel'));
+    function setActive(tabKey) {
+        tabs.forEach(function (tab) {
+            tab.classList.toggle('active', tab.getAttribute('data-settings-tab') === tabKey);
+        });
+        panels.forEach(function (panel) {
+            panel.classList.toggle('active', panel.getAttribute('data-settings-panel') === tabKey);
+        });
+    }
+    tabs.forEach(function (tab) {
+        tab.addEventListener('click', function () {
+            setActive(tab.getAttribute('data-settings-tab'));
+        });
+    });
+    setActive('brand');
+
+    var primaryInput = document.querySelector('input[name="primary_color"]');
+    var secondaryInput = document.querySelector('input[name="secondary_color"]');
+    var bgInput = document.querySelector('input[name="background_color"]');
+    var primaryDot = document.getElementById('primaryColorDot');
+    var secondaryDot = document.getElementById('secondaryColorDot');
+    var bgDot = document.getElementById('backgroundColorDot');
+    var root = document.documentElement;
+    var settingsForm = document.getElementById('settingsForm');
+    var editBtn = document.getElementById('settingsEditBtn');
+    var cancelBtn = document.getElementById('settingsCancelBtn');
+    var brandNameInput = document.querySelector('input[name="brand_name"]');
+    var logoUrlInput = document.querySelector('input[name="logo_url"]');
+    var logoFileInput = document.querySelector('input[name="logo_file"]');
+    var removeLogoInput = document.querySelector('input[name="remove_logo"]');
+    var faviconUrlInput = document.querySelector('input[name="favicon_url"]');
+    var faviconFileInput = document.querySelector('input[name="favicon_file"]');
+    var removeFaviconInput = document.querySelector('input[name="remove_favicon"]');
+    var fontFamilyInput = document.querySelector('select[name="font_family"]');
+    var sidebarLogo = document.querySelector('.sidebar-logo');
+    var logoTextNode = document.querySelector('.sidebar-logo .logo-text');
+    var bodyEl = document.body;
+    var faviconLink = document.querySelector('link[rel="icon"]');
+    var customFontInput = document.querySelector('input[name="font_family_custom"]');
+    var fontSizeRange = document.getElementById('fontSizeRange');
+    var fontSizeNumber = document.getElementById('fontSizeNumber');
+    var liveCustomFontLink = null;
+    var initialLogoImg = sidebarLogo ? sidebarLogo.querySelector('img') : null;
+    var initialLogoSrc = initialLogoImg ? initialLogoImg.getAttribute('src') : '';
+    var initialFaviconSrc = faviconLink ? (faviconLink.getAttribute('href') || '') : '';
+    var liveLogoObjectUrl = null;
+    var liveFaviconObjectUrl = null;
+
+    if (!faviconLink) {
+        faviconLink = document.createElement('link');
+        faviconLink.setAttribute('rel', 'icon');
+        document.head.appendChild(faviconLink);
+    }
+
+    function syncColorDots() {
+        if (primaryDot && primaryInput) primaryDot.style.background = primaryInput.value;
+        if (secondaryDot && secondaryInput) secondaryDot.style.background = secondaryInput.value;
+        if (bgDot && bgInput) bgDot.style.background = bgInput.value;
+    }
+
+    function applyThemePreview() {
+        if (!primaryInput || !secondaryInput || !bgInput) return;
+        root.style.setProperty('--accent', primaryInput.value);
+        root.style.setProperty('--accent-2', secondaryInput.value);
+        root.style.setProperty('--accent-grad', 'linear-gradient(135deg, ' + primaryInput.value + ' 0%, ' + secondaryInput.value + ' 100%)');
+        root.style.setProperty('--bg', bgInput.value);
+    }
+
+    function cleanupObjectUrl(type) {
+        if (type === 'logo' && liveLogoObjectUrl) {
+            URL.revokeObjectURL(liveLogoObjectUrl);
+            liveLogoObjectUrl = null;
+        }
+        if (type === 'favicon' && liveFaviconObjectUrl) {
+            URL.revokeObjectURL(liveFaviconObjectUrl);
+            liveFaviconObjectUrl = null;
+        }
+    }
+
+    function ensureSidebarBrandText(value) {
+        if (!logoTextNode && sidebarLogo) {
+            logoTextNode = document.createElement('span');
+            logoTextNode.className = 'logo-text';
+            sidebarLogo.appendChild(logoTextNode);
+        }
+        if (logoTextNode) {
+            logoTextNode.textContent = value || 'HRM System';
+        }
+    }
+
+    function ensureSidebarLogoVisual(src) {
+        if (!sidebarLogo) return;
+        var existingImg = sidebarLogo.querySelector('img');
+        var existingIcon = sidebarLogo.querySelector('.logo-icon');
+        if (src) {
+            if (!existingImg) {
+                existingImg = document.createElement('img');
+                existingImg.alt = 'Logo';
+                existingImg.style.width = '40px';
+                existingImg.style.height = '40px';
+                existingImg.style.borderRadius = '10px';
+                existingImg.style.objectFit = 'cover';
+                existingImg.style.flexShrink = '0';
+                if (existingIcon) {
+                    sidebarLogo.insertBefore(existingImg, existingIcon);
+                    existingIcon.remove();
+                } else if (logoTextNode) {
+                    sidebarLogo.insertBefore(existingImg, logoTextNode);
+                } else {
+                    sidebarLogo.appendChild(existingImg);
+                }
+            }
+            existingImg.src = src;
+            return;
+        }
+        if (existingImg) {
+            existingImg.remove();
+        }
+        if (!sidebarLogo.querySelector('.logo-icon')) {
+            var icon = document.createElement('div');
+            icon.className = 'logo-icon';
+            icon.textContent = 'H';
+            if (logoTextNode) {
+                sidebarLogo.insertBefore(icon, logoTextNode);
+            } else {
+                sidebarLogo.appendChild(icon);
+            }
+        }
+    }
+
+    function applyThemeModePreview(mode) {
+        if (!mode) return;
+        bodyEl.classList.remove('theme-mode-light', 'theme-mode-dark', 'theme-mode-system');
+        bodyEl.classList.add('theme-mode-' + mode);
+
+        var isLight = false;
+        if (mode === 'light') {
+            isLight = true;
+        } else if (mode === 'system') {
+            isLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+        }
+        if (isLight) {
+            root.style.setProperty('--bg', '#f4f5fb');
+            root.style.setProperty('--bg-2', '#ffffff');
+            root.style.setProperty('--bg-card', 'rgba(255,255,255,0.95)');
+            root.style.setProperty('--bg-card-h', 'rgba(255,255,255,1)');
+            root.style.setProperty('--border', 'rgba(20,24,40,0.12)');
+            root.style.setProperty('--text', '#111827');
+            root.style.setProperty('--text-muted', '#5b647a');
+            root.style.setProperty('--text-dim', '#7a8298');
+            return;
+        }
+        root.style.removeProperty('--bg-2');
+        root.style.removeProperty('--bg-card');
+        root.style.removeProperty('--bg-card-h');
+        root.style.removeProperty('--border');
+        root.style.removeProperty('--text');
+        root.style.removeProperty('--text-muted');
+        root.style.removeProperty('--text-dim');
+        applyThemePreview();
+    }
+
+    function applyUiLayoutPreview() {
+        var sidebarVariant = document.querySelector('input[name="sidebar_variant"]:checked');
+        var sidebarStyle = document.querySelector('input[name="sidebar_style"]:checked');
+        var layoutDirection = document.querySelector('input[name="layout_direction"]:checked');
+        var themeMode = document.querySelector('input[name="theme_mode"]:checked');
+
+        if (sidebarVariant) {
+            bodyEl.classList.remove('sidebar-variant-inset', 'sidebar-variant-floating', 'sidebar-variant-minimal');
+            bodyEl.classList.add('sidebar-variant-' + sidebarVariant.value);
+        }
+        if (sidebarStyle) {
+            bodyEl.classList.remove('sidebar-style-plain', 'sidebar-style-colored', 'sidebar-style-gradient');
+            bodyEl.classList.add('sidebar-style-' + sidebarStyle.value);
+        }
+        if (layoutDirection) {
+            bodyEl.classList.remove('layout-ltr', 'layout-rtl');
+            bodyEl.classList.add('layout-' + layoutDirection.value);
+        }
+        if (themeMode) {
+            applyThemeModePreview(themeMode.value);
+        }
+    }
+
+    function applyFontPreview() {
+        if (!fontFamilyInput) return;
+        var customFont = customFontInput ? (customFontInput.value || '').trim() : '';
+        var fontMap = {
+            inter: "'Inter', system-ui, sans-serif",
+            poppins: "'Poppins', sans-serif",
+            manrope: "'Manrope', sans-serif",
+            outfit: "'Outfit', sans-serif",
+            roboto: "'Roboto', sans-serif",
+            montserrat: "'Montserrat', sans-serif",
+            nunito: "'Nunito', sans-serif",
+            worksans: "'Work Sans', sans-serif",
+            lato: "'Lato', sans-serif",
+            opensans: "'Open Sans', sans-serif",
+            sourcesans: "'Source Sans 3', sans-serif",
+            raleway: "'Raleway', sans-serif",
+            ubuntu: "'Ubuntu', sans-serif",
+            merriweather: "'Merriweather', serif",
+            playfair: "'Playfair Display', serif",
+            firasans: "'Fira Sans', sans-serif",
+            dmsans: "'DM Sans', sans-serif",
+            rubik: "'Rubik', sans-serif",
+            karla: "'Karla', sans-serif"
+        };
+        var selected = customFont ? (customFont + ", sans-serif") : (fontMap[fontFamilyInput.value] || fontMap.inter);
+        root.style.setProperty('--font-main', selected);
+
+        if (liveCustomFontLink) {
+            liveCustomFontLink.remove();
+            liveCustomFontLink = null;
+        }
+        if (customFont) {
+            var fontForUrl = customFont.replace(/['"]/g, '').trim();
+            if (fontForUrl) {
+                var familyQuery = encodeURIComponent(fontForUrl).replace(/%20/g, '+');
+                liveCustomFontLink = document.createElement('link');
+                liveCustomFontLink.rel = 'stylesheet';
+                liveCustomFontLink.href = 'https://fonts.googleapis.com/css2?family=' + familyQuery + ':wght@300;400;500;600;700;800&display=swap';
+                document.head.appendChild(liveCustomFontLink);
+            }
+        }
+    }
+
+    function applyFontSizePreview() {
+        if (!fontSizeRange && !fontSizeNumber) return;
+        var value = 14;
+        if (fontSizeRange) {
+            value = parseInt(fontSizeRange.value || '14', 10);
+        } else if (fontSizeNumber) {
+            value = parseInt(fontSizeNumber.value || '14', 10);
+        }
+        if (isNaN(value)) value = 14;
+        value = Math.max(12, Math.min(20, value));
+        if (fontSizeRange) fontSizeRange.value = String(value);
+        if (fontSizeNumber) fontSizeNumber.value = String(value);
+        root.style.setProperty('--font-size-base', value + 'px');
+    }
+
+    function applyLiveBrandPreview() {
+        var brandName = brandNameInput ? (brandNameInput.value || '').trim() : '';
+        ensureSidebarBrandText(brandName || 'HRM System');
+
+        var logoSrc = '';
+        if (removeLogoInput && removeLogoInput.checked) {
+            logoSrc = '';
+            cleanupObjectUrl('logo');
+        } else if (logoFileInput && logoFileInput.files && logoFileInput.files[0]) {
+            cleanupObjectUrl('logo');
+            liveLogoObjectUrl = URL.createObjectURL(logoFileInput.files[0]);
+            logoSrc = liveLogoObjectUrl;
+        } else if (logoUrlInput && (logoUrlInput.value || '').trim()) {
+            cleanupObjectUrl('logo');
+            logoSrc = logoUrlInput.value.trim();
+        } else {
+            cleanupObjectUrl('logo');
+            logoSrc = initialLogoSrc || '';
+        }
+        ensureSidebarLogoVisual(logoSrc);
+
+        var faviconSrc = '';
+        if (removeFaviconInput && removeFaviconInput.checked) {
+            faviconSrc = '';
+            cleanupObjectUrl('favicon');
+        } else if (faviconFileInput && faviconFileInput.files && faviconFileInput.files[0]) {
+            cleanupObjectUrl('favicon');
+            liveFaviconObjectUrl = URL.createObjectURL(faviconFileInput.files[0]);
+            faviconSrc = liveFaviconObjectUrl;
+        } else if (faviconUrlInput && (faviconUrlInput.value || '').trim()) {
+            cleanupObjectUrl('favicon');
+            faviconSrc = faviconUrlInput.value.trim();
+        } else {
+            cleanupObjectUrl('favicon');
+            faviconSrc = initialFaviconSrc || '';
+        }
+        if (faviconLink) {
+            if (faviconSrc) {
+                faviconLink.setAttribute('href', faviconSrc);
+            } else {
+                faviconLink.removeAttribute('href');
+            }
+        }
+    }
+
+    function setEditMode(isEditing) {
+        if (!settingsForm) return;
+        var editableFields = Array.prototype.slice.call(
+            settingsForm.querySelectorAll('input, select, textarea, button.settings-color-preset')
+        );
+        editableFields.forEach(function (field) {
+            var fieldType = (field.getAttribute('type') || '').toLowerCase();
+            if (fieldType === 'hidden' || field.name === 'csrfmiddlewaretoken') {
+                return;
+            }
+            field.disabled = !isEditing;
+        });
+        if (editBtn) {
+            editBtn.textContent = isEditing ? 'Save Settings' : 'Edit';
+            editBtn.classList.toggle('btn-secondary', !isEditing);
+            editBtn.classList.toggle('btn-primary', isEditing);
+            editBtn.setAttribute('data-mode', isEditing ? 'edit' : 'view');
+        }
+        if (cancelBtn) cancelBtn.classList.toggle('is-hidden', !isEditing);
+    }
+
+    if (primaryInput && secondaryInput && bgInput) {
+        [primaryInput, secondaryInput, bgInput].forEach(function (el) {
+            el.addEventListener('input', function () {
+                syncColorDots();
+                applyThemePreview();
+            });
+        });
+    }
+
+    Array.prototype.slice.call(document.querySelectorAll('.settings-color-trigger')).forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var target = btn.getAttribute('data-picker-target');
+            var picker = target ? document.getElementById(target) : null;
+            if (!picker) return;
+            if (typeof picker.showPicker === 'function') {
+                picker.showPicker();
+            } else {
+                picker.click();
+            }
+        });
+    });
+
+    Array.prototype.slice.call(document.querySelectorAll('.settings-color-preset')).forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            if (!primaryInput || !secondaryInput || !bgInput) return;
+            primaryInput.value = btn.getAttribute('data-p') || primaryInput.value;
+            secondaryInput.value = btn.getAttribute('data-s') || secondaryInput.value;
+            bgInput.value = btn.getAttribute('data-b') || bgInput.value;
+            syncColorDots();
+            applyThemePreview();
+        });
+    });
+
+    [brandNameInput, logoUrlInput, logoFileInput, removeLogoInput, faviconUrlInput, faviconFileInput, removeFaviconInput].forEach(function (field) {
+        if (!field) return;
+        field.addEventListener('input', applyLiveBrandPreview);
+        field.addEventListener('change', applyLiveBrandPreview);
+    });
+
+    Array.prototype.slice.call(document.querySelectorAll('input[name="sidebar_variant"], input[name="sidebar_style"], input[name="layout_direction"], input[name="theme_mode"]')).forEach(function (field) {
+        field.addEventListener('change', applyUiLayoutPreview);
+    });
+    if (fontFamilyInput) {
+        fontFamilyInput.addEventListener('change', applyFontPreview);
+    }
+    if (customFontInput) {
+        customFontInput.addEventListener('input', applyFontPreview);
+        customFontInput.addEventListener('change', applyFontPreview);
+    }
+    if (fontSizeRange) {
+        fontSizeRange.addEventListener('input', applyFontSizePreview);
+        fontSizeRange.addEventListener('change', applyFontSizePreview);
+    }
+    if (fontSizeNumber) {
+        fontSizeNumber.addEventListener('input', applyFontSizePreview);
+        fontSizeNumber.addEventListener('change', applyFontSizePreview);
+    }
+
+    syncColorDots();
+    applyThemePreview();
+    applyFontPreview();
+    applyFontSizePreview();
+    applyUiLayoutPreview();
+    applyLiveBrandPreview();
+
+    if (editBtn) {
+        editBtn.addEventListener('click', function () {
+            if (!settingsForm) return;
+            var mode = editBtn.getAttribute('data-mode') || 'view';
+            if (mode !== 'edit') {
+                setEditMode(true);
+                return;
+            }
+            if (typeof settingsForm.requestSubmit === 'function') {
+                settingsForm.requestSubmit();
+            } else {
+                settingsForm.submit();
+            }
+        });
+    }
+    if (cancelBtn && settingsForm) {
+        cancelBtn.addEventListener('click', function () {
+            settingsForm.reset();
+            syncColorDots();
+            applyThemePreview();
+            applyFontPreview();
+            applyFontSizePreview();
+            applyUiLayoutPreview();
+            applyLiveBrandPreview();
+            setEditMode(false);
+        });
+    }
+    setEditMode(settingsForm && settingsForm.getAttribute('data-edit-mode') === '1');
+});
+</script>
+<style>
+.settings-panel { display:none; }
+.settings-panel.active { display:block; }
+.settings-color-picker-hidden {
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    position: absolute;
+    pointer-events: none;
+}
+.settings-color-trigger {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-card);
+    color: var(--text);
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+}
+.settings-color-dot {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.35);
+    flex-shrink: 0;
+}
+.settings-choice-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+.settings-choice-row input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+.settings-choice {
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    border-radius: var(--radius-sm);
+    padding: 9px 12px;
+    color: var(--text);
+    cursor: pointer;
+    text-align: center;
+    font-weight: 600;
+}
+.settings-choice-row input[type="radio"]:checked + .settings-choice {
+    border-color: rgba(52,211,153,0.65);
+    background: rgba(52,211,153,0.22);
+}
+</style>
+{% endblock %}

@@ -275,7 +275,16 @@ class LeaveBalanceView(_LeaveAccessMixin, APIView):
             profile = self._profile()
             if not profile or not profile.client_id:
                 return Response([], status=status.HTTP_200_OK)
-            employees = Employee.objects.filter(client_id=profile.client_id).order_by('first_name', 'last_name')
+            base_employees = Employee.objects.filter(client_id=profile.client_id)
+            mapped_employee = base_employees.filter(email__iexact=(request.user.email or '')).first()
+            if profile.role == 'admin':
+                employees = base_employees.order_by('first_name', 'last_name')
+            elif mapped_employee and mapped_employee.role in (Employee.ROLE_HR, Employee.ROLE_MANAGER):
+                employees = base_employees.order_by('first_name', 'last_name')
+            elif mapped_employee:
+                employees = base_employees.filter(id=mapped_employee.id).order_by('first_name', 'last_name')
+            else:
+                employees = Employee.objects.none()
             leave_types = LeaveType.objects.filter(client_id=profile.client_id, is_active=True).order_by('name')
 
         leave_types_list = list(leave_types)

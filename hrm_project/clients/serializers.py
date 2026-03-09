@@ -13,6 +13,9 @@ class ClientSerializer(serializers.ModelSerializer):
         'attendance_location',
         'attendance_selfie_location',
         'leave_management',
+        'holidays',
+        'settings',
+        'policy',
     }
 
     class Meta:
@@ -25,6 +28,7 @@ class ClientSerializer(serializers.ModelSerializer):
             'schema_name',
             'schema_provisioned',
             'enabled_addons',
+            'app_settings',
             'created_at',
         )
         read_only_fields = ('id', 'schema_provisioned', 'created_at')
@@ -54,6 +58,13 @@ class ClientSerializer(serializers.ModelSerializer):
             cleaned.append('attendance')
 
         return cleaned
+
+    def validate_app_settings(self, value):
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            raise serializers.ValidationError('app_settings must be an object.')
+        return value
 
     def create(self, validated_data):
         password = validated_data.pop('password')

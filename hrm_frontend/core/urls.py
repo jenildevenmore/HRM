@@ -9,6 +9,8 @@ urlpatterns = [
 
     # Dashboard
     path('', views.dashboard, name='dashboard'),
+    path('policy/', views.policy_page, name='policy_page'),
+    path('settings/', views.settings_page, name='settings_page'),
 
     # Clients
     path('clients/', views.client_list, name='client_list'),
@@ -33,6 +35,10 @@ urlpatterns = [
     path('leaves/<int:pk>/review/', views.leave_review, name='leave_review'),
     path('leaves/<int:pk>/cancel/', views.leave_cancel, name='leave_cancel'),
     path('leaves/<int:pk>/delete/', views.leave_delete, name='leave_delete'),
+
+    # Holidays
+    path('holidays/', views.holiday_list, name='holiday_list'),
+    path('holidays/<int:pk>/delete/', views.holiday_delete, name='holiday_delete'),
 
     # Custom Fields
     path('custom-fields/', views.custom_field_list, name='custom_field_list'),

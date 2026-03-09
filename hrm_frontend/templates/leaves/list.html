@@ -18,7 +18,9 @@
 </div>
 
 <div class="permission-group-tabs" style="margin-bottom:20px;">
+    {% if role in ['superadmin', 'admin'] %}
     <a href="{{ url('leave_type_list') }}" class="permission-group-tab-btn">Leave Types</a>
+    {% endif %}
     <a href="{{ url('leave_list') }}" class="permission-group-tab-btn active">Applications</a>
     <a href="{{ url('leave_balance') }}" class="permission-group-tab-btn">Leave Balance</a>
 </div>
@@ -28,6 +30,15 @@
     {% for err in errors %}<li>{{ err }}</li>{% endfor %}
 </ul>
 {% endif %}
+
+<div class="card" style="margin-bottom:20px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+        <div>
+            <div class="form-label" style="margin-bottom:4px;">Pending Requests</div>
+            <div style="font-size:26px;font-weight:700;line-height:1;">{{ pending_count }}</div>
+        </div>
+    </div>
+</div>
 
 <div class="card" style="margin-bottom:20px;">
     <form method="get" class="form-row">
@@ -41,6 +52,7 @@
                 <option value="cancelled" {% if selected_status == 'cancelled' %}selected{% endif %}>Cancelled</option>
             </select>
         </div>
+        {% if can_view_all_leaves %}
         <div class="form-group">
             <label>Employee</label>
             <select name="employee">
@@ -52,6 +64,7 @@
                 {% endfor %}
             </select>
         </div>
+        {% endif %}
         <div class="form-actions" style="margin-top:28px;">
             <button type="submit" class="btn btn-secondary">Search</button>
             <a href="{{ url('leave_list') }}" class="btn btn-secondary">Reset</a>

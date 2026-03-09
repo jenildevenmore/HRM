@@ -17,7 +17,9 @@
 </div>
 
 <div class="permission-group-tabs" style="margin-bottom:20px;">
+    {% if role in ['superadmin', 'admin'] %}
     <a href="{{ url('leave_type_list') }}" class="permission-group-tab-btn">Leave Types</a>
+    {% endif %}
     <a href="{{ url('leave_list') }}" class="permission-group-tab-btn active">Applications</a>
     <a href="{{ url('leave_balance') }}" class="permission-group-tab-btn">Leave Balance</a>
 </div>
@@ -31,6 +33,7 @@
 <div class="form-card">
     <form method="post" action="{{ url('leave_create') }}">
         {{ csrf_input }}
+        {% if can_choose_employee %}
         <div class="form-group">
             <label>Employee *</label>
             <select name="employee" id="employeeSelect" required>
@@ -45,6 +48,13 @@
                 Manager: - | HR: -
             </small>
         </div>
+        {% else %}
+        <div class="form-group">
+            <label>Employee</label>
+            <input type="text" value="{% if employees %}{{ employees[0].first_name }} {{ employees[0].last_name }}{% else %}Your account{% endif %}" readonly>
+            <small style="display:block;margin-top:6px;color:var(--text-muted);">This leave request will be created only for your profile.</small>
+        </div>
+        {% endif %}
         <div class="form-group">
             <label>Leave Type *</label>
             <select name="leave_type" required>
@@ -79,6 +89,9 @@
 document.addEventListener('DOMContentLoaded', function () {
     var employeeSelect = document.getElementById('employeeSelect');
     var preview = document.getElementById('assignmentPreview');
+    if (!employeeSelect || !preview) {
+        return;
+    }
 
     function renderAssignment() {
         var selected = employeeSelect.options[employeeSelect.selectedIndex];

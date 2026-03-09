@@ -24,9 +24,12 @@
 <div class="card permission-editor-card">
     <div class="permission-panel-head">
         <h3 class="section-title">Create Group</h3>
-        <p class="permission-panel-subtitle">Set module permissions and save as a reusable access group.</p>
+        <p class="permission-panel-subtitle">Click Create Group to open permission setup.</p>
     </div>
-    <form method="post">
+    <div class="permission-group-tabs" style="margin-bottom:10px;">
+        <button type="button" class="permission-group-tab-btn" id="createGroupToggleBtn">+ Create Group</button>
+    </div>
+    <form method="post" id="createGroupFormPanel" class="permission-group-panel">
         {{ csrf_input }}
         <input type="hidden" name="action" value="create_group">
         <div class="form-group">
@@ -48,8 +51,21 @@
         </div>
         {% endfor %}
         </div>
-        <div class="form-actions">
+        <div class="form-section" style="margin-top:14px;">
+            <h4 class="section-title">Add-On Access</h4>
+            <p class="section-subtitle">Group users can access only selected add-ons (within client enabled add-ons).</p>
+            <div class="addon-grid">
+                {% for key, label in addon_options %}
+                <label class="addon-item">
+                    <input type="checkbox" name="enabled_addons" value="{{ key }}">
+                    <span>{{ label }}</span>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="form-actions permission-group-actions">
             <button type="submit" class="btn btn-primary">Create Group</button>
+            <button type="button" class="btn btn-secondary" id="createGroupCloseBtn">Close</button>
         </div>
     </form>
 </div>
@@ -99,6 +115,17 @@
         </div>
         {% endfor %}
         </div>
+        <div class="form-section" style="margin-top:14px;">
+            <h4 class="section-title">Add-On Access</h4>
+            <div class="addon-grid">
+                {% for key, label in addon_options %}
+                <label class="addon-item">
+                    <input class="permission-edit-field" type="checkbox" name="enabled_addons" value="{{ key }}" {% if key in (group.enabled_addons or []) %}checked{% endif %}>
+                    <span>{{ label }}</span>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
         <div class="form-actions permission-group-actions">
             <button type="button" class="btn btn-secondary permission-edit-btn">Edit</button>
             <button type="submit" class="btn btn-primary permission-save-btn is-hidden">Save Group</button>
@@ -114,12 +141,24 @@
 <div class="card permission-editor-card">
     <div class="permission-panel-head">
         <h3 class="section-title">Assign Users</h3>
-        <p class="permission-panel-subtitle">Attach each user to one permission group.</p>
+        <p class="permission-panel-subtitle">Click a user name to open details. Editing is locked until you click Edit.</p>
     </div>
     {% if users %}
-    <div class="permissions-grid">
+    <div class="permission-group-tabs" id="permissionUserTabs" style="margin-bottom:14px;">
         {% for item in users %}
-        <form method="post" class="permission-card">
+        <button
+            type="button"
+            class="permission-group-tab-btn"
+            data-user-target="{{ item.id }}"
+        >
+            {{ item.user.username }}
+        </button>
+        {% endfor %}
+    </div>
+
+    <div class="permission-group-panels permission-user-panels">
+        {% for item in users %}
+        <form method="post" class="permission-card permission-user-panel is-readonly" data-user-panel="{{ item.id }}">
             {{ csrf_input }}
             <input type="hidden" name="action" value="assign_group">
             <input type="hidden" name="profile_id" value="{{ item.id }}">
@@ -132,18 +171,35 @@
             </div>
             {% if item.role == 'admin' %}
             <div class="detail-value">Client admin uses full access.</div>
+            <div class="form-actions permission-group-actions">
+                <button type="button" class="btn btn-secondary permission-user-close-btn">Close</button>
+            </div>
             {% else %}
             <div class="form-group">
                 <label>Assigned Group</label>
-                <select name="permission_group">
+                <select class="permission-user-edit-field" name="permission_group" disabled>
                     <option value="">No Group</option>
                     {% for group in groups %}
                     <option value="{{ group.id }}" {% if item.permission_group == group.id %}selected{% endif %}>{{ group.name }}</option>
                     {% endfor %}
                 </select>
             </div>
-            <div class="form-actions">
-                <button type="submit" class="btn btn-primary">Assign Group</button>
+            <div class="form-group">
+                <label>User Add-On Override</label>
+                <p class="section-subtitle" style="margin-bottom:8px;">If none selected, user inherits assigned group/client add-ons.</p>
+                <div class="addon-grid">
+                    {% for key, label in addon_options %}
+                    <label class="addon-item">
+                        <input class="permission-user-edit-field" type="checkbox" name="user_enabled_addons" value="{{ key }}" {% if key in (item.enabled_addons or []) %}checked{% endif %} disabled>
+                        <span>{{ label }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="form-actions permission-group-actions">
+                <button type="button" class="btn btn-secondary permission-user-edit-btn">Edit</button>
+                <button type="submit" class="btn btn-primary permission-user-save-btn is-hidden">Save Access</button>
+                <button type="button" class="btn btn-secondary permission-user-close-btn">Close</button>
             </div>
             {% endif %}
         </form>
@@ -161,13 +217,45 @@
 {% block extra_js %}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    var tabButtons = Array.prototype.slice.call(document.querySelectorAll('.permission-group-tab-btn'));
-    var panels = Array.prototype.slice.call(document.querySelectorAll('.permission-group-panel'));
+    var createGroupToggleBtn = document.getElementById('createGroupToggleBtn');
+    var createGroupCloseBtn = document.getElementById('createGroupCloseBtn');
+    var createGroupFormPanel = document.getElementById('createGroupFormPanel');
 
-    if (!tabButtons.length || !panels.length) {
-        return;
+    function closeCreateGroupPanel() {
+        if (!createGroupFormPanel || !createGroupToggleBtn) {
+            return;
+        }
+        createGroupFormPanel.classList.remove('active');
+        createGroupToggleBtn.classList.remove('active');
+        createGroupFormPanel.reset();
     }
 
+    if (createGroupToggleBtn && createGroupFormPanel) {
+        createGroupToggleBtn.addEventListener('click', function () {
+            var isOpen = createGroupFormPanel.classList.contains('active');
+            if (isOpen) {
+                closeCreateGroupPanel();
+                return;
+            }
+            createGroupFormPanel.classList.add('active');
+            createGroupToggleBtn.classList.add('active');
+        });
+    }
+
+    if (createGroupCloseBtn) {
+        createGroupCloseBtn.addEventListener('click', function () {
+            closeCreateGroupPanel();
+        });
+    }
+
+    // Keep create-group panel closed by default.
+    if (createGroupFormPanel) {
+        createGroupFormPanel.classList.remove('active');
+    }
+
+    var groupTabWrap = document.getElementById('permissionGroupTabs');
+    var tabButtons = groupTabWrap ? Array.prototype.slice.call(groupTabWrap.querySelectorAll('.permission-group-tab-btn')) : [];
+    var panels = Array.prototype.slice.call(document.querySelectorAll('.permission-group-panel'));
     function setPanelEditMode(panel, isEditing) {
         var editFields = Array.prototype.slice.call(panel.querySelectorAll('.permission-edit-field'));
         var editBtn = panel.querySelector('.permission-edit-btn');
@@ -208,16 +296,18 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    tabButtons.forEach(function (btn) {
-        btn.addEventListener('click', function () {
-            var targetId = btn.getAttribute('data-group-target');
-            if (btn.classList.contains('active')) {
-                closeAllGroups();
-                return;
-            }
-            setActiveGroup(targetId);
+    if (tabButtons.length && panels.length) {
+        tabButtons.forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var targetId = btn.getAttribute('data-group-target');
+                if (btn.classList.contains('active')) {
+                    closeAllGroups();
+                    return;
+                }
+                setActiveGroup(targetId);
+            });
         });
-    });
+    }
 
     Array.prototype.slice.call(document.querySelectorAll('.permission-edit-btn')).forEach(function (btn) {
         btn.addEventListener('click', function () {
@@ -243,6 +333,88 @@ document.addEventListener('DOMContentLoaded', function () {
     // Keep all panels closed by default until a group tab is clicked.
     panels.forEach(function (panel) {
         setPanelEditMode(panel, false);
+    });
+
+    var userTabWrap = document.getElementById('permissionUserTabs');
+    var userTabButtons = userTabWrap ? Array.prototype.slice.call(userTabWrap.querySelectorAll('.permission-group-tab-btn')) : [];
+    var userPanels = Array.prototype.slice.call(document.querySelectorAll('.permission-user-panel'));
+
+    function setUserEditMode(panel, isEditing) {
+        var editFields = Array.prototype.slice.call(panel.querySelectorAll('.permission-user-edit-field'));
+        var editBtn = panel.querySelector('.permission-user-edit-btn');
+        var saveBtn = panel.querySelector('.permission-user-save-btn');
+
+        editFields.forEach(function (field) {
+            field.disabled = !isEditing;
+        });
+        panel.classList.toggle('is-readonly', !isEditing);
+
+        if (editBtn) {
+            editBtn.classList.toggle('is-hidden', isEditing);
+        }
+        if (saveBtn) {
+            saveBtn.classList.toggle('is-hidden', !isEditing);
+        }
+    }
+
+    function setActiveUser(userId) {
+        userTabButtons.forEach(function (btn) {
+            btn.classList.toggle('active', btn.getAttribute('data-user-target') === userId);
+        });
+        userPanels.forEach(function (panel) {
+            var isActive = panel.getAttribute('data-user-panel') === userId;
+            panel.classList.toggle('active', isActive);
+            if (isActive) {
+                setUserEditMode(panel, false);
+            }
+        });
+    }
+
+    function closeAllUsers() {
+        userTabButtons.forEach(function (btn) { btn.classList.remove('active'); });
+        userPanels.forEach(function (panel) {
+            panel.classList.remove('active');
+            panel.reset();
+            setUserEditMode(panel, false);
+        });
+    }
+
+    if (userTabButtons.length && userPanels.length) {
+        userTabButtons.forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var targetId = btn.getAttribute('data-user-target');
+                if (btn.classList.contains('active')) {
+                    closeAllUsers();
+                    return;
+                }
+                setActiveUser(targetId);
+            });
+        });
+    }
+
+    Array.prototype.slice.call(document.querySelectorAll('.permission-user-edit-btn')).forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var panel = btn.closest('.permission-user-panel');
+            if (!panel) {
+                return;
+            }
+            setUserEditMode(panel, true);
+        });
+    });
+
+    Array.prototype.slice.call(document.querySelectorAll('.permission-user-close-btn')).forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var panel = btn.closest('.permission-user-panel');
+            if (panel) {
+                panel.reset();
+                setUserEditMode(panel, false);
+            }
+            closeAllUsers();
+        });
+    });
+
+    userPanels.forEach(function (panel) {
+        setUserEditMode(panel, false);
     });
 });
 </script>

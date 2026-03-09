@@ -9,6 +9,7 @@ class Client(models.Model):
     schema_name = models.SlugField(max_length=63, unique=True, blank=True)
     schema_provisioned = models.BooleanField(default=False)
     enabled_addons = models.JSONField(default=list, blank=True)
+    app_settings = models.JSONField(default=dict, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
 

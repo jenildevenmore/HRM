@@ -36,7 +36,7 @@
     </form>
 </div>
 
-{% if role in ['superadmin', 'admin'] or 'leaves.create' in module_permissions %}
+{% if role in ['superadmin', 'admin'] %}
 <div class="form-card" style="max-width:900px;margin-bottom:20px;">
     <form method="post" action="{{ url('leave_type_list') }}">
         {{ csrf_input }}
@@ -103,10 +103,10 @@
                     {% endif %}
                 </td>
                 <td>
-                    {% if role in ['superadmin', 'admin'] or 'leaves.edit' in module_permissions %}
+                    {% if role in ['superadmin', 'admin'] %}
                     <a href="{{ url('leave_type_list') }}?edit={{ lt.id }}" class="btn btn-secondary btn-sm">Edit</a>
                     {% endif %}
-                    {% if role in ['superadmin', 'admin'] or 'leaves.delete' in module_permissions %}
+                    {% if role in ['superadmin', 'admin'] %}
                     <form method="post" action="{{ url('leave_type_delete', args=[lt.id]) }}" style="display:inline;">
                         {{ csrf_input }}
                         <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this leave type?')">Delete</button>

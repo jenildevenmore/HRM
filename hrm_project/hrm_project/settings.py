@@ -26,7 +26,21 @@ SECRET_KEY = 'django-insecure-p)h$8g$x0q@7@68(zak$)$m#*%+4210=kjk3h*_z0b1zn7wou%
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    '127.0.0.1',
+    'localhost',
+    '192.168.1.66',
+    '*',
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    'http://127.0.0.1:8000',
+    'http://127.0.0.1:8001',
+    'http://localhost:8000',
+    'http://localhost:8001',
+    'http://192.168.1.66:8000',
+    'http://192.168.1.66:8001',
+]
 
 
 # Application definition
@@ -47,6 +61,7 @@ INSTALLED_APPS = [
     'custom_fields',
     'dynamic_models',
     'leaves',
+    'holidays',
 ]
 
 MIDDLEWARE = [
@@ -165,4 +180,12 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = 'miral.g.evenmore@gmail.com'
 EMAIL_HOST_PASSWORD = 'ekmukaijivcuyfka'
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
-FRONTEND_BASE_URL = os.getenv('FRONTEND_BASE_URL', 'http://127.0.0.1:8001')
+FRONTEND_BASE_URLS = [
+    url.strip().rstrip('/')
+    for url in os.getenv('FRONTEND_BASE_URLS', 'http://127.0.0.1:8001,http://192.168.1.66:8001').split(',')
+    if url.strip()
+]
+FRONTEND_BASE_URL = os.getenv(
+    'FRONTEND_BASE_URL',
+    FRONTEND_BASE_URLS[0] if FRONTEND_BASE_URLS else 'http://127.0.0.1:8001',
+).rstrip('/')

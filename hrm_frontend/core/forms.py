@@ -19,6 +19,9 @@ class ClientForm(forms.Form):
         ('attendance_location', 'Attendance + Location'),
         ('attendance_selfie_location', 'Attendance + Selfie + Location'),
         ('leave_management', 'Leave Management'),
+        ('holidays', 'Holidays'),
+        ('settings', 'Settings'),
+        ('policy', 'Policy'),
     ]
 
     name = forms.CharField(

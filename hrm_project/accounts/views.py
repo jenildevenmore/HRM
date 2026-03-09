@@ -212,6 +212,15 @@ class UserProfileViewSet(viewsets.ModelViewSet):
                 ],
             },
             {
+                'title': 'Holidays',
+                'permissions': [
+                    {'key': 'holidays.view', 'label': 'Can view Holidays'},
+                    {'key': 'holidays.create', 'label': 'Can create Holidays'},
+                    {'key': 'holidays.edit', 'label': 'Can edit Holidays'},
+                    {'key': 'holidays.delete', 'label': 'Can delete Holidays'},
+                ],
+            },
+            {
                 'title': 'Custom Fields',
                 'permissions': [
                     {'key': 'custom_fields.view', 'label': 'Can view Custom Fields'},
@@ -263,6 +272,7 @@ class UserProfileViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(target, data={
             'module_permissions': request.data.get('module_permissions', []),
+            'enabled_addons': request.data.get('enabled_addons', []),
         }, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()

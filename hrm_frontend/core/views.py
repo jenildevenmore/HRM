@@ -30,12 +30,27 @@ ADDON_KEYS = {
     'attendance_location',
     'attendance_selfie_location',
     'leave_management',
+    'holidays',
+    'settings',
+    'policy',
 }
+ADDON_OPTIONS = [
+    ('custom_fields', 'Custom Fields'),
+    ('dynamic_models', 'Dynamic Models'),
+    ('attendance', 'Attendance'),
+    ('attendance_location', 'Attendance + Location'),
+    ('attendance_selfie_location', 'Attendance + Selfie + Location'),
+    ('leave_management', 'Leave Management'),
+    ('holidays', 'Holidays'),
+    ('settings', 'Settings'),
+    ('policy', 'Policy'),
+]
 
 STATIC_PERMISSION_KEYS = {
     'employees.view', 'employees.create', 'employees.edit', 'employees.delete',
     'attendance.view', 'attendance.create', 'attendance.edit', 'attendance.delete',
     'leaves.view', 'leaves.create', 'leaves.edit', 'leaves.delete', 'leaves.approve',
+    'holidays.view', 'holidays.create', 'holidays.edit', 'holidays.delete',
     'custom_fields.view', 'custom_fields.create', 'custom_fields.edit', 'custom_fields.delete',
     'dynamic_models.view', 'dynamic_models.create', 'dynamic_models.edit', 'dynamic_models.delete',
 }
@@ -44,8 +59,17 @@ LEGACY_PERMISSION_MAP = {
     'employees': ['employees.view', 'employees.create', 'employees.edit', 'employees.delete'],
     'attendance': ['attendance.view', 'attendance.create', 'attendance.edit', 'attendance.delete'],
     'leaves': ['leaves.view', 'leaves.create', 'leaves.edit', 'leaves.delete', 'leaves.approve'],
+    'holidays': ['holidays.view', 'holidays.create', 'holidays.edit', 'holidays.delete'],
     'custom_fields': ['custom_fields.view', 'custom_fields.create', 'custom_fields.edit', 'custom_fields.delete'],
     'dynamic_models': ['dynamic_models.view', 'dynamic_models.create', 'dynamic_models.edit', 'dynamic_models.delete'],
+}
+ADDON_VIEW_PERMISSION_MAP = {
+    'custom_fields': 'custom_fields.view',
+    'dynamic_models': 'dynamic_models.view',
+    'attendance': 'attendance.view',
+    'leave_management': 'leaves.view',
+    'holidays': 'holidays.view',
+    'policy': 'policy.view',
 }
 
 
@@ -287,10 +311,19 @@ def _normalize_module_permissions(permissions):
                 if expanded not in cleaned:
                     cleaned.append(expanded)
             continue
-        if key in STATIC_PERMISSION_KEYS or re.fullmatch(r'dynamic_model\.\d+\.(view|create|edit|delete)', key):
+        if key in STATIC_PERMISSION_KEYS or key == 'policy.view' or re.fullmatch(r'dynamic_model\.\d+\.(view|create|edit|delete)', key):
             if key not in cleaned:
                 cleaned.append(key)
     return cleaned
+
+
+def _merge_view_permissions_from_addons(module_permissions, enabled_addons):
+    merged = list(module_permissions or [])
+    addon_set = set(enabled_addons or [])
+    for addon_key, permission_key in ADDON_VIEW_PERMISSION_MAP.items():
+        if addon_key in addon_set and permission_key not in merged:
+            merged.append(permission_key)
+    return merged
 
 
 def _load_client_addons(request, access_token=None, client_id=None):
@@ -315,6 +348,30 @@ def _load_client_addons(request, access_token=None, client_id=None):
     return []
 
 
+def _load_client_app_settings(request, access_token=None, client_id=None):
+    target_client_id = client_id or request.session.get('client_id')
+    if not target_client_id:
+        return {}
+
+    headers = _auth_headers(request)
+    if access_token:
+        headers = {'Authorization': f'Bearer {access_token}'}
+
+    try:
+        resp = requests.get(
+            f'{API}/api/clients/{target_client_id}/',
+            headers=headers,
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            payload = resp.json()
+            app_settings = payload.get('app_settings')
+            return app_settings if isinstance(app_settings, dict) else {}
+    except requests.exceptions.RequestException:
+        return {}
+    return {}
+
+
 def _get_context(request):
     """Return common context data for all views"""
     role = request.session.get('role', 'employee')
@@ -334,9 +391,26 @@ def _get_context(request):
         enabled_addons = _load_client_addons(request)
         request.session['enabled_addons'] = enabled_addons
         request.session.modified = True
-    elif request.session.get('access_token') and request.session.get('client_id'):
+    elif (
+        request.session.get('access_token')
+        and request.session.get('client_id')
+        and not enabled_addons
+    ):
         enabled_addons = _load_client_addons(request)
         request.session['enabled_addons'] = enabled_addons
+        request.session.modified = True
+
+    app_settings = request.session.get('app_settings', {})
+    if not isinstance(app_settings, dict):
+        app_settings = {}
+    if request.session.get('access_token') and request.session.get('client_id') and not app_settings:
+        app_settings = _load_client_app_settings(request)
+        request.session['app_settings'] = app_settings
+        request.session.modified = True
+
+    if role not in ('superadmin', 'admin'):
+        module_permissions = _merge_view_permissions_from_addons(module_permissions, enabled_addons)
+        request.session['module_permissions'] = module_permissions
         request.session.modified = True
 
     nav_dynamic_models = []
@@ -381,6 +455,7 @@ def _get_context(request):
         'role': role,
         'module_permissions': module_permissions,
         'enabled_addons': enabled_addons,
+        'app_settings': app_settings,
         'nav_dynamic_models': nav_dynamic_models,
     }
 
@@ -399,6 +474,10 @@ def _has_module_permission(request, permission_key):
         return True
     permissions = set(_normalize_module_permissions(request.session.get('module_permissions', [])))
     return permission_key in permissions
+
+
+def _has_any_module_permission(request, permission_keys):
+    return any(_has_module_permission(request, key) for key in (permission_keys or []))
 
 
 def _require_module_permission(request, permission_key):
@@ -467,6 +546,14 @@ def login_view(request):
         clients_resp = requests.get(f'{API}/api/clients/public/', timeout=10)
         if clients_resp.status_code == 200:
             clients = clients_resp.json()
+        else:
+            clients_load_failed = True
+            try:
+                payload = clients_resp.json()
+                detail = payload.get('detail') if isinstance(payload, dict) else None
+            except ValueError:
+                detail = None
+            error = detail or f'Failed to load clients from backend (HTTP {clients_resp.status_code}).'
     except requests.exceptions.ConnectionError:
         clients_load_failed = True
         error = 'Cannot connect to backend. Start backend server on http://127.0.0.1:8000'
@@ -501,25 +588,31 @@ def login_view(request):
                     request.session['client_id'] = data.get('client_id')
                     request.session['role'] = data.get('role', 'employee')
                     request.session['user_id'] = data.get('user_id')
+                    request.session['user_email'] = data.get('user_email', '')
+                    request.session['employee_id'] = data.get('employee_id')
+                    request.session['employee_role'] = data.get('employee_role', '')
                     request.session['module_permissions'] = _normalize_module_permissions(
                         data.get('module_permissions', [])
+                    )
+                    request.session['enabled_addons'] = _normalize_enabled_addons(
+                        data.get('enabled_addons', [])
                     )
                     if data.get('role') == 'superadmin':
                         request.session['enabled_addons'] = sorted(ADDON_KEYS)
                         request.session['module_permissions'] = sorted(STATIC_PERMISSION_KEYS)
                     elif data.get('role') == 'admin':
                         request.session['module_permissions'] = sorted(STATIC_PERMISSION_KEYS)
+                    elif not request.session['enabled_addons']:
                         request.session['enabled_addons'] = _load_client_addons(
                             request,
                             access_token=data['access'],
                             client_id=data.get('client_id'),
                         )
-                    else:
-                        request.session['enabled_addons'] = _load_client_addons(
-                            request,
-                            access_token=data['access'],
-                            client_id=data.get('client_id'),
-                        )
+                    request.session['app_settings'] = _load_client_app_settings(
+                        request,
+                        access_token=data['access'],
+                        client_id=data.get('client_id'),
+                    )
                     return redirect('dashboard')
                 else:
                     error = 'Invalid username or password.'
@@ -626,6 +719,169 @@ def dashboard(request):
         'cf_count': cf_count,
         'recent_employees': recent_employees,
         'messages': messages,
+        **_get_context(request),
+    })
+
+
+def policy_page(request):
+    addon_redirect = _require_addon(request, 'policy')
+    if addon_redirect:
+        return addon_redirect
+    messages = _pop_messages(request)
+    return render(request, 'policy/list.html', {
+        'messages': messages,
+        **_get_context(request),
+    })
+
+
+def settings_page(request):
+    role = request.session.get('role')
+    if role not in ('admin', 'superadmin'):
+        return render(request, 'errors/403.html', status=403)
+    addon_redirect = _require_addon(request, 'settings')
+    if addon_redirect:
+        return addon_redirect
+
+    messages = _pop_messages(request)
+    errors = []
+    settings_data = {}
+    is_edit_mode = False
+
+    client_id = request.session.get('client_id')
+    if role == 'superadmin' and not client_id:
+        errors.append('Select a client at login to manage client settings.')
+    params = {'client_id': client_id} if role == 'superadmin' and client_id else None
+
+    try:
+        resp = _api_get(request, '/api/clients/settings/', params=params)
+        redir = _handle_unauthorized(resp, request)
+        if redir:
+            return redir
+        if resp.status_code == 200:
+            settings_data = resp.json() if isinstance(resp.json(), dict) else {}
+            request.session['app_settings'] = settings_data
+            request.session.modified = True
+        elif resp.status_code != 404:
+            errors = _error_list_from_response(resp, 'Failed to load settings.')
+    except requests.exceptions.ConnectionError:
+        errors = ['Backend server unreachable.']
+
+    if not settings_data:
+        session_settings = request.session.get('app_settings')
+        if isinstance(session_settings, dict):
+            settings_data = session_settings
+
+    if request.method == 'POST':
+        is_edit_mode = True
+        def _bool_field(name):
+            return str(request.POST.get(name) or '').strip().lower() in ('1', 'true', 'yes', 'on')
+        def _int_field(name, default=14, min_value=12, max_value=20):
+            raw = str(request.POST.get(name) or '').strip()
+            try:
+                value = int(raw or default)
+            except (TypeError, ValueError):
+                value = default
+            return max(min_value, min(max_value, value))
+
+        existing_brand = settings_data.get('brand') if isinstance(settings_data, dict) else {}
+        if not isinstance(existing_brand, dict):
+            existing_brand = {}
+
+        logo_url = (request.POST.get('logo_url') or '').strip() or existing_brand.get('logo_url', '')
+        favicon_url = (request.POST.get('favicon_url') or '').strip() or existing_brand.get('favicon_url', '')
+
+        if _bool_field('remove_logo'):
+            logo_url = ''
+        if _bool_field('remove_favicon'):
+            favicon_url = ''
+
+        logo_file = request.FILES.get('logo_file')
+        if logo_file:
+            logo_url = _store_uploaded_dynamic_file(logo_file, folder='brand_assets/logo')
+
+        favicon_file = request.FILES.get('favicon_file')
+        if favicon_file:
+            favicon_url = _store_uploaded_dynamic_file(favicon_file, folder='brand_assets/favicon')
+
+        payload_settings = {
+            'brand': {
+                'brand_name': (request.POST.get('brand_name') or '').strip(),
+                'tagline': (request.POST.get('tagline') or '').strip(),
+                'logo_url': logo_url,
+                'favicon_url': favicon_url,
+            },
+            'theme': {
+                'primary_color': (request.POST.get('primary_color') or '').strip(),
+                'secondary_color': (request.POST.get('secondary_color') or '').strip(),
+                'background_color': (request.POST.get('background_color') or '').strip(),
+            },
+            'ui': {
+                'sidebar_variant': (request.POST.get('sidebar_variant') or 'inset').strip().lower(),
+                'sidebar_style': (request.POST.get('sidebar_style') or 'plain').strip().lower(),
+                'layout_direction': (request.POST.get('layout_direction') or 'ltr').strip().lower(),
+                'theme_mode': (request.POST.get('theme_mode') or 'dark').strip().lower(),
+                'font_family': (request.POST.get('font_family') or 'inter').strip().lower(),
+                'font_family_custom': (request.POST.get('font_family_custom') or '').strip(),
+                'font_size_base': _int_field('font_size_base', default=14, min_value=12, max_value=20),
+            },
+            'system': {
+                'timezone': (request.POST.get('timezone') or '').strip(),
+                'date_format': (request.POST.get('date_format') or '').strip(),
+            },
+            'company': {
+                'company_name': (request.POST.get('company_name') or '').strip(),
+                'company_email': (request.POST.get('company_email') or '').strip(),
+                'company_phone': (request.POST.get('company_phone') or '').strip(),
+            },
+            'currency': {
+                'currency_code': (request.POST.get('currency_code') or '').strip(),
+                'currency_symbol': (request.POST.get('currency_symbol') or '').strip(),
+            },
+            'email': {
+                'from_email': (request.POST.get('from_email') or '').strip(),
+                'reply_to_email': (request.POST.get('reply_to_email') or '').strip(),
+            },
+            'email_notifications': {
+                'leave_request_email': _bool_field('leave_request_email'),
+                'leave_approval_email': _bool_field('leave_approval_email'),
+                'attendance_alert_email': _bool_field('attendance_alert_email'),
+            },
+            'stripe': {
+                'publishable_key': (request.POST.get('stripe_publishable_key') or '').strip(),
+                'secret_key': (request.POST.get('stripe_secret_key') or '').strip(),
+                'enabled': _bool_field('stripe_enabled'),
+            },
+            'paypal': {
+                'client_id': (request.POST.get('paypal_client_id') or '').strip(),
+                'secret_key': (request.POST.get('paypal_secret_key') or '').strip(),
+                'enabled': _bool_field('paypal_enabled'),
+            },
+        }
+
+        payload = {'app_settings': payload_settings}
+        if role == 'superadmin' and client_id:
+            payload['client_id'] = client_id
+
+        try:
+            save_resp = _api_post(request, '/api/clients/settings/', payload)
+            redir = _handle_unauthorized(save_resp, request)
+            if redir:
+                return redir
+            if save_resp.status_code == 200:
+                saved_settings = save_resp.json() if isinstance(save_resp.json(), dict) else {}
+                request.session['app_settings'] = saved_settings
+                request.session.modified = True
+                _flash(request, 'Settings saved successfully.', 'success')
+                return redirect('settings_page')
+            errors = _error_list_from_response(save_resp, 'Failed to save settings.')
+        except requests.exceptions.ConnectionError:
+            errors = ['Backend server unreachable.']
+
+    return render(request, 'settings/list.html', {
+        'settings_data': settings_data,
+        'is_edit_mode': is_edit_mode,
+        'messages': messages,
+        'errors': errors,
         **_get_context(request),
     })
 
@@ -883,6 +1139,7 @@ def permission_list(request):
                 payload = {
                     'name': (request.POST.get('group_name') or '').strip(),
                     'module_permissions': _normalize_module_permissions(request.POST.getlist('module_permissions')),
+                    'enabled_addons': _normalize_enabled_addons(request.POST.getlist('enabled_addons')),
                 }
                 create_resp = _api_post(request, '/api/account-groups/', payload)
                 redir = _handle_unauthorized(create_resp, request)
@@ -900,6 +1157,7 @@ def permission_list(request):
                 payload = {
                     'name': (request.POST.get('group_name') or '').strip(),
                     'module_permissions': _normalize_module_permissions(request.POST.getlist('module_permissions')),
+                    'enabled_addons': _normalize_enabled_addons(request.POST.getlist('enabled_addons')),
                 }
                 update_resp = _api_put(request, f'/api/account-groups/{group_id}/', payload)
                 redir = _handle_unauthorized(update_resp, request)
@@ -934,6 +1192,65 @@ def permission_list(request):
                 if redir:
                     return redir
                 if assign_resp.status_code == 200:
+                    addon_payload = {
+                        'enabled_addons': _normalize_enabled_addons(request.POST.getlist('user_enabled_addons')),
+                    }
+                    addon_resp = _api_post(request, f'/api/accounts/{profile_id}/set-permissions/', addon_payload)
+                    redir = _handle_unauthorized(addon_resp, request)
+                    if redir:
+                        return redir
+                    if addon_resp.status_code != 200:
+                        errors = _error_list_from_response(addon_resp, 'Failed to update user add-on permissions.')
+                        return render(request, 'permissions/list.html', {
+                            'users': users,
+                            'groups': groups,
+                            'permission_options': permission_options,
+                            'addon_options': ADDON_OPTIONS,
+                            'errors': errors,
+                            'messages': messages,
+                            **_get_context(request),
+                        })
+
+                    target_user = next((u for u in users if str(u.get('id')) == str(profile_id)), None)
+                    selected_group = next((g for g in groups if str(g.get('id')) == str(group_id)), None)
+                    inferred_role = _infer_employee_role_from_group_name(
+                        (selected_group or {}).get('name', '')
+                    ) if selected_group else ''
+                    target_email = str((target_user or {}).get('user', {}).get('email') or '').strip().lower()
+                    if inferred_role and target_email:
+                        try:
+                            emp_resp = _api_get(request, '/api/employees/')
+                            redir = _handle_unauthorized(emp_resp, request)
+                            if redir:
+                                return redir
+                            if emp_resp.status_code == 200:
+                                emp_data = emp_resp.json()
+                                employee_rows = (
+                                    emp_data.get('results', emp_data)
+                                    if isinstance(emp_data, dict) else emp_data
+                                )
+                                linked_employee = next(
+                                    (
+                                        row for row in employee_rows
+                                        if str(row.get('email') or '').strip().lower() == target_email
+                                    ),
+                                    None,
+                                )
+                                if linked_employee and str(linked_employee.get('role') or '').strip().lower() != inferred_role:
+                                    role_update_payload = {
+                                        'first_name': linked_employee.get('first_name', ''),
+                                        'last_name': linked_employee.get('last_name', ''),
+                                        'email': linked_employee.get('email', ''),
+                                        'role': inferred_role,
+                                        'client': linked_employee.get('client'),
+                                        'hr': linked_employee.get('hr'),
+                                        'manager': linked_employee.get('manager'),
+                                        'joining_date': linked_employee.get('joining_date'),
+                                    }
+                                    _api_put(request, f"/api/employees/{linked_employee.get('id')}/", role_update_payload)
+                        except requests.exceptions.ConnectionError:
+                            pass
+
                     _flash(request, 'User group updated successfully.', 'success')
                     return redirect('permission_list')
                 errors = _error_list_from_response(assign_resp, 'Failed to assign group.')
@@ -944,6 +1261,7 @@ def permission_list(request):
         'users': users,
         'groups': groups,
         'permission_options': permission_options,
+        'addon_options': ADDON_OPTIONS,
         'errors': errors,
         'messages': messages,
         **_get_context(request),
@@ -979,8 +1297,47 @@ def employee_list(request):
         employees = []
         messages.append({'message': 'Backend server unreachable.', 'level': 'error'})
 
+    current_week_leave_rows = []
+    today = datetime.date.today()
+    week_start = today - datetime.timedelta(days=today.weekday())
+    week_end = week_start + datetime.timedelta(days=6)
+    session_role = request.session.get('role', 'employee')
+    session_employee_role = (request.session.get('employee_role') or '').strip().lower()
+    session_employee_id = request.session.get('employee_id')
+    can_view_full_leave_report = (
+        session_role in ('superadmin', 'admin')
+        or session_employee_role in ('hr', 'manager')
+    )
+    try:
+        leave_resp = _api_get(request, '/api/leaves/', params={'status': 'approved'})
+        redir = _handle_unauthorized(leave_resp, request)
+        if redir:
+            return redir
+        if leave_resp.status_code == 200:
+            leave_data = leave_resp.json()
+            leave_rows = leave_data.get('results', leave_data) if isinstance(leave_data, dict) else leave_data
+            for row in leave_rows:
+                if not can_view_full_leave_report:
+                    if not session_employee_id or str(row.get('employee')) != str(session_employee_id):
+                        continue
+                try:
+                    start_dt = datetime.date.fromisoformat(str(row.get('start_date')))
+                    end_dt = datetime.date.fromisoformat(str(row.get('end_date')))
+                except (TypeError, ValueError):
+                    continue
+                if end_dt < week_start or start_dt > week_end:
+                    continue
+                current_week_leave_rows.append(row)
+            current_week_leave_rows.sort(key=lambda x: str(x.get('start_date') or ''))
+    except requests.exceptions.ConnectionError:
+        pass
+
     return render(request, 'employees/list.html', {
         'employees': employees,
+        'current_week_leave_rows': current_week_leave_rows,
+        'can_view_full_leave_report': can_view_full_leave_report,
+        'week_start': week_start.isoformat(),
+        'week_end': week_end.isoformat(),
         'search_q': search_q,
         'selected_role': selected_role,
         'messages': messages,
@@ -1130,6 +1487,19 @@ def _employee_assignment_options(request, role):
             'label': label,
         })
     return options
+
+
+def _infer_employee_role_from_group_name(group_name):
+    name = str(group_name or '').strip().lower()
+    if not name:
+        return ''
+    if 'manager' in name:
+        return 'manager'
+    if re.search(r'(^|[^a-z])hr([^a-z]|$)', name) or 'human resource' in name:
+        return 'hr'
+    if 'employee' in name:
+        return 'employee'
+    return ''
 
 
 def employee_detail(request, pk):
@@ -1349,6 +1719,10 @@ def employee_edit(request, pk):
     dynamic_records_by_model = {}
     hr_options = _employee_assignment_options(request, 'hr')
     manager_options = _employee_assignment_options(request, 'manager')
+    group_options = []
+    account_profile_id = ''
+    selected_permission_group = ''
+    can_manage_permission_group = request.session.get('role') in ('admin', 'superadmin')
 
     try:
         get_resp = _api_get(request, f'/api/employees/{pk}/')
@@ -1360,6 +1734,40 @@ def employee_edit(request, pk):
             return render(request, 'errors/404.html', status=404)
 
         employee_data = get_resp.json()
+        employee_email = str(employee_data.get('email') or '').strip().lower()
+
+        if can_manage_permission_group:
+            groups_resp = _api_get(request, '/api/account-groups/')
+            redir = _handle_unauthorized(groups_resp, request)
+            if redir:
+                return redir
+            if groups_resp.status_code == 200:
+                groups_data = groups_resp.json()
+                group_options = (
+                    groups_data.get('results', groups_data)
+                    if isinstance(groups_data, dict) else groups_data
+                )
+
+            accounts_resp = _api_get(request, '/api/accounts/')
+            redir = _handle_unauthorized(accounts_resp, request)
+            if redir:
+                return redir
+            if accounts_resp.status_code == 200:
+                accounts_data = accounts_resp.json()
+                account_rows = (
+                    accounts_data.get('results', accounts_data)
+                    if isinstance(accounts_data, dict) else accounts_data
+                )
+                matched_profile = next(
+                    (
+                        row for row in account_rows
+                        if str((row.get('user') or {}).get('email') or '').strip().lower() == employee_email
+                    ),
+                    None,
+                )
+                if matched_profile:
+                    account_profile_id = str(matched_profile.get('id') or '')
+                    selected_permission_group = str(matched_profile.get('permission_group') or '')
 
         dr_resp = _api_get(request, f'/api/dynamic-records/?employee={pk}')
         if dr_resp.status_code == 200:
@@ -1380,6 +1788,9 @@ def employee_edit(request, pk):
         })
 
     if request.method == 'POST':
+        if can_manage_permission_group:
+            selected_permission_group = (request.POST.get('permission_group') or '').strip()
+            account_profile_id = (request.POST.get('account_profile_id') or '').strip()
         form = EmployeeForm(request.POST)
         form.fields['hr'].choices = [('', 'Select HR (Optional)')] + [
             (item['id'], item['label']) for item in hr_options
@@ -1398,6 +1809,16 @@ def employee_edit(request, pk):
                     emp_update_data = form.cleaned_data.copy()
                     hr_value = emp_update_data.pop('hr', '')
                     manager_value = emp_update_data.pop('manager', '')
+                    if can_manage_permission_group and selected_permission_group:
+                        selected_group = next(
+                            (g for g in group_options if str(g.get('id')) == str(selected_permission_group)),
+                            None,
+                        )
+                        inferred_role = _infer_employee_role_from_group_name(
+                            (selected_group or {}).get('name', '')
+                        )
+                        if inferred_role:
+                            emp_update_data['role'] = inferred_role
                     emp_update_data['client'] = client_id
                     emp_update_data['hr'] = int(hr_value) if hr_value else None
                     emp_update_data['manager'] = int(manager_value) if manager_value else None
@@ -1445,6 +1866,40 @@ def employee_edit(request, pk):
                         _save_employee_dynamic_records(
                             request, pk, dynamic_models, dynamic_fields_by_model
                         )
+
+                        if can_manage_permission_group and account_profile_id:
+                            assign_payload = {'permission_group': selected_permission_group}
+                            assign_resp = _api_post(
+                                request,
+                                f'/api/accounts/{account_profile_id}/assign-group/',
+                                assign_payload,
+                            )
+                            redir = _handle_unauthorized(assign_resp, request)
+                            if redir:
+                                return redir
+                            if assign_resp.status_code != 200:
+                                errors = _error_list_from_response(
+                                    assign_resp,
+                                    'Employee updated, but failed to update permission group.',
+                                )
+                                return render(request, 'employees/edit.html', {
+                                    'form': form,
+                                    'employee': employee_data,
+                                    'errors': errors,
+                                    'messages': messages,
+                                    'custom_fields': custom_fields,
+                                    'custom_field_values': custom_field_values,
+                                    'hr_options': hr_options,
+                                    'manager_options': manager_options,
+                                    'group_options': group_options,
+                                    'account_profile_id': account_profile_id,
+                                    'selected_permission_group': selected_permission_group,
+                                    'can_manage_permission_group': can_manage_permission_group,
+                                    'dynamic_models': dynamic_models,
+                                    'dynamic_fields_by_model': dynamic_fields_by_model,
+                                    'dynamic_records_by_model': dynamic_records_by_model,
+                                    **_get_context(request),
+                                })
                         
                         _flash(request, 'Employee updated successfully!', 'success')
                         return redirect('employee_list')
@@ -1491,6 +1946,10 @@ def employee_edit(request, pk):
         'custom_field_values': custom_field_values,
         'hr_options': hr_options,
         'manager_options': manager_options,
+        'group_options': group_options,
+        'account_profile_id': account_profile_id,
+        'selected_permission_group': selected_permission_group,
+        'can_manage_permission_group': can_manage_permission_group,
         'dynamic_models': dynamic_models,
         'dynamic_fields_by_model': dynamic_fields_by_model,
         'dynamic_records_by_model': dynamic_records_by_model,
@@ -1530,6 +1989,9 @@ def leave_type_list(request):
     addon_redirect = _require_addon(request, 'leave_management')
     if addon_redirect:
         return addon_redirect
+    if request.session.get('role') not in ('superadmin', 'admin'):
+        _flash(request, 'Only admin can manage leave types.', 'error')
+        return redirect('leave_list')
 
     messages = _pop_messages(request)
     errors = []
@@ -1602,6 +2064,9 @@ def leave_type_delete(request, pk):
     addon_redirect = _require_addon(request, 'leave_management')
     if addon_redirect:
         return addon_redirect
+    if request.session.get('role') not in ('superadmin', 'admin'):
+        _flash(request, 'Only admin can manage leave types.', 'error')
+        return redirect('leave_list')
     try:
         resp = _api_delete(request, f'/api/leave-types/{pk}/')
         redir = _handle_unauthorized(resp, request)
@@ -1631,12 +2096,20 @@ def leave_list(request):
     leave_types = []
     selected_status = (request.GET.get('status') or '').strip()
     selected_employee = (request.GET.get('employee') or '').strip()
+    current_employee_id = request.session.get('employee_id')
+    current_employee_role = (request.session.get('employee_role') or '').strip().lower()
+    can_view_all_leaves = (
+        request.session.get('role') in ('superadmin', 'admin')
+        or current_employee_role in ('hr', 'manager')
+    )
 
     params = {}
     if selected_status:
         params['status'] = selected_status
-    if selected_employee:
+    if can_view_all_leaves and selected_employee:
         params['employee'] = selected_employee
+    elif not can_view_all_leaves and current_employee_id:
+        params['employee'] = str(current_employee_id)
 
     try:
         leaves_resp = _api_get(request, '/api/leaves/', params=params or None)
@@ -1649,13 +2122,14 @@ def leave_list(request):
         else:
             errors = _error_list_from_response(leaves_resp, 'Failed to load leave requests.')
 
-        employees_resp = _api_get(request, '/api/employees/')
-        redir = _handle_unauthorized(employees_resp, request)
-        if redir:
-            return redir
-        if employees_resp.status_code == 200:
-            emp_data = employees_resp.json()
-            employees = emp_data.get('results', emp_data) if isinstance(emp_data, dict) else emp_data
+        if can_view_all_leaves:
+            employees_resp = _api_get(request, '/api/employees/')
+            redir = _handle_unauthorized(employees_resp, request)
+            if redir:
+                return redir
+            if employees_resp.status_code == 200:
+                emp_data = employees_resp.json()
+                employees = emp_data.get('results', emp_data) if isinstance(emp_data, dict) else emp_data
 
         leave_type_resp = _api_get(request, '/api/leave-types/')
         redir = _handle_unauthorized(leave_type_resp, request)
@@ -1671,6 +2145,7 @@ def leave_list(request):
     for leave in leaves:
         leave_type = leave_type_map.get(str(leave.get('leave_type', '')).lower())
         leave['leave_type_is_paid'] = leave_type.get('is_paid') if leave_type else leave.get('leave_type_is_paid')
+    pending_count = len([row for row in leaves if str(row.get('status', '')).lower() == 'pending'])
 
     return render(request, 'leaves/list.html', {
         'leaves': leaves,
@@ -1680,6 +2155,8 @@ def leave_list(request):
         'messages': messages,
         'selected_status': selected_status,
         'selected_employee': selected_employee,
+        'pending_count': pending_count,
+        'can_view_all_leaves': can_view_all_leaves,
         **_get_context(request),
     })
 
@@ -1696,6 +2173,12 @@ def leave_create(request):
     errors = []
     employees = []
     leave_types = []
+    current_employee_id = request.session.get('employee_id')
+    current_employee_role = (request.session.get('employee_role') or '').strip().lower()
+    can_choose_employee = (
+        request.session.get('role') in ('superadmin', 'admin')
+        or current_employee_role in ('hr', 'manager')
+    )
 
     try:
         employees_resp = _api_get(request, '/api/employees/')
@@ -1704,7 +2187,11 @@ def leave_create(request):
             return redir
         if employees_resp.status_code == 200:
             emp_data = employees_resp.json()
-            employees = emp_data.get('results', emp_data) if isinstance(emp_data, dict) else emp_data
+            employees_rows = emp_data.get('results', emp_data) if isinstance(emp_data, dict) else emp_data
+            if can_choose_employee:
+                employees = employees_rows
+            elif current_employee_id:
+                employees = [row for row in employees_rows if str(row.get('id')) == str(current_employee_id)]
 
         leave_type_resp = _api_get(request, '/api/leave-types/')
         redir = _handle_unauthorized(leave_type_resp, request)
@@ -1717,8 +2204,13 @@ def leave_create(request):
         errors = ['Backend server unreachable.']
 
     if request.method == 'POST':
+        employee_id = (
+            str(current_employee_id)
+            if (not can_choose_employee and current_employee_id)
+            else (request.POST.get('employee') or '').strip()
+        )
         payload = {
-            'employee': request.POST.get('employee'),
+            'employee': employee_id,
             'leave_type': (request.POST.get('leave_type') or '').strip(),
             'start_date': (request.POST.get('start_date') or '').strip(),
             'end_date': (request.POST.get('end_date') or '').strip(),
@@ -1741,6 +2233,7 @@ def leave_create(request):
         'leave_types': leave_types,
         'errors': errors,
         'messages': messages,
+        'can_choose_employee': can_choose_employee,
         **_get_context(request),
     })
 
@@ -1846,6 +2339,109 @@ def leave_balance(request):
         'messages': messages,
         **_get_context(request),
     })
+
+
+def holiday_list(request):
+    permission_redirect = _require_module_permission(request, 'holidays.view')
+    if permission_redirect:
+        return permission_redirect
+    addon_redirect = _require_addon(request, 'holidays')
+    if addon_redirect:
+        return addon_redirect
+
+    messages = _pop_messages(request)
+    errors = []
+    holidays = []
+    edit_item = None
+    search_q = (request.GET.get('q') or '').strip()
+    selected_paid = (request.GET.get('is_paid') or '').strip().lower()
+    edit_id = (request.GET.get('edit') or '').strip()
+
+    params = {}
+    if search_q:
+        params['search'] = search_q
+    if selected_paid in ('true', 'false'):
+        params['is_paid'] = selected_paid
+
+    try:
+        resp = _api_get(request, '/api/holidays/', params=params or None)
+        redir = _handle_unauthorized(resp, request)
+        if redir:
+            return redir
+        if resp.status_code == 200:
+            payload = resp.json()
+            holidays = payload.get('results', payload) if isinstance(payload, dict) else payload
+        else:
+            errors = _error_list_from_response(resp, 'Failed to load holidays.')
+    except requests.exceptions.ConnectionError:
+        errors = ['Backend server unreachable.']
+
+    if edit_id:
+        edit_item = next((row for row in holidays if str(row.get('id')) == edit_id), None)
+
+    if request.method == 'POST':
+        edit_id = (request.POST.get('edit_id') or '').strip()
+        permission_key = 'holidays.edit' if edit_id else 'holidays.create'
+        permission_redirect = _require_module_permission(request, permission_key)
+        if permission_redirect:
+            return permission_redirect
+
+        payload = {
+            'name': (request.POST.get('name') or '').strip(),
+            'holiday_type': (request.POST.get('holiday_type') or '').strip(),
+            'start_date': (request.POST.get('start_date') or '').strip(),
+            'end_date': (request.POST.get('end_date') or '').strip(),
+            'is_paid': str(request.POST.get('is_paid') or '').strip().lower() in ('1', 'true', 'yes', 'on'),
+            'description': (request.POST.get('description') or '').strip(),
+            'is_active': str(request.POST.get('is_active') or '').strip().lower() in ('1', 'true', 'yes', 'on'),
+        }
+        try:
+            if edit_id:
+                save_resp = _api_put(request, f'/api/holidays/{edit_id}/', payload)
+            else:
+                save_resp = _api_post(request, '/api/holidays/', payload)
+            redir = _handle_unauthorized(save_resp, request)
+            if redir:
+                return redir
+            if save_resp.status_code in (200, 201):
+                _flash(request, 'Holiday saved successfully.', 'success')
+                return redirect('holiday_list')
+            errors = _error_list_from_response(save_resp, 'Failed to save holiday.')
+        except requests.exceptions.ConnectionError:
+            errors = ['Backend server unreachable.']
+
+    return render(request, 'holidays/list.html', {
+        'holidays': holidays,
+        'errors': errors,
+        'messages': messages,
+        'search_q': search_q,
+        'selected_paid': selected_paid,
+        'edit_item': edit_item,
+        **_get_context(request),
+    })
+
+
+@require_POST
+def holiday_delete(request, pk):
+    permission_redirect = _require_module_permission(request, 'holidays.delete')
+    if permission_redirect:
+        return permission_redirect
+    addon_redirect = _require_addon(request, 'holidays')
+    if addon_redirect:
+        return addon_redirect
+
+    try:
+        resp = _api_delete(request, f'/api/holidays/{pk}/')
+        redir = _handle_unauthorized(resp, request)
+        if redir:
+            return redir
+        if resp.status_code == 204:
+            _flash(request, 'Holiday deleted.', 'success')
+        else:
+            _flash(request, '; '.join(_error_list_from_response(resp, 'Failed to delete holiday.')), 'error')
+    except requests.exceptions.ConnectionError:
+        _flash(request, 'Backend server unreachable.', 'error')
+    return redirect('holiday_list')
 
 
 def custom_field_list(request):
@@ -2802,12 +3398,17 @@ def dynamic_entity_list(request, model_id):
         if probe_resp.status_code == 200:
             probe_model = probe_resp.json()
             is_attendance_model = str(probe_model.get('slug', '')).lower() == 'attendance'
-            permission_redirect = _require_module_permission(
-                request,
-                'attendance.view' if is_attendance_model else f'dynamic_model.{model_id}.view'
-            )
-            if permission_redirect:
-                return permission_redirect
+            if is_attendance_model:
+                if not _has_any_module_permission(
+                    request,
+                    ['attendance.view', 'attendance.create', 'attendance.edit', 'attendance.delete'],
+                ):
+                    _flash(request, 'You do not have permission to access this module.', 'error')
+                    return redirect('dashboard')
+            else:
+                permission_redirect = _require_module_permission(request, f'dynamic_model.{model_id}.view')
+                if permission_redirect:
+                    return permission_redirect
     except requests.exceptions.ConnectionError:
         pass
     addon_redirect = _require_addon(
@@ -2817,27 +3418,81 @@ def dynamic_entity_list(request, model_id):
     if addon_redirect:
         return addon_redirect
     messages = _pop_messages(request)
+    attendance_summary = None
+    attendance_employees = []
+    selected_employee_id = (request.GET.get('employee') or '').strip()
+    can_view_all_attendance = False
+    current_employee_id = request.session.get('employee_id')
+    current_employee_role = (request.session.get('employee_role') or '').strip().lower()
     try:
         redir, dynamic_model, fields = _load_dynamic_model_and_fields(request, model_id)
         if redir:
             return redir
         fields = _filter_visible_dynamic_fields(request, fields)
-        if str(dynamic_model.get('slug', '')).lower() == 'attendance':
+        is_attendance = str(dynamic_model.get('slug', '')).lower() == 'attendance'
+        if is_attendance:
             addon_redirect = _require_addon(request, 'attendance')
             if addon_redirect:
                 return addon_redirect
 
-        records_resp = _api_get(request, f'/api/dynamic-records/?dynamic_model={model_id}')
+        records_params = {'dynamic_model': model_id}
+        if is_attendance:
+            can_view_all_attendance = (
+                request.session.get('role') in ('superadmin', 'admin')
+                or current_employee_role in ('hr', 'manager')
+            )
+            employees_resp = _api_get(request, '/api/employees/')
+            employees_rows = []
+            if employees_resp.status_code == 200:
+                employees_data = employees_resp.json()
+                employees_rows = (
+                    employees_data.get('results', employees_data)
+                    if isinstance(employees_data, dict) else employees_data
+                )
+            attendance_employees = employees_rows
+
+            if can_view_all_attendance and selected_employee_id:
+                records_params['employee'] = selected_employee_id
+            elif not can_view_all_attendance and current_employee_id:
+                records_params['employee'] = current_employee_id
+
+        records_resp = _api_get(request, '/api/dynamic-records/', params=records_params)
         redir = _handle_unauthorized(records_resp, request)
         if redir:
             return redir
         records_data = records_resp.json() if records_resp.status_code == 200 else []
         records = records_data.get('results', records_data) if isinstance(records_data, dict) else records_data
 
-        if str(dynamic_model.get('slug', '')).lower() == 'attendance':
+        if is_attendance:
+            employee_name_map = {
+                str(emp.get('id')): f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
+                for emp in attendance_employees
+            }
+
+            if can_view_all_attendance and not selected_employee_id:
+                today_iso = datetime.date.today().isoformat()
+                today_records = []
+                for rec in records:
+                    if str((rec.get('data') or {}).get('attendance_date')) == today_iso:
+                        today_records.append(rec)
+                records = today_records
+
+                present_ids = {
+                    str(rec.get('employee'))
+                    for rec in records
+                    if str((rec.get('data') or {}).get('status') or 'present').lower() == 'present'
+                }
+                total_employees = len(attendance_employees)
+                attendance_summary = {
+                    'date': today_iso,
+                    'present': len(present_ids),
+                    'absent': max(total_employees - len(present_ids), 0),
+                }
+
             for rec in records:
                 rec_data = rec.get('data', {})
                 rec['total_time'] = _attendance_total_time(rec_data) or '-'
+                rec['employee_name'] = employee_name_map.get(str(rec.get('employee')), f"Employee #{rec.get('employee')}")
     except requests.exceptions.ConnectionError:
         dynamic_model = {}
         fields = []
@@ -2848,6 +3503,10 @@ def dynamic_entity_list(request, model_id):
         'dynamic_model': dynamic_model,
         'fields': fields,
         'records': records,
+        'attendance_summary': attendance_summary,
+        'attendance_employees': attendance_employees,
+        'selected_employee_id': selected_employee_id,
+        'can_view_all_attendance': can_view_all_attendance,
         'messages': messages,
         **_attendance_feature_flags(request),
         **_get_context(request),
@@ -2877,7 +3536,13 @@ def dynamic_entity_punch(request, model_id):
         if addon_redirect:
             return addon_redirect
 
-        employee_id = request.POST.get('employee_id')
+        session_employee_id = request.session.get('employee_id')
+        session_employee_role = (request.session.get('employee_role') or '').strip().lower()
+        is_regular_employee = (
+            request.session.get('role') == 'employee'
+            and session_employee_role == 'employee'
+        )
+        employee_id = str(session_employee_id) if is_regular_employee and session_employee_id else request.POST.get('employee_id')
         if not employee_id:
             _flash(request, 'Employee ID is required.', 'error')
             return redirect('dynamic_entity_list', model_id=model_id)
@@ -3029,12 +3694,27 @@ def dynamic_entity_create(request, model_id):
             return addon_redirect
     attendance_flags = _attendance_feature_flags(request)
     current_time = datetime.datetime.now().strftime('%H:%M:%S')
+    attendance_locked_employee_id = None
+    if is_attendance:
+        session_employee_role = (request.session.get('employee_role') or '').strip().lower()
+        if request.session.get('role') == 'employee' and session_employee_role == 'employee':
+            attendance_locked_employee_id = request.session.get('employee_id')
 
     if request.method == 'POST':
         data = {}
         payload = {'dynamic_model': model_id}
         if is_attendance:
-            employee_id = (request.POST.get('employee_id') or '').strip()
+            session_employee_id = request.session.get('employee_id')
+            session_employee_role = (request.session.get('employee_role') or '').strip().lower()
+            is_regular_employee = (
+                request.session.get('role') == 'employee'
+                and session_employee_role == 'employee'
+            )
+            employee_id = (
+                str(session_employee_id)
+                if is_regular_employee and session_employee_id
+                else (request.POST.get('employee_id') or '').strip()
+            )
             if not employee_id:
                 errors = ['Employee ID is required for attendance check-in.']
                 return render(request, 'dynamic_entities/create.html', {
@@ -3042,6 +3722,7 @@ def dynamic_entity_create(request, model_id):
                     'fields': fields,
                     'is_attendance': is_attendance,
                     'current_time': current_time,
+                    'attendance_locked_employee_id': attendance_locked_employee_id,
                     'errors': errors,
                     'messages': messages,
                     **attendance_flags,
@@ -3070,6 +3751,7 @@ def dynamic_entity_create(request, model_id):
                         'fields': fields,
                         'is_attendance': is_attendance,
                         'current_time': current_time,
+                        'attendance_locked_employee_id': attendance_locked_employee_id,
                         'errors': errors,
                         'messages': messages,
                         **attendance_flags,
@@ -3123,6 +3805,7 @@ def dynamic_entity_create(request, model_id):
         'fields': fields,
         'is_attendance': is_attendance,
         'current_time': current_time,
+        'attendance_locked_employee_id': attendance_locked_employee_id,
         'errors': errors,
         'messages': messages,
         **attendance_flags,

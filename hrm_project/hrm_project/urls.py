@@ -26,6 +26,7 @@ from custom_fields.views import CustomFieldViewSet, CustomFieldValueViewSet
 from clients.views import ClientViewSet
 from dynamic_models.views import DynamicModelViewSet, DynamicFieldViewSet, DynamicRecordViewSet
 from leaves.views import LeaveRequestViewSet, LeaveTypeViewSet, LeaveBalanceView
+from holidays.views import HolidayViewSet
 
 router = DefaultRouter()
 
@@ -40,6 +41,7 @@ router.register("dynamic-fields", DynamicFieldViewSet, basename="dynamic-fields"
 router.register("dynamic-records", DynamicRecordViewSet, basename="dynamic-records")
 router.register("leaves", LeaveRequestViewSet, basename="leaves")
 router.register("leave-types", LeaveTypeViewSet, basename="leave-types")
+router.register("holidays", HolidayViewSet, basename="holidays")
 
 # Custom token view with profile info
 class CustomTokenObtainPairView(TokenObtainPairView):

@@ -487,6 +487,18 @@ td {
 .addon-item input[type="checkbox"] {
   width: 16px;
   height: 16px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+  appearance: auto;
+  -webkit-appearance: checkbox;
+  accent-color: var(--accent);
+}
+
+.addon-item input[type="checkbox"]:focus {
+  box-shadow: none;
 }
 
 .permissions-grid {
@@ -682,6 +694,20 @@ td {
   opacity: 0.9;
 }
 
+.permission-user-panels {
+  display: flex;
+  flex-direction: column;
+}
+
+.permission-user-panel {
+  display: none;
+  margin-top: 2px;
+}
+
+.permission-user-panel.active {
+  display: block;
+}
+
 .is-hidden {
   display: none !important;
 }
@@ -706,6 +732,61 @@ td {
 .search-input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(108,99,255,0.15);
+}
+
+.attendance-filter-form {
+  min-width: 280px;
+  max-width: 360px;
+}
+
+.attendance-filter-group {
+  margin-bottom: 0;
+}
+
+.attendance-filter-group label {
+  margin-bottom: 6px;
+}
+
+.attendance-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.attendance-filter-inline {
+  min-width: 280px;
+  max-width: 360px;
+}
+
+.attendance-filter-inline select {
+  width: 100%;
+  min-height: 42px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  padding: 10px 14px;
+  outline: none;
+  -webkit-appearance: none;
+}
+
+.attendance-filter-inline select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(108,99,255,0.15);
+  background: rgba(108,99,255,0.05);
+}
+
+.attendance-filter-inline select option {
+  background: #17172f;
+  color: #f3f4ff;
+}
+
+.attendance-filter-inline select option:checked {
+  background: #3c63c9;
+  color: #ffffff;
 }
 
 /* ── Flash Messages ────────────────────────────────────────── */
