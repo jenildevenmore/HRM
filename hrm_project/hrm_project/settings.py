@@ -12,16 +12,27 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 import os
-import sys
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-ROOT_DIR = BASE_DIR.parent
-FRONTEND_DIR = ROOT_DIR / 'hrm_frontend'
 
-# Allow importing frontend app/modules (core, hrm_frontend.jinja2) from backend project.
-if str(FRONTEND_DIR) not in sys.path:
-    sys.path.insert(0, str(FRONTEND_DIR))
+
+def _load_dotenv():
+    env_candidates = [BASE_DIR.parent / '.env', BASE_DIR / '.env']
+    for env_path in env_candidates:
+        if not env_path.exists():
+            continue
+        for raw_line in env_path.read_text(encoding='utf-8').splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+            key, value = line.split('=', 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            os.environ.setdefault(key, value)
+
+
+_load_dotenv()
 
 
 # Quick-start development settings - unsuitable for production
@@ -42,7 +53,10 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-change-me-in-produc
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = _env_bool('DJANGO_DEBUG', True)
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = _env_csv(
+    'DJANGO_ALLOWED_HOSTS',
+    '127.0.0.1,localhost,192.168.1.66',
+)
 
 CSRF_TRUSTED_ORIGINS = _env_csv(
     'DJANGO_CSRF_TRUSTED_ORIGINS',
@@ -88,15 +102,15 @@ ROOT_URLCONF = 'hrm_project.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.jinja2.Jinja2',
-        'DIRS': [FRONTEND_DIR / 'templates'],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': False,
         'OPTIONS': {
-            'environment': 'hrm_frontend.jinja2.environment',
+            'environment': 'hrm_project.jinja2.environment',
         },
     },
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [FRONTEND_DIR / 'templates'],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -167,10 +181,10 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = os.getenv('DJANGO_STATIC_URL', '/static/')
-STATICFILES_DIRS = [FRONTEND_DIR / 'static']
+STATICFILES_DIRS = [BASE_DIR / 'static']
 STATIC_ROOT = os.getenv('DJANGO_STATIC_ROOT', str(BASE_DIR / 'staticfiles'))
 MEDIA_URL = os.getenv('DJANGO_MEDIA_URL', '/media/')
-MEDIA_ROOT = os.getenv('DJANGO_MEDIA_ROOT', str(FRONTEND_DIR / 'media'))
+MEDIA_ROOT = os.getenv('DJANGO_MEDIA_ROOT', str(BASE_DIR / 'media'))
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -214,17 +228,17 @@ USE_X_FORWARDED_HOST = True
 SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', not DEBUG)
 CSRF_COOKIE_SECURE = _env_bool('CSRF_COOKIE_SECURE', not DEBUG)
 SECURE_SSL_REDIRECT = _env_bool('SECURE_SSL_REDIRECT', False)
-BACKEND_API_URL = os.getenv('BACKEND_API_URL', 'https://jenilevenmore.pythonanywhere.com')
+BACKEND_API_URL = os.getenv('BACKEND_API_URL', 'http://127.0.0.1:8000')
 
 FRONTEND_BASE_URLS = [
     url.strip().rstrip('/')
     for url in os.getenv(
         'FRONTEND_BASE_URLS',
-        'http://127.0.0.1:8001,http://192.168.1.66:8001'
+        'http://127.0.0.1:8000,http://192.168.1.66:8000'
     ).split(',')
     if url.strip()
 ]
 FRONTEND_BASE_URL = os.getenv(
     'FRONTEND_BASE_URL',
-    FRONTEND_BASE_URLS[0] if FRONTEND_BASE_URLS else 'http://127.0.0.1:8001',
+    FRONTEND_BASE_URLS[0] if FRONTEND_BASE_URLS else 'http://127.0.0.1:8000',
 ).rstrip('/')
