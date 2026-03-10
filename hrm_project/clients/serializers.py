@@ -15,6 +15,7 @@ class ClientSerializer(serializers.ModelSerializer):
         'leave_management',
         'holidays',
         'payroll',
+        'activity_logs',
         'settings',
         'policy',
     }

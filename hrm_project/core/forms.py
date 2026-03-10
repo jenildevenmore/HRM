@@ -21,6 +21,7 @@ class ClientForm(forms.Form):
         ('leave_management', 'Leave Management'),
         ('holidays', 'Holidays'),
         ('payroll', 'Payroll'),
+        ('activity_logs', 'Activity Logs'),
         ('settings', 'Settings'),
         ('policy', 'Policy'),
     ]

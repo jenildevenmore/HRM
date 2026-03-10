@@ -137,6 +137,14 @@
     </a>
     {% endif %}
 
+    {% if role == 'superadmin' or ('activity_logs' in enabled_addons and (role == 'admin' or 'activity_logs.view' in module_permissions)) %}
+    <a href="{{ url('activity_log_list') }}"
+       class="nav-link {% if 'activity_log' in request.resolver_match.url_name %}active{% endif %}">
+      <span class="nav-icon">LG</span>
+      <span class="nav-label">Activity Logs</span>
+    </a>
+    {% endif %}
+
     {% if role == 'superadmin' or ('holidays' in enabled_addons and (role == 'admin' or 'holidays.view' in module_permissions)) %}
     <a href="{{ url('holiday_list') }}"
        class="nav-link {% if 'holiday' in request.resolver_match.url_name %}active{% endif %}">

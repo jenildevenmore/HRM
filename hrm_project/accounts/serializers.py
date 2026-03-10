@@ -14,6 +14,7 @@ STATIC_PERMISSION_KEYS = {
     'holidays.view', 'holidays.create', 'holidays.edit', 'holidays.delete',
     'custom_fields.view', 'custom_fields.create', 'custom_fields.edit', 'custom_fields.delete',
     'dynamic_models.view', 'dynamic_models.create', 'dynamic_models.edit', 'dynamic_models.delete',
+    'activity_logs.view',
 }
 
 LEGACY_PERMISSION_MAP = {
@@ -34,6 +35,7 @@ ALLOWED_ADDON_KEYS = {
     'leave_management',
     'holidays',
     'payroll',
+    'activity_logs',
     'settings',
     'policy',
 }

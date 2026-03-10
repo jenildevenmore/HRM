@@ -3,12 +3,15 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.exceptions import PermissionDenied
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.tokens import default_token_generator
+from django.core.mail import send_mail
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Count
-from django.utils.http import urlsafe_base64_decode
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django.utils.encoding import force_bytes
 import re
 from .models import UserProfile, ClientPermissionGroup
 from .serializers import UserProfileSerializer, UserSerializer, ClientPermissionGroupSerializer
@@ -129,9 +132,42 @@ class UserProfileViewSet(viewsets.ModelViewSet):
                 client=client,
                 role=role
             )
-            
+
+            uid = urlsafe_base64_encode(force_bytes(user.pk))
+            token = default_token_generator.make_token(user)
+            frontend_base = str(getattr(settings, 'FRONTEND_BASE_URL', '') or '').rstrip('/')
+            if not frontend_base:
+                frontend_base = request.build_absolute_uri('/').rstrip('/')
+            reset_link = f'{frontend_base}/reset-password/?uid={uid}&token={token}'
+
+            email_sent = False
+            email_error = ''
+            if email:
+                try:
+                    send_mail(
+                        subject='Set your HRM account password',
+                        message=(
+                            f'Hello {username},\n\n'
+                            'Your HRM account has been created.\n'
+                            'Use this link to set/reset your password:\n'
+                            f'{reset_link}\n\n'
+                            'If you did not request this, contact your administrator.'
+                        ),
+                        from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', None),
+                        recipient_list=[email],
+                        fail_silently=False,
+                    )
+                    email_sent = True
+                except Exception as mail_exc:
+                    email_error = str(mail_exc)
+
             serializer = self.get_serializer(profile)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            response_data = serializer.data
+            response_data['password_setup_link'] = reset_link
+            response_data['password_reset_email_sent'] = email_sent
+            if email_error:
+                response_data['password_reset_email_error'] = email_error
+            return Response(response_data, status=status.HTTP_201_CREATED)
         except Exception as e:
             return Response(
                 {'error': str(e)},
@@ -237,6 +273,12 @@ class UserProfileViewSet(viewsets.ModelViewSet):
                     {'key': 'dynamic_models.create', 'label': 'Can create Dynamic Models'},
                     {'key': 'dynamic_models.edit', 'label': 'Can edit Dynamic Models'},
                     {'key': 'dynamic_models.delete', 'label': 'Can delete Dynamic Models'},
+                ],
+            },
+            {
+                'title': 'Activity Logs',
+                'permissions': [
+                    {'key': 'activity_logs.view', 'label': 'Can view Activity Logs'},
                 ],
             },
         ]

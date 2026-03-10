@@ -26,10 +26,11 @@ from accounts.serializers import CustomTokenObtainPairSerializer
 from employees.views import EmployeeViewSet
 from custom_fields.views import CustomFieldViewSet, CustomFieldValueViewSet
 from clients.views import ClientViewSet
-from dynamic_models.views import DynamicModelViewSet, DynamicFieldViewSet, DynamicRecordViewSet
+from dynamic_models.views import DynamicModelViewSet, DynamicFieldViewSet, DynamicRecordViewSet, AutoClockoutRunView
 from leaves.views import LeaveRequestViewSet, LeaveTypeViewSet, LeaveBalanceView
 from holidays.views import HolidayViewSet
 from payroll.views import PayrollPolicyViewSet, EmployeeCompensationViewSet, PayrollReportView
+from activity_logs.views import ActivityLogViewSet
 
 router = DefaultRouter()
 
@@ -47,6 +48,7 @@ router.register("leave-types", LeaveTypeViewSet, basename="leave-types")
 router.register("holidays", HolidayViewSet, basename="holidays")
 router.register("payroll-policy", PayrollPolicyViewSet, basename="payroll-policy")
 router.register("employee-compensation", EmployeeCompensationViewSet, basename="employee-compensation")
+router.register("activity-logs", ActivityLogViewSet, basename="activity-logs")
 
 # Custom token view with profile info
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -58,6 +60,7 @@ urlpatterns = [
 
     path('api/leave-balance/', LeaveBalanceView.as_view()),
     path('api/payroll-report/', PayrollReportView.as_view()),
+    path('api/attendance/auto-clockout/run/', AutoClockoutRunView.as_view()),
     path('api/', include(router.urls)),
 
     path('api/token/', CustomTokenObtainPairView.as_view()),

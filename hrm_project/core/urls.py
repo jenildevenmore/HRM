@@ -36,6 +36,7 @@ urlpatterns = [
     path('leaves/<int:pk>/cancel/', views.leave_cancel, name='leave_cancel'),
     path('leaves/<int:pk>/delete/', views.leave_delete, name='leave_delete'),
     path('payroll/', views.payroll_list, name='payroll_list'),
+    path('activity-logs/', views.activity_log_list, name='activity_log_list'),
 
     # Holidays
     path('holidays/', views.holiday_list, name='holiday_list'),

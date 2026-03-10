@@ -1,10 +1,14 @@
+from io import StringIO
+
+from django.core.management import call_command
 from rest_framework import viewsets
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.filters import OrderingFilter, SearchFilter
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
 
 from .models import DynamicField, DynamicModel, DynamicRecord
@@ -198,3 +202,52 @@ class DynamicRecordViewSet(TenantScopedViewSet):
         dynamic_model = serializer.validated_data.get('dynamic_model', serializer.instance.dynamic_model)
         self._validate_model_access(dynamic_model)
         serializer.save()
+
+
+class AutoClockoutRunView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def _run(self, dry_run=False, no_email=False):
+        dry_run = bool(dry_run)
+        no_email = bool(no_email)
+
+        out = StringIO()
+        try:
+            call_command(
+                'auto_clockout_attendance',
+                dry_run=dry_run,
+                no_email=no_email,
+                stdout=out,
+            )
+        except Exception as exc:
+            return Response(
+                {
+                    'detail': 'Failed to run auto clock-out command.',
+                    'error': str(exc),
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        output = out.getvalue().strip()
+        lines = [line for line in output.splitlines() if line.strip()]
+        return Response(
+            {
+                'detail': 'Auto clock-out command executed.',
+                'dry_run': dry_run,
+                'no_email': no_email,
+                'output': output,
+                'lines': lines,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    def post(self, request):
+        dry_run = str(request.data.get('dry_run', '')).strip().lower() in ('1', 'true', 'yes', 'on')
+        no_email = str(request.data.get('no_email', '')).strip().lower() in ('1', 'true', 'yes', 'on')
+        return self._run(dry_run=dry_run, no_email=no_email)
+
+    def get(self, request):
+        dry_run = str(request.query_params.get('dry_run', '')).strip().lower() in ('1', 'true', 'yes', 'on')
+        no_email = str(request.query_params.get('no_email', '')).strip().lower() in ('1', 'true', 'yes', 'on')
+        return self._run(dry_run=dry_run, no_email=no_email)

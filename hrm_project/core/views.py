@@ -35,6 +35,7 @@ ADDON_KEYS = {
     'leave_management',
     'holidays',
     'payroll',
+    'activity_logs',
     'settings',
     'policy',
 }
@@ -47,6 +48,7 @@ ADDON_OPTIONS = [
     ('leave_management', 'Leave Management'),
     ('holidays', 'Holidays'),
     ('payroll', 'Payroll'),
+    ('activity_logs', 'Activity Logs'),
     ('settings', 'Settings'),
     ('policy', 'Policy'),
 ]
@@ -58,6 +60,7 @@ STATIC_PERMISSION_KEYS = {
     'holidays.view', 'holidays.create', 'holidays.edit', 'holidays.delete',
     'custom_fields.view', 'custom_fields.create', 'custom_fields.edit', 'custom_fields.delete',
     'dynamic_models.view', 'dynamic_models.create', 'dynamic_models.edit', 'dynamic_models.delete',
+    'activity_logs.view',
 }
 
 LEGACY_PERMISSION_MAP = {
@@ -75,6 +78,7 @@ ADDON_VIEW_PERMISSION_MAP = {
     'leave_management': 'leaves.view',
     'holidays': 'holidays.view',
     'payroll': 'payroll.view',
+    'activity_logs': 'activity_logs.view',
     'policy': 'policy.view',
 }
 
@@ -395,7 +399,7 @@ def _normalize_module_permissions(permissions):
                 if expanded not in cleaned:
                     cleaned.append(expanded)
             continue
-        if key in STATIC_PERMISSION_KEYS or key == 'policy.view' or re.fullmatch(r'dynamic_model\.\d+\.(view|create|edit|delete)', key):
+        if key in STATIC_PERMISSION_KEYS or key in ('policy.view', 'activity_logs.view') or re.fullmatch(r'dynamic_model\.\d+\.(view|create|edit|delete)', key):
             if key not in cleaned:
                 cleaned.append(key)
     return cleaned
@@ -2739,6 +2743,62 @@ def payroll_list(request):
         'selected_employee': selected_employee,
         'month_options': month_options,
         'year_options': year_options,
+        **_get_context(request),
+    })
+
+
+def activity_log_list(request):
+    permission_redirect = _require_module_permission(request, 'activity_logs.view')
+    if permission_redirect:
+        return permission_redirect
+    addon_redirect = _require_addon(request, 'activity_logs')
+    if addon_redirect:
+        return addon_redirect
+
+    role = request.session.get('role', 'employee')
+    employee_role = (request.session.get('employee_role') or '').strip().lower()
+    if role == 'employee' and employee_role not in ('hr', 'manager'):
+        return render(request, 'errors/403.html', status=403)
+
+    messages = _pop_messages(request)
+    errors = []
+    logs = []
+
+    action_filter = (request.GET.get('action') or '').strip().lower()
+    module_filter = (request.GET.get('module') or '').strip()
+    search_q = (request.GET.get('q') or '').strip()
+
+    params = {}
+    if action_filter:
+        params['action'] = action_filter
+    if module_filter:
+        params['module'] = module_filter
+    if search_q:
+        params['search'] = search_q
+
+    try:
+        resp = _api_get(request, '/api/activity-logs/', params=params or None)
+        redir = _handle_unauthorized(resp, request)
+        if redir:
+            return redir
+        if resp.status_code == 200:
+            payload = resp.json()
+            logs = payload.get('results', payload) if isinstance(payload, dict) else payload
+        else:
+            errors = _error_list_from_response(resp, 'Failed to load activity logs.')
+    except requests.exceptions.ConnectionError:
+        errors = ['Backend server unreachable.']
+
+    module_options = sorted({str(row.get('module') or '') for row in logs if str(row.get('module') or '').strip()})
+
+    return render(request, 'activity_logs/list.html', {
+        'messages': messages,
+        'errors': errors,
+        'logs': logs,
+        'action_filter': action_filter,
+        'module_filter': module_filter,
+        'module_options': module_options,
+        'search_q': search_q,
         **_get_context(request),
     })
 
