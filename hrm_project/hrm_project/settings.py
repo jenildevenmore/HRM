@@ -161,7 +161,7 @@ WSGI_APPLICATION = 'hrm_project.wsgi.application'
 #         }
 #     }
 
-DB_ENGINE = os.getenv('DJANGO_DB_ENGINE', 'postgres').strip().lower()
+DB_ENGINE = os.getenv('DJANGO_DB_ENGINE', 'sqlite').strip().lower()
 if DB_ENGINE in ('postgres', 'postgresql'):
     DATABASES = {
         "default": {
