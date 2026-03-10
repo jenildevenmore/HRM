@@ -69,11 +69,9 @@
     <table>
         <thead>
             <tr>
-                <th>#</th>
                 <th>Name</th>
                 <th>Email</th>
                 <th>Role</th>
-                <th>Client ID</th>
                 <th>HR</th>
                 <th>Manager</th>
                 <th>Joining Date</th>
@@ -83,11 +81,9 @@
         <tbody>
             {% for emp in employees %}
             <tr>
-                <td style="color:var(--text-dim);">{{ emp.id }}</td>
                 <td><strong>{{ emp.first_name }} {{ emp.last_name }}</strong></td>
                 <td style="color:var(--text-muted);">{{ emp.email }}</td>
                 <td style="color:var(--text-muted);">{{ emp.client_role_name or (emp.role_display or (emp.role or 'employee')|upper) }}</td>
-                <td style="color:var(--text-muted);">{{ emp.client }}</td>
                 <td style="color:var(--text-muted);">{{ emp.hr_name or '-' }}</td>
                 <td style="color:var(--text-muted);">{{ emp.manager_name or '-' }}</td>
                 <td style="color:var(--text-muted);">{{ emp.joining_date }}</td>
