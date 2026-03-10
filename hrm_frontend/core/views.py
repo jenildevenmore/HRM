@@ -89,7 +89,7 @@ def _api_get(request, path, params=None):
         f'{API}{path}',
         headers=_auth_headers(request),
         params=params,
-        timeout=10,
+        
     )
     return resp
 
@@ -99,7 +99,7 @@ def _api_post(request, path, data):
         f'{API}{path}',
         json=data,
         headers=_auth_headers(request),
-        timeout=10,
+        
     )
     return resp
 
@@ -109,7 +109,7 @@ def _api_put(request, path, data):
         f'{API}{path}',
         json=data,
         headers=_auth_headers(request),
-        timeout=10,
+        
     )
     return resp
 
@@ -118,7 +118,7 @@ def _api_delete(request, path):
     resp = requests.delete(
         f'{API}{path}',
         headers=_auth_headers(request),
-        timeout=10,
+        
     )
     return resp
 
@@ -339,7 +339,7 @@ def _load_client_addons(request, access_token=None, client_id=None):
         resp = requests.get(
             f'{API}/api/clients/{target_client_id}/',
             headers=headers,
-            timeout=10,
+            
         )
         if resp.status_code == 200:
             return _normalize_enabled_addons(resp.json().get('enabled_addons') or [])
@@ -361,7 +361,7 @@ def _load_client_app_settings(request, access_token=None, client_id=None):
         resp = requests.get(
             f'{API}/api/clients/{target_client_id}/',
             headers=headers,
-            timeout=10,
+            
         )
         if resp.status_code == 200:
             payload = resp.json()
@@ -544,7 +544,7 @@ def login_view(request):
 
     if login_mode != 'superadmin':
         try:
-            clients_resp = requests.get(f'{API}/api/clients/public/', timeout=10)
+            clients_resp = requests.get(f'{API}/api/clients/public/', )
             if clients_resp.status_code == 200:
                 clients = clients_resp.json()
             else:
@@ -580,7 +580,7 @@ def login_view(request):
             else:
                 payload['client_id'] = selected_client_id
             try:
-                resp = requests.post(f'{API}/api/token/', json=payload, timeout=10)
+                resp = requests.post(f'{API}/api/token/', json=payload, )
                 if resp.status_code == 200:
                     data = resp.json()
                     request.session['access_token'] = data['access']
@@ -652,7 +652,7 @@ def reset_password_view(request):
                 resp = requests.post(
                     f'{API}/api/accounts/password-setup-confirm/',
                     json={'uid': uid, 'token': token, 'new_password': password},
-                    timeout=10,
+                    
                 )
                 if resp.status_code == 200:
                     success = 'Password set successfully. You can now login.'
