@@ -173,7 +173,7 @@ if DB_ENGINE in ('postgres', 'postgresql'):
             "PORT": os.getenv('DJANGO_PG_PORT', '5433'),
         }
     }
-# else:
+else:
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
