@@ -20,6 +20,41 @@
 </ul>
 {% endif %}
 
+{% if auto_clockout_alerts %}
+<div class="card permission-editor-card" style="margin-bottom:18px;">
+    <div class="permission-panel-head">
+        <h3 class="section-title">Auto Clock-Out Alerts</h3>
+        <p class="permission-panel-subtitle">Employees who forgot punch-out and were auto-closed by system.</p>
+    </div>
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>Employee</th>
+                    <th>Date</th>
+                    <th>Check In</th>
+                    <th>Check Out (Auto)</th>
+                    <th>Manager</th>
+                    <th>HR</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in auto_clockout_alerts %}
+                <tr>
+                    <td>{{ row.employee_name }}</td>
+                    <td>{{ row.attendance_date }}</td>
+                    <td>{{ row.check_in }}</td>
+                    <td>{{ row.check_out }}</td>
+                    <td>{{ row.manager_name }}</td>
+                    <td>{{ row.hr_name }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
 <div class="permissions-page">
 <div class="card permission-editor-card">
     <div class="permission-panel-head">

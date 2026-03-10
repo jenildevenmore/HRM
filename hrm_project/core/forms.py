@@ -20,6 +20,7 @@ class ClientForm(forms.Form):
         ('attendance_selfie_location', 'Attendance + Selfie + Location'),
         ('leave_management', 'Leave Management'),
         ('holidays', 'Holidays'),
+        ('payroll', 'Payroll'),
         ('settings', 'Settings'),
         ('policy', 'Policy'),
     ]

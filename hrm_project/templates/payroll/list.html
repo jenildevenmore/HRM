@@ -1,0 +1,283 @@
+{% extends "base.html" %}
+
+{% block title %}Payroll - HRM System{% endblock %}
+
+{% block content %}
+<style>
+    .policy-toggle-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 42px;
+        margin-bottom: 20px;
+    }
+    .policy-toggle-row input[type="checkbox"] {
+        width: 18px !important;
+        height: 18px !important;
+        min-height: 18px !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: none !important;
+        background: transparent !important;
+        appearance: auto !important;
+        -webkit-appearance: checkbox !important;
+        accent-color: var(--accent);
+        pointer-events: auto;
+        cursor: pointer;
+        flex: 0 0 auto;
+    }
+    .policy-toggle-row label {
+        display: inline;
+        margin: 0;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--text-muted);
+        font-size: 13px;
+        font-weight: 600;
+        pointer-events: auto;
+        cursor: pointer;
+    }
+</style>
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Payroll Report</h1>
+        <p class="page-subtitle">Day-wise and hour-wise salary based on Attendance total time.</p>
+    </div>
+</div>
+
+{% if errors %}
+<ul class="error-list">
+    {% for err in errors %}<li>{{ err }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<form method="get" class="card" style="margin-bottom:16px;">
+    <div class="form-row">
+        <div class="form-group">
+            <label>Year</label>
+            <select name="year" onchange="this.form.submit()">
+                {% for y in year_options %}
+                <option value="{{ y }}" {% if selected_year == y|string %}selected{% endif %}>{{ y }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Month</label>
+            <select name="month" onchange="this.form.submit()">
+                {% for m, m_name in month_options %}
+                <option value="{{ m }}" {% if selected_month == m|string %}selected{% endif %}>{{ m_name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% if role in ['superadmin', 'admin'] %}
+        <div class="form-group">
+            <label>Employee</label>
+            <select name="employee" onchange="this.form.submit()">
+                <option value="">All Employees</option>
+                {% for emp in employees %}
+                <option value="{{ emp.id }}" {% if selected_employee == emp.id|string %}selected{% endif %}>
+                    {{ emp.first_name }} {{ emp.last_name }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+    </div>
+</form>
+
+{% if policy_row %}
+<div class="card" style="margin-bottom:16px;">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <span class="badge badge-number">Working Days: {{ policy_row.monthly_working_days }}</span>
+        <span class="badge badge-number">Hours/Day: {{ policy_row.standard_hours_per_day }}</span>
+        <span class="badge badge-number">Basis: {{ policy_row.salary_basis|upper }}</span>
+        <span class="badge badge-number">Extra Hours: {{ 'Yes' if policy_row.allow_extra_hours_payout else 'No' }}</span>
+        <span class="badge badge-number">Extra Days: {{ 'Yes' if policy_row.allow_extra_days_payout else 'No' }}</span>
+    </div>
+</div>
+{% endif %}
+
+{% if can_manage_payroll %}
+<div class="card" style="margin-bottom:16px;">
+    <h3 style="margin-bottom:12px;">Payroll Policy Setup</h3>
+    <form method="post">
+        {{ csrf_input }}
+        <input type="hidden" name="form_action" value="save_policy">
+        <input type="hidden" name="policy_id" value="{{ policy_row.id if policy_row else '' }}">
+        <div class="form-row">
+            <div class="form-group">
+                <label>Monthly Working Days</label>
+                <input type="number" name="monthly_working_days" min="1" max="31" value="{{ policy_row.monthly_working_days if policy_row else 24 }}" required>
+            </div>
+            <div class="form-group">
+                <label>Standard Hours / Day</label>
+                <input type="number" step="0.01" name="standard_hours_per_day" min="0.1" max="24" value="{{ policy_row.standard_hours_per_day if policy_row else 8 }}" required>
+            </div>
+            <div class="form-group">
+                <label>Policy Basis</label>
+                <select name="salary_basis" required>
+                    <option value="day" {% if (policy_row and policy_row.salary_basis == 'day') or not policy_row %}selected{% endif %}>Day</option>
+                    <option value="hour" {% if policy_row and policy_row.salary_basis == 'hour' %}selected{% endif %}>Hour</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="policy-toggle-row">
+                <input id="allow_extra_hours_payout" type="checkbox" name="allow_extra_hours_payout" {% if policy_row and policy_row.allow_extra_hours_payout %}checked{% endif %}>
+                <label for="allow_extra_hours_payout">Allow Extra Hours Payout</label>
+            </div>
+            <div class="policy-toggle-row">
+                <input id="allow_extra_days_payout" type="checkbox" name="allow_extra_days_payout" {% if policy_row and policy_row.allow_extra_days_payout %}checked{% endif %}>
+                <label for="allow_extra_days_payout">Allow Extra Days Payout</label>
+            </div>
+        </div>
+        <button type="submit" class="btn btn-primary">Save Policy</button>
+    </form>
+</div>
+
+<div class="card" style="margin-bottom:16px;">
+    <h3 style="margin-bottom:12px;">Employee Salary Setup</h3>
+    <form method="post" id="compensationForm">
+        {{ csrf_input }}
+        <input type="hidden" name="form_action" value="save_compensation">
+        <input type="hidden" name="compensation_id" id="compensationIdField" value="">
+        <div class="form-row">
+            <div class="form-group">
+                <label>Employee</label>
+                <select name="employee_id" id="compEmployeeField" required>
+                    <option value="">Select employee</option>
+                    {% for emp in employees %}
+                    <option value="{{ emp.id }}">{{ emp.first_name }} {{ emp.last_name }} ({{ emp.email }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Salary Basis</label>
+                <select name="comp_salary_basis" id="compSalaryBasisField" required>
+                    <option value="monthly">Monthly</option>
+                    <option value="daily">Daily</option>
+                    <option value="hourly">Hourly</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Effective From</label>
+                <input type="date" name="effective_from" id="effectiveFromField">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group" id="monthlySalaryGroup">
+                <label>Monthly Salary</label>
+                <input type="number" step="0.01" min="0" name="monthly_salary" id="monthlySalaryField" placeholder="Enter monthly salary">
+            </div>
+            <div class="form-group" id="dailySalaryGroup">
+                <label>Daily Salary</label>
+                <input type="number" step="0.01" min="0" name="daily_salary" id="dailySalaryField" placeholder="Enter daily salary">
+            </div>
+            <div class="form-group" id="hourlySalaryGroup">
+                <label>Hourly Salary</label>
+                <input type="number" step="0.01" min="0" name="hourly_salary" id="hourlySalaryField" placeholder="Enter hourly salary">
+            </div>
+        </div>
+        <button type="submit" class="btn btn-primary">Save Employee Salary</button>
+    </form>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Employee</th>
+                    <th>Month</th>
+                    <th>Comp Basis</th>
+                    <th>Monthly Salary</th>
+                    <th>Daily Salary</th>
+                    <th>Hourly Salary</th>
+                    <th>Per Day</th>
+                    <th>Per Hour</th>
+                    <th>Present Days</th>
+                    <th>Paid Leave Days</th>
+                    <th>Paid Leave Hours</th>
+                    <th>Worked Hours</th>
+                    <th>Payable Hours</th>
+                    <th>Salary (Day)</th>
+                    <th>Salary (Hour)</th>
+                    <th>Final Salary</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if rows %}
+                    {% for row in rows %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ row.employee_name }}</td>
+                        <td>{{ row.month }}</td>
+                        <td>{{ row.salary_basis|upper }}</td>
+                        <td>{{ row.monthly_salary }}</td>
+                        <td>{{ row.daily_salary }}</td>
+                        <td>{{ row.hourly_salary }}</td>
+                        <td>{{ row.per_day_rate }}</td>
+                        <td>{{ row.per_hour_rate }}</td>
+                        <td>{{ row.present_days }}</td>
+                        <td>{{ row.paid_leave_days }}</td>
+                        <td>{{ row.paid_leave_hours }}</td>
+                        <td>{{ row.worked_hours }}</td>
+                        <td>{{ row.payable_hours }}</td>
+                        <td>{{ row.earned_salary_day_based }}</td>
+                        <td>{{ row.earned_salary_hour_based }}</td>
+                        <td><strong>{{ row.earned_salary }}</strong></td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="17" style="text-align:center;">No payroll data for selected month.</td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if can_manage_payroll %}
+<script>
+(function () {
+    const compensationByEmployee = {{ compensation_by_employee_json|safe }};
+    const employeeField = document.getElementById('compEmployeeField');
+    const basisField = document.getElementById('compSalaryBasisField');
+    const compensationIdField = document.getElementById('compensationIdField');
+    const effectiveFromField = document.getElementById('effectiveFromField');
+    const monthlySalaryField = document.getElementById('monthlySalaryField');
+    const dailySalaryField = document.getElementById('dailySalaryField');
+    const hourlySalaryField = document.getElementById('hourlySalaryField');
+    const monthlySalaryGroup = document.getElementById('monthlySalaryGroup');
+    const dailySalaryGroup = document.getElementById('dailySalaryGroup');
+    const hourlySalaryGroup = document.getElementById('hourlySalaryGroup');
+
+    function updateBasisVisibility() {
+        const basis = basisField.value;
+        monthlySalaryGroup.style.display = basis === 'monthly' ? '' : 'none';
+        dailySalaryGroup.style.display = basis === 'daily' ? '' : 'none';
+        hourlySalaryGroup.style.display = basis === 'hourly' ? '' : 'none';
+    }
+
+    function applyCompensationForEmployee() {
+        const empId = employeeField.value;
+        const row = compensationByEmployee[String(empId)] || null;
+        compensationIdField.value = row ? (row.id || '') : '';
+        basisField.value = row ? (row.salary_basis || 'monthly') : 'monthly';
+        effectiveFromField.value = row ? (row.effective_from || '') : '';
+        monthlySalaryField.value = row && row.monthly_salary != null ? row.monthly_salary : '';
+        dailySalaryField.value = row && row.daily_salary != null ? row.daily_salary : '';
+        hourlySalaryField.value = row && row.hourly_salary != null ? row.hourly_salary : '';
+        updateBasisVisibility();
+    }
+
+    employeeField.addEventListener('change', applyCompensationForEmployee);
+    basisField.addEventListener('change', updateBasisVisibility);
+    applyCompensationForEmployee();
+})();
+</script>
+{% endif %}
+{% endblock %}

@@ -30,7 +30,15 @@
         <!-- {% if dynamic_model.slug == 'attendance' %}
         <button type="button" class="btn btn-secondary" onclick="openPunchModal()">Punch In / Punch Out</button>
         {% endif %} -->
+        {% if dynamic_model.slug == 'attendance' and attendance_add_locked %}
+            {% if attendance_open_record_id %}
+            <a href="{{ url('dynamic_entity_edit', args=[dynamic_model.id, attendance_open_record_id]) }}" class="btn btn-primary">Punch Out</a>
+            {% else %}
+            <span class="btn btn-secondary" style="opacity:0.65;cursor:not-allowed;">Attendance Done</span>
+            {% endif %}
+        {% else %}
         <a href="{{ url('dynamic_entity_create', args=[dynamic_model.id]) }}" class="btn btn-primary">+ Add {{ dynamic_model.name }}</a>
+        {% endif %}
     </div>
 </div>
 
@@ -83,12 +91,33 @@
                 <td>{{ r.total_time or '-' }}</td>
                 {% endif %}
                 <td>
+                    {% if dynamic_model.slug == 'attendance' %}
+                        {% if r.is_open_attendance %}
+                        <a href="{{ url('dynamic_entity_edit', args=[dynamic_model.id, r.id]) }}" class="btn btn-primary btn-sm">Punch Out</a>
+                        {% else %}
+                        <span class="btn btn-secondary btn-sm" style="opacity:0.65;cursor:not-allowed;">Completed</span>
+                        {% endif %}
+                    {% else %}
                     <a href="{{ url('dynamic_entity_edit', args=[dynamic_model.id, r.id]) }}" class="btn btn-secondary btn-sm">Edit</a>
-                    <form method="post" action="{{ url('dynamic_entity_delete', args=[dynamic_model.id, r.id]) }}" style="display:inline;">
-                        {{ csrf_input }}
-                        <button type="submit" class="btn btn-danger btn-sm"
-                            onclick="return confirm('Delete this record?')">Delete</button>
-                    </form>
+                    {% endif %}
+                    {% if dynamic_model.slug == 'attendance' %}
+                        {% if role in ['superadmin', 'admin'] or 'attendance.delete' in module_permissions %}
+                        <form method="post" action="{{ url('dynamic_entity_delete', args=[dynamic_model.id, r.id]) }}" style="display:inline;">
+                            {{ csrf_input }}
+                            <button type="submit" class="btn btn-danger btn-sm"
+                                onclick="return confirm('Delete this record?')">Delete</button>
+                        </form>
+                        {% endif %}
+                    {% else %}
+                        {% set dynamic_delete_perm = 'dynamic_model.' ~ dynamic_model.id ~ '.delete' %}
+                        {% if role in ['superadmin', 'admin'] or dynamic_delete_perm in module_permissions %}
+                        <form method="post" action="{{ url('dynamic_entity_delete', args=[dynamic_model.id, r.id]) }}" style="display:inline;">
+                            {{ csrf_input }}
+                            <button type="submit" class="btn btn-danger btn-sm"
+                                onclick="return confirm('Delete this record?')">Delete</button>
+                        </form>
+                        {% endif %}
+                    {% endif %}
                 </td>
             </tr>
             {% endfor %}

@@ -66,12 +66,25 @@
         </div>
         <div class="form-row">
             <div class="form-group">
+                <label>Leave Unit *</label>
+                <select name="leave_unit" id="leaveUnitSelect" required>
+                    <option value="day" selected>Day Leave</option>
+                    <option value="hour">Hourly Leave</option>
+                </select>
+            </div>
+            <div class="form-group" id="leaveHoursGroup" style="display:none;">
+                <label>Leave Hours (Max 3) *</label>
+                <input type="number" step="0.5" min="0.5" max="3" name="leave_hours" id="leaveHoursInput" placeholder="e.g. 2">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
                 <label>Start Date *</label>
-                <input type="date" name="start_date" required>
+                <input type="date" name="start_date" id="startDateInput" required>
             </div>
             <div class="form-group">
                 <label>End Date *</label>
-                <input type="date" name="end_date" required>
+                <input type="date" name="end_date" id="endDateInput" required>
             </div>
         </div>
         <div class="form-group">
@@ -89,11 +102,19 @@
 document.addEventListener('DOMContentLoaded', function () {
     var employeeSelect = document.getElementById('employeeSelect');
     var preview = document.getElementById('assignmentPreview');
+    var leaveUnitSelect = document.getElementById('leaveUnitSelect');
+    var leaveHoursGroup = document.getElementById('leaveHoursGroup');
+    var leaveHoursInput = document.getElementById('leaveHoursInput');
+    var startDateInput = document.getElementById('startDateInput');
+    var endDateInput = document.getElementById('endDateInput');
     if (!employeeSelect || !preview) {
-        return;
+        // Continue for leave-unit behavior even when employee selector is not shown.
     }
 
     function renderAssignment() {
+        if (!employeeSelect || !preview) {
+            return;
+        }
         var selected = employeeSelect.options[employeeSelect.selectedIndex];
         if (!selected || !selected.value) {
             preview.textContent = 'Manager: - | HR: -';
@@ -104,8 +125,40 @@ document.addEventListener('DOMContentLoaded', function () {
         preview.textContent = 'Manager: ' + manager + ' | HR: ' + hr;
     }
 
-    employeeSelect.addEventListener('change', renderAssignment);
+    function applyLeaveUnitBehavior() {
+        if (!leaveUnitSelect) {
+            return;
+        }
+        var isHourly = leaveUnitSelect.value === 'hour';
+        if (leaveHoursGroup) {
+            leaveHoursGroup.style.display = isHourly ? '' : 'none';
+        }
+        if (leaveHoursInput) {
+            leaveHoursInput.required = isHourly;
+            if (!isHourly) {
+                leaveHoursInput.value = '';
+            }
+        }
+        if (startDateInput && endDateInput && isHourly && startDateInput.value) {
+            endDateInput.value = startDateInput.value;
+        }
+    }
+
+    if (employeeSelect) {
+        employeeSelect.addEventListener('change', renderAssignment);
+    }
+    if (leaveUnitSelect) {
+        leaveUnitSelect.addEventListener('change', applyLeaveUnitBehavior);
+    }
+    if (startDateInput) {
+        startDateInput.addEventListener('change', function () {
+            if (leaveUnitSelect && leaveUnitSelect.value === 'hour' && endDateInput) {
+                endDateInput.value = startDateInput.value;
+            }
+        });
+    }
     renderAssignment();
+    applyLeaveUnitBehavior();
 });
 </script>
 {% endblock %}

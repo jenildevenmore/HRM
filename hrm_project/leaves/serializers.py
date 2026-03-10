@@ -101,6 +101,8 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
             'employee_name',
             'leave_type',
             'leave_type_is_paid',
+            'leave_unit',
+            'leave_hours',
             'start_date',
             'end_date',
             'total_days',
@@ -204,6 +206,8 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
         start_date = attrs.get('start_date') or getattr(self.instance, 'start_date', None)
         end_date = attrs.get('end_date') or getattr(self.instance, 'end_date', None)
         leave_type_name = str(attrs.get('leave_type') or getattr(self.instance, 'leave_type', '')).strip()
+        leave_unit = str(attrs.get('leave_unit') or getattr(self.instance, 'leave_unit', LeaveRequest.UNIT_DAY)).strip().lower()
+        leave_hours = attrs.get('leave_hours', getattr(self.instance, 'leave_hours', None))
 
         if not employee:
             raise serializers.ValidationError({'employee': 'This field is required.'})
@@ -215,6 +219,8 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'leave_type': 'This field is required.'})
         if end_date < start_date:
             raise serializers.ValidationError({'end_date': 'End date must be same or after start date.'})
+        if leave_unit not in (LeaveRequest.UNIT_DAY, LeaveRequest.UNIT_HOUR):
+            raise serializers.ValidationError({'leave_unit': 'Leave unit must be day or hour.'})
 
         leave_type = LeaveType.objects.filter(
             client_id=employee.client_id,
@@ -224,5 +230,31 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
         if not leave_type:
             raise serializers.ValidationError({'leave_type': 'Select a valid active leave type.'})
 
-        attrs['total_days'] = (end_date - start_date + timedelta(days=1)).days
+        overlapping_qs = LeaveRequest.objects.filter(
+            employee_id=employee.id,
+            status__in=(LeaveRequest.STATUS_PENDING, LeaveRequest.STATUS_APPROVED),
+            start_date__lte=end_date,
+            end_date__gte=start_date,
+        )
+        if self.instance:
+            overlapping_qs = overlapping_qs.exclude(id=self.instance.id)
+        if overlapping_qs.exists():
+            raise serializers.ValidationError(
+                {'start_date': 'Leave already exists for one or more selected dates (pending/approved).'}
+            )
+
+        if leave_unit == LeaveRequest.UNIT_HOUR:
+            if start_date != end_date:
+                raise serializers.ValidationError({'end_date': 'Hourly leave must be for a single date.'})
+            if leave_hours is None:
+                raise serializers.ValidationError({'leave_hours': 'Leave hours are required for hourly leave.'})
+            if leave_hours <= 0:
+                raise serializers.ValidationError({'leave_hours': 'Leave hours must be greater than 0.'})
+            if leave_hours > 3:
+                raise serializers.ValidationError({'leave_hours': 'Maximum hourly leave is 3 hours in a day.'})
+            attrs['total_days'] = 0
+        else:
+            attrs['leave_hours'] = None
+            attrs['total_days'] = (end_date - start_date + timedelta(days=1)).days
+
         return attrs

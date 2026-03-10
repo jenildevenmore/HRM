@@ -79,6 +79,8 @@
             <tr>
                 <th>Employee</th>
                 <th>Leave Type</th>
+                <th>Unit</th>
+                <th>Hours</th>
                 <th>Start Date</th>
                 <th>End Date</th>
                 <th>Days</th>
@@ -94,6 +96,14 @@
             <tr>
                 <td>{{ leave.employee_name }}</td>
                 <td>{{ leave.leave_type }}</td>
+                <td>{{ (leave.leave_unit or 'day')|upper }}</td>
+                <td>
+                    {% if leave.leave_unit == 'hour' %}
+                        {{ leave.leave_hours or 0 }}
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
                 <td>{{ leave.start_date }}</td>
                 <td>{{ leave.end_date }}</td>
                 <td>{{ leave.total_days }}</td>

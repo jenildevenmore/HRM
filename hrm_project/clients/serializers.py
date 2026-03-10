@@ -14,6 +14,7 @@ class ClientSerializer(serializers.ModelSerializer):
         'attendance_selfie_location',
         'leave_management',
         'holidays',
+        'payroll',
         'settings',
         'policy',
     }

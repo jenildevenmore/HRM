@@ -29,6 +29,7 @@ from clients.views import ClientViewSet
 from dynamic_models.views import DynamicModelViewSet, DynamicFieldViewSet, DynamicRecordViewSet
 from leaves.views import LeaveRequestViewSet, LeaveTypeViewSet, LeaveBalanceView
 from holidays.views import HolidayViewSet
+from payroll.views import PayrollPolicyViewSet, EmployeeCompensationViewSet, PayrollReportView
 
 router = DefaultRouter()
 
@@ -44,6 +45,8 @@ router.register("dynamic-records", DynamicRecordViewSet, basename="dynamic-recor
 router.register("leaves", LeaveRequestViewSet, basename="leaves")
 router.register("leave-types", LeaveTypeViewSet, basename="leave-types")
 router.register("holidays", HolidayViewSet, basename="holidays")
+router.register("payroll-policy", PayrollPolicyViewSet, basename="payroll-policy")
+router.register("employee-compensation", EmployeeCompensationViewSet, basename="employee-compensation")
 
 # Custom token view with profile info
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -54,6 +57,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
 
     path('api/leave-balance/', LeaveBalanceView.as_view()),
+    path('api/payroll-report/', PayrollReportView.as_view()),
     path('api/', include(router.urls)),
 
     path('api/token/', CustomTokenObtainPairView.as_view()),

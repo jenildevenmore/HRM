@@ -129,6 +129,14 @@
     </a>
     {% endif %}
 
+    {% if role == 'superadmin' or 'payroll' in enabled_addons %}
+    <a href="{{ url('payroll_list') }}"
+       class="nav-link {% if 'payroll' in request.resolver_match.url_name %}active{% endif %}">
+      <span class="nav-icon">PY</span>
+      <span class="nav-label">Payroll</span>
+    </a>
+    {% endif %}
+
     {% if role == 'superadmin' or ('holidays' in enabled_addons and (role == 'admin' or 'holidays.view' in module_permissions)) %}
     <a href="{{ url('holiday_list') }}"
        class="nav-link {% if 'holiday' in request.resolver_match.url_name %}active{% endif %}">

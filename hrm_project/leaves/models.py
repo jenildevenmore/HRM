@@ -43,10 +43,18 @@ class LeaveRequest(models.Model):
         (STATUS_REJECTED, 'Rejected'),
         (STATUS_CANCELLED, 'Cancelled'),
     )
+    UNIT_DAY = 'day'
+    UNIT_HOUR = 'hour'
+    LEAVE_UNIT_CHOICES = (
+        (UNIT_DAY, 'Day'),
+        (UNIT_HOUR, 'Hour'),
+    )
 
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='leave_requests')
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='leave_requests')
     leave_type = models.CharField(max_length=60, default='Casual')
+    leave_unit = models.CharField(max_length=10, choices=LEAVE_UNIT_CHOICES, default=UNIT_DAY)
+    leave_hours = models.DecimalField(max_digits=4, decimal_places=2, null=True, blank=True)
     start_date = models.DateField()
     end_date = models.DateField()
     total_days = models.PositiveIntegerField(default=1)

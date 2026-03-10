@@ -33,6 +33,7 @@ ALLOWED_ADDON_KEYS = {
     'attendance_selfie_location',
     'leave_management',
     'holidays',
+    'payroll',
     'settings',
     'policy',
 }

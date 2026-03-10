@@ -34,6 +34,7 @@ ADDON_KEYS = {
     'attendance_selfie_location',
     'leave_management',
     'holidays',
+    'payroll',
     'settings',
     'policy',
 }
@@ -45,6 +46,7 @@ ADDON_OPTIONS = [
     ('attendance_selfie_location', 'Attendance + Selfie + Location'),
     ('leave_management', 'Leave Management'),
     ('holidays', 'Holidays'),
+    ('payroll', 'Payroll'),
     ('settings', 'Settings'),
     ('policy', 'Policy'),
 ]
@@ -72,6 +74,7 @@ ADDON_VIEW_PERMISSION_MAP = {
     'attendance': 'attendance.view',
     'leave_management': 'leaves.view',
     'holidays': 'holidays.view',
+    'payroll': 'payroll.view',
     'policy': 'policy.view',
 }
 
@@ -445,6 +448,75 @@ def _load_client_app_settings(request, access_token=None, client_id=None):
     return {}
 
 
+def _load_auto_clockout_alerts(request, limit=8):
+    """Load recent auto clock-out attendance events for UI cards."""
+    try:
+        model_resp = _api_get(request, '/api/dynamic-models/')
+        if model_resp.status_code != 200:
+            return []
+        model_payload = model_resp.json()
+        models = model_payload.get('results', model_payload) if isinstance(model_payload, dict) else model_payload
+        attendance_model = next((m for m in models if str(m.get('slug', '')).lower() == 'attendance'), None)
+        if not attendance_model:
+            return []
+
+        employees_resp = _api_get(request, '/api/employees/')
+        employee_rows = []
+        if employees_resp.status_code == 200:
+            employee_payload = employees_resp.json()
+            employee_rows = (
+                employee_payload.get('results', employee_payload)
+                if isinstance(employee_payload, dict) else employee_payload
+            )
+        employee_map = {str(e.get('id')): e for e in employee_rows}
+
+        records_resp = _api_get(request, '/api/dynamic-records/', params={'dynamic_model': attendance_model.get('id')})
+        if records_resp.status_code != 200:
+            return []
+        records_payload = records_resp.json()
+        records = records_payload.get('results', records_payload) if isinstance(records_payload, dict) else records_payload
+
+        session_role = request.session.get('role', 'employee')
+        session_employee_role = (request.session.get('employee_role') or '').strip().lower()
+        session_employee_id = request.session.get('employee_id')
+        is_manager_like = session_role in ('admin', 'superadmin') or session_employee_role in ('manager', 'hr')
+
+        rows = []
+        for rec in records:
+            data = rec.get('data') or {}
+            remarks = str(data.get('remarks') or '')
+            if 'Auto clock-out by system' not in remarks:
+                continue
+            emp_id = str(rec.get('employee'))
+            emp = employee_map.get(emp_id, {})
+
+            # For manager/hr employee login, show only their team alerts.
+            if session_role == 'employee' and session_employee_role in ('manager', 'hr') and session_employee_id:
+                if session_employee_role == 'manager' and str(emp.get('manager') or '') != str(session_employee_id):
+                    continue
+                if session_employee_role == 'hr' and str(emp.get('hr') or '') != str(session_employee_id):
+                    continue
+            elif session_role == 'employee' and not is_manager_like and session_employee_id:
+                if emp_id != str(session_employee_id):
+                    continue
+
+            rows.append({
+                'record_id': rec.get('id'),
+                'employee_id': rec.get('employee'),
+                'employee_name': f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip() or f"Employee #{emp_id}",
+                'manager_name': emp.get('manager_name') or '-',
+                'hr_name': emp.get('hr_name') or '-',
+                'attendance_date': data.get('attendance_date') or '-',
+                'check_in': data.get('check_in') or '-',
+                'check_out': data.get('check_out') or '-',
+            })
+
+        rows.sort(key=lambda x: (str(x.get('attendance_date') or ''), int(x.get('record_id') or 0)), reverse=True)
+        return rows[:limit]
+    except requests.exceptions.ConnectionError:
+        return []
+
+
 def _get_context(request):
     """Return common context data for all views"""
     role = request.session.get('role', 'employee')
@@ -754,6 +826,7 @@ def logout_view(request):
 
 def dashboard(request):
     messages = _pop_messages(request)
+    auto_clockout_alerts = []
 
     try:
         emp_resp = _api_get(request, '/api/employees/')
@@ -782,6 +855,7 @@ def dashboard(request):
             if isinstance(employees, dict)
             else employees[:5]
         )
+        auto_clockout_alerts = _load_auto_clockout_alerts(request, limit=6)
 
     except requests.exceptions.ConnectionError:
         emp_count = 0
@@ -793,6 +867,7 @@ def dashboard(request):
         'emp_count': emp_count,
         'cf_count': cf_count,
         'recent_employees': recent_employees,
+        'auto_clockout_alerts': auto_clockout_alerts,
         'messages': messages,
         **_get_context(request),
     })
@@ -1179,6 +1254,7 @@ def permission_list(request):
     users = []
     permission_options = []
     groups = []
+    auto_clockout_alerts = []
 
     try:
         options_resp = _api_get(request, '/api/accounts/permission-options/')
@@ -1204,6 +1280,7 @@ def permission_list(request):
             users_data = users_resp.json()
             users = users_data.get('results', users_data) if isinstance(users_data, dict) else users_data
             users = [u for u in users if u.get('role') != 'superadmin']
+        auto_clockout_alerts = _load_auto_clockout_alerts(request, limit=8)
     except requests.exceptions.ConnectionError:
         errors = ['Backend server unreachable.']
 
@@ -1281,6 +1358,7 @@ def permission_list(request):
                             'groups': groups,
                             'permission_options': permission_options,
                             'addon_options': ADDON_OPTIONS,
+                            'auto_clockout_alerts': auto_clockout_alerts,
                             'errors': errors,
                             'messages': messages,
                             **_get_context(request),
@@ -1337,6 +1415,7 @@ def permission_list(request):
         'groups': groups,
         'permission_options': permission_options,
         'addon_options': ADDON_OPTIONS,
+        'auto_clockout_alerts': auto_clockout_alerts,
         'errors': errors,
         'messages': messages,
         **_get_context(request),
@@ -2287,6 +2366,8 @@ def leave_create(request):
         payload = {
             'employee': employee_id,
             'leave_type': (request.POST.get('leave_type') or '').strip(),
+            'leave_unit': (request.POST.get('leave_unit') or 'day').strip(),
+            'leave_hours': (request.POST.get('leave_hours') or '').strip() or None,
             'start_date': (request.POST.get('start_date') or '').strip(),
             'end_date': (request.POST.get('end_date') or '').strip(),
             'reason': (request.POST.get('reason') or '').strip(),
@@ -2517,6 +2598,149 @@ def holiday_delete(request, pk):
     except requests.exceptions.ConnectionError:
         _flash(request, 'Backend server unreachable.', 'error')
     return redirect('holiday_list')
+
+
+def payroll_list(request):
+    addon_redirect = _require_addon(request, 'payroll')
+    if addon_redirect:
+        return addon_redirect
+
+    messages = _pop_messages(request)
+    errors = []
+    role = request.session.get('role', 'employee')
+    can_manage_payroll = role in ('superadmin', 'admin')
+
+    today = datetime.date.today()
+    selected_year = request.GET.get('year') or str(today.year)
+    selected_month = request.GET.get('month') or str(today.month)
+    selected_employee = (request.GET.get('employee') or '').strip()
+
+    params = {'year': selected_year, 'month': selected_month}
+    if selected_employee:
+        params['employee'] = selected_employee
+
+    employees = []
+    rows = []
+    policy_row = None
+    compensation_by_employee = {}
+
+    if request.method == 'POST' and can_manage_payroll:
+        form_action = (request.POST.get('form_action') or '').strip()
+        try:
+            if form_action == 'save_policy':
+                payload = {
+                    'monthly_working_days': int((request.POST.get('monthly_working_days') or '24').strip() or 24),
+                    'standard_hours_per_day': (request.POST.get('standard_hours_per_day') or '8').strip() or '8',
+                    'salary_basis': (request.POST.get('salary_basis') or 'day').strip() or 'day',
+                    'allow_extra_hours_payout': str(request.POST.get('allow_extra_hours_payout') or '').strip().lower() in ('1', 'true', 'yes', 'on'),
+                    'allow_extra_days_payout': str(request.POST.get('allow_extra_days_payout') or '').strip().lower() in ('1', 'true', 'yes', 'on'),
+                }
+                policy_id = (request.POST.get('policy_id') or '').strip()
+                if policy_id:
+                    save_resp = _api_put(request, f'/api/payroll-policy/{policy_id}/', payload)
+                else:
+                    save_resp = _api_post(request, '/api/payroll-policy/', payload)
+                redir = _handle_unauthorized(save_resp, request)
+                if redir:
+                    return redir
+                if save_resp.status_code in (200, 201):
+                    _flash(request, 'Payroll policy saved successfully.', 'success')
+                    return redirect('payroll_list')
+                errors = _error_list_from_response(save_resp, 'Failed to save payroll policy.')
+
+            elif form_action == 'save_compensation':
+                employee_id = (request.POST.get('employee_id') or '').strip()
+                salary_basis = (request.POST.get('comp_salary_basis') or 'monthly').strip() or 'monthly'
+                monthly_salary_raw = (request.POST.get('monthly_salary') or '').strip()
+                daily_salary_raw = (request.POST.get('daily_salary') or '').strip()
+                hourly_salary_raw = (request.POST.get('hourly_salary') or '').strip()
+                payload = {
+                    'employee': employee_id,
+                    'salary_basis': salary_basis,
+                    'monthly_salary': float(monthly_salary_raw) if monthly_salary_raw else None,
+                    'daily_salary': float(daily_salary_raw) if daily_salary_raw else None,
+                    'hourly_salary': float(hourly_salary_raw) if hourly_salary_raw else None,
+                    'effective_from': (request.POST.get('effective_from') or '').strip() or None,
+                }
+                compensation_id = (request.POST.get('compensation_id') or '').strip()
+                if compensation_id:
+                    save_resp = _api_put(request, f'/api/employee-compensation/{compensation_id}/', payload)
+                else:
+                    save_resp = _api_post(request, '/api/employee-compensation/', payload)
+                redir = _handle_unauthorized(save_resp, request)
+                if redir:
+                    return redir
+                if save_resp.status_code in (200, 201):
+                    _flash(request, 'Employee salary details saved successfully.', 'success')
+                    return redirect('payroll_list')
+                errors = _error_list_from_response(save_resp, 'Failed to save employee salary details.')
+        except (TypeError, ValueError):
+            errors = ['Please enter valid numeric values for salary and policy fields.']
+        except requests.exceptions.ConnectionError:
+            errors = ['Backend server unreachable.']
+
+    try:
+        if can_manage_payroll:
+            emp_resp = _api_get(request, '/api/employees/')
+            redir = _handle_unauthorized(emp_resp, request)
+            if redir:
+                return redir
+            if emp_resp.status_code == 200:
+                payload = emp_resp.json()
+                employees = payload.get('results', payload) if isinstance(payload, dict) else payload
+
+            compensation_resp = _api_get(request, '/api/employee-compensation/')
+            redir = _handle_unauthorized(compensation_resp, request)
+            if redir:
+                return redir
+            if compensation_resp.status_code == 200:
+                payload = compensation_resp.json()
+                compensation_rows = payload.get('results', payload) if isinstance(payload, dict) else payload
+                for row in compensation_rows:
+                    emp_id = row.get('employee')
+                    if emp_id is not None:
+                        compensation_by_employee[str(emp_id)] = row
+
+        policy_resp = _api_get(request, '/api/payroll-policy/')
+        redir = _handle_unauthorized(policy_resp, request)
+        if redir:
+            return redir
+        if policy_resp.status_code == 200:
+            payload = policy_resp.json()
+            policy_list = payload.get('results', payload) if isinstance(payload, dict) else payload
+            policy_row = policy_list[0] if policy_list else None
+
+        report_resp = _api_get(request, '/api/payroll-report/', params=params)
+        redir = _handle_unauthorized(report_resp, request)
+        if redir:
+            return redir
+        if report_resp.status_code == 200:
+            payload = report_resp.json()
+            rows = payload.get('results', payload) if isinstance(payload, dict) else payload
+        else:
+            errors = _error_list_from_response(report_resp, 'Failed to load payroll report.')
+    except requests.exceptions.ConnectionError:
+        errors = ['Backend server unreachable.']
+
+    month_options = [(i, calendar.month_name[i]) for i in range(1, 13)]
+    year_options = [today.year - 1, today.year, today.year + 1]
+
+    return render(request, 'payroll/list.html', {
+        'messages': messages,
+        'errors': errors,
+        'rows': rows,
+        'employees': employees,
+        'policy_row': policy_row,
+        'compensation_by_employee': compensation_by_employee,
+        'compensation_by_employee_json': json.dumps(compensation_by_employee),
+        'can_manage_payroll': can_manage_payroll,
+        'selected_year': str(selected_year),
+        'selected_month': str(selected_month),
+        'selected_employee': selected_employee,
+        'month_options': month_options,
+        'year_options': year_options,
+        **_get_context(request),
+    })
 
 
 def custom_field_list(request):
@@ -3497,6 +3721,8 @@ def dynamic_entity_list(request, model_id):
     attendance_employees = []
     selected_employee_id = (request.GET.get('employee') or '').strip()
     can_view_all_attendance = False
+    attendance_add_locked = False
+    attendance_open_record_id = None
     current_employee_id = request.session.get('employee_id')
     current_employee_role = (request.session.get('employee_role') or '').strip().lower()
     try:
@@ -3568,6 +3794,21 @@ def dynamic_entity_list(request, model_id):
                 rec_data = rec.get('data', {})
                 rec['total_time'] = _attendance_total_time(rec_data) or '-'
                 rec['employee_name'] = employee_name_map.get(str(rec.get('employee')), f"Employee #{rec.get('employee')}")
+                rec['is_open_attendance'] = bool(rec_data.get('check_in') and not rec_data.get('check_out'))
+
+            # For regular employee login, lock Add Attendance after first check-in of the day.
+            if (not can_view_all_attendance) and current_employee_id:
+                today_iso = datetime.date.today().isoformat()
+                today_rows = [
+                    row for row in records
+                    if str(row.get('employee')) == str(current_employee_id)
+                    and str((row.get('data') or {}).get('attendance_date')) == today_iso
+                ]
+                if today_rows:
+                    attendance_add_locked = True
+                    open_row = next((row for row in today_rows if row.get('is_open_attendance')), None)
+                    if open_row:
+                        attendance_open_record_id = open_row.get('id')
     except requests.exceptions.ConnectionError:
         dynamic_model = {}
         fields = []
@@ -3582,6 +3823,8 @@ def dynamic_entity_list(request, model_id):
         'attendance_employees': attendance_employees,
         'selected_employee_id': selected_employee_id,
         'can_view_all_attendance': can_view_all_attendance,
+        'attendance_add_locked': attendance_add_locked,
+        'attendance_open_record_id': attendance_open_record_id,
         'messages': messages,
         **_attendance_feature_flags(request),
         **_get_context(request),

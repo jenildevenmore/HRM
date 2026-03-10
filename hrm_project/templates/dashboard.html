@@ -28,6 +28,41 @@
     </div>
 </div>
 
+{% if auto_clockout_alerts %}
+<div class="card" style="margin-bottom:20px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+        <h2 style="font-size:17px;font-weight:700;">Auto Clock-Out Alerts</h2>
+        <span class="badge badge-date">Recent</span>
+    </div>
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>Employee</th>
+                    <th>Date</th>
+                    <th>Check In</th>
+                    <th>Check Out (Auto)</th>
+                    <th>Manager</th>
+                    <th>HR</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in auto_clockout_alerts %}
+                <tr>
+                    <td>{{ row.employee_name }}</td>
+                    <td>{{ row.attendance_date }}</td>
+                    <td>{{ row.check_in }}</td>
+                    <td>{{ row.check_out }}</td>
+                    <td>{{ row.manager_name }}</td>
+                    <td>{{ row.hr_name }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
 <!-- Recent Employees -->
 <div class="card">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">

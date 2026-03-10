@@ -61,7 +61,42 @@ class DynamicRecordSerializer(serializers.ModelSerializer):
         existing = self.instance.data if self.instance else {}
         merged = {**existing, **incoming}
         attrs['data'] = self._validate_data(dynamic_model, merged, partial=self.partial)
+        self._validate_attendance_rules(dynamic_model, employee, attrs['data'], existing)
         return attrs
+
+    def _validate_attendance_rules(self, dynamic_model, employee, merged_data, existing_data):
+        if str(dynamic_model.slug or '').lower() != 'attendance':
+            return
+
+        if not employee:
+            raise serializers.ValidationError({'employee': 'Employee is required for attendance records.'})
+
+        attendance_date = str(merged_data.get('attendance_date') or '').strip()
+        if not attendance_date:
+            raise serializers.ValidationError({'data': {'attendance_date': 'Attendance date is required.'}})
+
+        same_day_qs = DynamicRecord.objects.filter(
+            dynamic_model_id=dynamic_model.id,
+            employee_id=employee.id,
+            data__attendance_date=attendance_date,
+        )
+        if self.instance:
+            same_day_qs = same_day_qs.exclude(id=self.instance.id)
+        if same_day_qs.exists():
+            raise serializers.ValidationError(
+                {'data': {'attendance_date': 'Only one attendance record per employee per day is allowed.'}}
+            )
+
+        check_in_existing = existing_data.get('check_in') if isinstance(existing_data, dict) else None
+        check_out_existing = existing_data.get('check_out') if isinstance(existing_data, dict) else None
+        check_in_new = merged_data.get('check_in')
+        check_out_new = merged_data.get('check_out')
+
+        if self.instance and check_in_existing and check_in_new and str(check_in_new) != str(check_in_existing):
+            raise serializers.ValidationError({'data': {'check_in': 'Punch-in can be saved only once per day.'}})
+
+        if self.instance and check_out_existing and check_out_new and str(check_out_new) != str(check_out_existing):
+            raise serializers.ValidationError({'data': {'check_out': 'Punch-out can be saved only once per day.'}})
 
     def _validate_data(self, dynamic_model, data, partial=False):
         fields = list(dynamic_model.fields.all())
