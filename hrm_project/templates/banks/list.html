@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+
+{% block title %}Bank Accounts - HRM System{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <span class="current">Bank</span>
+</div>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Manage Bank Accounts</h1>
+        <p class="page-subtitle">Store employee bank details securely for payroll and payouts.</p>
+    </div>
+</div>
+
+{% if errors %}
+<ul class="error-list">
+    {% for err in errors %}<li>{{ err }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<div class="card" style="margin-bottom:20px;">
+    <form method="get" class="form-row">
+        <div class="form-group">
+            <label>Search</label>
+            <input type="text" name="q" value="{{ search_q or '' }}" placeholder="Bank, account holder, IFSC">
+        </div>
+        <div class="form-group">
+            <label>Employee</label>
+            <select name="employee">
+                <option value="">All Employees</option>
+                {% for emp in employees %}
+                <option value="{{ emp.id }}" {% if selected_employee|string == emp.id|string %}selected{% endif %}>
+                    {{ emp.first_name }} {{ emp.last_name }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-actions" style="margin-top:28px;">
+            <button type="submit" class="btn btn-secondary">Search</button>
+            <a href="{{ url('bank_list') }}" class="btn btn-secondary">Reset</a>
+        </div>
+    </form>
+</div>
+
+{% if role in ['superadmin', 'admin'] or 'bank.create' in module_permissions or edit_item %}
+<div class="form-card" style="max-width:980px;margin-bottom:20px;">
+    <form method="post" action="{{ url('bank_list') }}">
+        {{ csrf_input }}
+        <input type="hidden" name="edit_id" value="{{ edit_item.id if edit_item else '' }}">
+        <div class="form-row">
+            <div class="form-group">
+                <label>Employee *</label>
+                {% set selected_emp = edit_item.employee if edit_item else '' %}
+                <select name="employee" required>
+                    <option value="">Select employee</option>
+                    {% for emp in employees %}
+                    <option value="{{ emp.id }}" {% if selected_emp|string == emp.id|string %}selected{% endif %}>
+                        {{ emp.first_name }} {{ emp.last_name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Bank Name *</label>
+                <input type="text" name="bank_name" value="{{ edit_item.bank_name if edit_item else '' }}" required>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Account Holder Name *</label>
+                <input type="text" name="account_holder_name" value="{{ edit_item.account_holder_name if edit_item else '' }}" required>
+            </div>
+            <div class="form-group">
+                <label>Account Number *</label>
+                <input type="text" name="account_number" value="{{ edit_item.account_number if edit_item else '' }}" required>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>IFSC Code</label>
+                <input type="text" name="ifsc_code" value="{{ edit_item.ifsc_code if edit_item else '' }}">
+            </div>
+            <div class="form-group">
+                <label>Branch Name</label>
+                <input type="text" name="branch_name" value="{{ edit_item.branch_name if edit_item else '' }}">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>UPI ID</label>
+                <input type="text" name="upi_id" value="{{ edit_item.upi_id if edit_item else '' }}">
+            </div>
+            <div class="form-group">
+                <label>Primary Account</label>
+                {% set primary_value = edit_item.is_primary if edit_item else false %}
+                <select name="is_primary">
+                    <option value="false" {% if not primary_value %}selected{% endif %}>No</option>
+                    <option value="true" {% if primary_value %}selected{% endif %}>Yes</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Active</label>
+            {% set active_value = edit_item.is_active if edit_item else true %}
+            <select name="is_active">
+                <option value="true" {% if active_value %}selected{% endif %}>Yes</option>
+                <option value="false" {% if not active_value %}selected{% endif %}>No</option>
+            </select>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">{{ 'Update Bank Account' if edit_item else 'Create Bank Account' }}</button>
+            {% if edit_item %}
+            <a href="{{ url('bank_list') }}" class="btn btn-secondary">Cancel Edit</a>
+            {% endif %}
+        </div>
+    </form>
+</div>
+{% endif %}
+
+{% if bank_accounts %}
+<div class="table-wrapper">
+    <table>
+        <thead>
+            <tr>
+                <th>Employee</th>
+                <th>Bank</th>
+                <th>Account Holder</th>
+                <th>Account No.</th>
+                <th>IFSC</th>
+                <th>Primary</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for b in bank_accounts %}
+            <tr>
+                <td>{{ b.employee_name or b.employee }}</td>
+                <td>{{ b.bank_name }}</td>
+                <td>{{ b.account_holder_name }}</td>
+                <td>{{ b.account_number }}</td>
+                <td>{{ b.ifsc_code or '-' }}</td>
+                <td>{{ 'Yes' if b.is_primary else 'No' }}</td>
+                <td>{{ 'Active' if b.is_active else 'Inactive' }}</td>
+                <td>
+                    {% if role in ['superadmin', 'admin'] or 'bank.edit' in module_permissions %}
+                    <a href="{{ url('bank_list') }}?edit={{ b.id }}" class="btn btn-secondary btn-sm">Edit</a>
+                    {% endif %}
+                    {% if role in ['superadmin', 'admin'] or 'bank.delete' in module_permissions %}
+                    <form method="post" action="{{ url('bank_delete', args=[b.id]) }}" style="display:inline;">
+                        {{ csrf_input }}
+                        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this bank account?')">Delete</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card"><div class="empty-state"><p>No bank accounts found.</p></div></div>
+{% endif %}
+{% endblock %}

@@ -153,7 +153,23 @@
     </a>
     {% endif %}
 
-    {% if role == 'superadmin' or 'policy' in enabled_addons %}
+    {% if role == 'superadmin' or ('shift_management' in enabled_addons and (role == 'admin' or 'shifts.view' in module_permissions)) %}
+    <a href="{{ url('shift_list') }}"
+       class="nav-link {% if 'shift' in request.resolver_match.url_name %}active{% endif %}">
+      <span class="nav-icon">SH</span>
+      <span class="nav-label">Shifts</span>
+    </a>
+    {% endif %}
+
+    {% if role == 'superadmin' or ('bank_management' in enabled_addons and (role == 'admin' or 'bank.view' in module_permissions)) %}
+    <a href="{{ url('bank_list') }}"
+       class="nav-link {% if 'bank' in request.resolver_match.url_name %}active{% endif %}">
+      <span class="nav-icon">BK</span>
+      <span class="nav-label">Bank</span>
+    </a>
+    {% endif %}
+
+    {% if role == 'superadmin' or ('policy' in enabled_addons and (role == 'admin' or 'policy.view' in module_permissions)) %}
     <a href="{{ url('policy_page') }}"
        class="nav-link {% if 'policy' in request.resolver_match.url_name %}active{% endif %}">
       <span class="nav-icon">PL</span>
@@ -192,14 +208,6 @@
        class="nav-link {% if 'dynamic_' in request.resolver_match.url_name %}active{% endif %}">
       <span class="nav-icon">DM</span>
       <span class="nav-label">Dynamic Models</span>
-    </a>
-    {% endif %}
-
-    {% if role == 'admin' %}
-    <a href="{{ url('permission_list') }}"
-       class="nav-link {% if 'permission' in request.resolver_match.url_name %}active{% endif %}">
-      <span class="nav-icon">PM</span>
-      <span class="nav-label">Permissions</span>
     </a>
     {% endif %}
 

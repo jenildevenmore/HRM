@@ -258,6 +258,33 @@ class UserProfileViewSet(viewsets.ModelViewSet):
                 ],
             },
             {
+                'title': 'Shifts',
+                'permissions': [
+                    {'key': 'shifts.view', 'label': 'Can view Shifts'},
+                    {'key': 'shifts.create', 'label': 'Can create Shifts'},
+                    {'key': 'shifts.edit', 'label': 'Can edit Shifts'},
+                    {'key': 'shifts.delete', 'label': 'Can delete Shifts'},
+                ],
+            },
+            {
+                'title': 'Bank',
+                'permissions': [
+                    {'key': 'bank.view', 'label': 'Can view Bank'},
+                    {'key': 'bank.create', 'label': 'Can create Bank'},
+                    {'key': 'bank.edit', 'label': 'Can edit Bank'},
+                    {'key': 'bank.delete', 'label': 'Can delete Bank'},
+                ],
+            },
+            {
+                'title': 'Policy',
+                'permissions': [
+                    {'key': 'policy.view', 'label': 'Can view Policy'},
+                    {'key': 'policy.create', 'label': 'Can create Policy'},
+                    {'key': 'policy.edit', 'label': 'Can edit Policy'},
+                    {'key': 'policy.delete', 'label': 'Can delete Policy'},
+                ],
+            },
+            {
                 'title': 'Custom Fields',
                 'permissions': [
                     {'key': 'custom_fields.view', 'label': 'Can view Custom Fields'},

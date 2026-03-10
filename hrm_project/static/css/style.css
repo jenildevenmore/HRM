@@ -39,7 +39,7 @@
 html { font-size: 16px; scroll-behavior: smooth; }
 
 body {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: var(--font-main);
   background: var(--bg);
   color: var(--text);
   line-height: 1.6;
@@ -187,14 +187,17 @@ ul { list-style: none; }
 }
 
 .page-title {
-  font-size: 26px; font-weight: 800;
+  font-size: calc(var(--font-size-base) * 1.85);
+  font-weight: 800;
   background: var(--accent-grad);
   -webkit-background-clip: text; -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
 .page-subtitle {
-  font-size: 14px; color: var(--text-muted); margin-top: 4px;
+  font-size: calc(var(--font-size-base) * 1);
+  color: var(--text-muted);
+  margin-top: 4px;
 }
 
 /* ── Cards ─────────────────────────────────────────────────── */
@@ -395,7 +398,7 @@ td {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text);
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-main);
   font-size: 14px;
   padding: 11px 14px;
   transition: border-color .2s, box-shadow .2s;
@@ -766,7 +769,7 @@ td {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text);
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-main);
   font-size: 14px;
   padding: 10px 14px;
   outline: none;

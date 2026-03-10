@@ -39,6 +39,8 @@ ADDON_KEYS = {
     'settings',
     'policy',
     'role_management',
+    'shift_management',
+    'bank_management',
 }
 ADDON_OPTIONS = [
     ('custom_fields', 'Custom Fields'),
@@ -53,6 +55,8 @@ ADDON_OPTIONS = [
     ('settings', 'Settings'),
     ('policy', 'Policy'),
     ('role_management', 'Role Management'),
+    ('shift_management', 'Shift Management'),
+    ('bank_management', 'Bank Management'),
 ]
 
 STATIC_PERMISSION_KEYS = {
@@ -60,6 +64,9 @@ STATIC_PERMISSION_KEYS = {
     'attendance.view', 'attendance.create', 'attendance.edit', 'attendance.delete',
     'leaves.view', 'leaves.create', 'leaves.edit', 'leaves.delete', 'leaves.approve',
     'holidays.view', 'holidays.create', 'holidays.edit', 'holidays.delete',
+    'shifts.view', 'shifts.create', 'shifts.edit', 'shifts.delete',
+    'bank.view', 'bank.create', 'bank.edit', 'bank.delete',
+    'policy.view', 'policy.create', 'policy.edit', 'policy.delete',
     'custom_fields.view', 'custom_fields.create', 'custom_fields.edit', 'custom_fields.delete',
     'dynamic_models.view', 'dynamic_models.create', 'dynamic_models.edit', 'dynamic_models.delete',
     'activity_logs.view',
@@ -70,6 +77,9 @@ LEGACY_PERMISSION_MAP = {
     'attendance': ['attendance.view', 'attendance.create', 'attendance.edit', 'attendance.delete'],
     'leaves': ['leaves.view', 'leaves.create', 'leaves.edit', 'leaves.delete', 'leaves.approve'],
     'holidays': ['holidays.view', 'holidays.create', 'holidays.edit', 'holidays.delete'],
+    'shifts': ['shifts.view', 'shifts.create', 'shifts.edit', 'shifts.delete'],
+    'bank': ['bank.view', 'bank.create', 'bank.edit', 'bank.delete'],
+    'policy': ['policy.view', 'policy.create', 'policy.edit', 'policy.delete'],
     'custom_fields': ['custom_fields.view', 'custom_fields.create', 'custom_fields.edit', 'custom_fields.delete'],
     'dynamic_models': ['dynamic_models.view', 'dynamic_models.create', 'dynamic_models.edit', 'dynamic_models.delete'],
 }
@@ -79,6 +89,8 @@ ADDON_VIEW_PERMISSION_MAP = {
     'attendance': 'attendance.view',
     'leave_management': 'leaves.view',
     'holidays': 'holidays.view',
+    'shift_management': 'shifts.view',
+    'bank_management': 'bank.view',
     'payroll': 'payroll.view',
     'activity_logs': 'activity_logs.view',
     'policy': 'policy.view',
@@ -401,7 +413,7 @@ def _normalize_module_permissions(permissions):
                 if expanded not in cleaned:
                     cleaned.append(expanded)
             continue
-        if key in STATIC_PERMISSION_KEYS or key in ('policy.view', 'activity_logs.view') or re.fullmatch(r'dynamic_model\.\d+\.(view|create|edit|delete)', key):
+        if key in STATIC_PERMISSION_KEYS or re.fullmatch(r'dynamic_model\.\d+\.(view|create|edit|delete)', key):
             if key not in cleaned:
                 cleaned.append(key)
     return cleaned
@@ -880,14 +892,129 @@ def dashboard(request):
 
 
 def policy_page(request):
+    permission_redirect = _require_module_permission(request, 'policy.view')
+    if permission_redirect:
+        return permission_redirect
     addon_redirect = _require_addon(request, 'policy')
     if addon_redirect:
         return addon_redirect
+
     messages = _pop_messages(request)
+    errors = []
+    policies = []
+    edit_item = None
+    search_q = (request.GET.get('q') or '').strip()
+    category_q = (request.GET.get('category') or '').strip()
+    selected_active = (request.GET.get('is_active') or '').strip().lower()
+    edit_id = (request.GET.get('edit') or '').strip()
+
+    role = request.session.get('role', 'employee')
+    client_id = request.session.get('client_id')
+    params = {}
+    if search_q:
+        params['search'] = search_q
+    if category_q:
+        params['category'] = category_q
+    if selected_active in ('true', 'false'):
+        params['is_active'] = selected_active
+    if role == 'superadmin' and client_id:
+        params['client'] = client_id
+
+    try:
+        resp = _api_get(request, '/api/company-policies/', params=params or None)
+        redir = _handle_unauthorized(resp, request)
+        if redir:
+            return redir
+        if resp.status_code == 200:
+            payload = resp.json()
+            policies = payload.get('results', payload) if isinstance(payload, dict) else payload
+        else:
+            errors = _error_list_from_response(resp, 'Failed to load company policies.')
+    except requests.exceptions.ConnectionError:
+        errors = ['Backend server unreachable.']
+
+    if edit_id:
+        edit_item = next((row for row in policies if str(row.get('id')) == edit_id), None)
+
+    if request.method == 'POST':
+        edit_id = (request.POST.get('edit_id') or '').strip()
+        permission_key = 'policy.edit' if edit_id else 'policy.create'
+        permission_redirect = _require_module_permission(request, permission_key)
+        if permission_redirect:
+            return permission_redirect
+
+        payload = {
+            'title': (request.POST.get('title') or '').strip(),
+            'category': (request.POST.get('category') or '').strip(),
+            'content': (request.POST.get('content') or '').strip(),
+            'is_active': str(request.POST.get('is_active') or '').strip().lower() in ('1', 'true', 'yes', 'on'),
+            'image_url': (request.POST.get('existing_image_url') or '').strip(),
+            'document_url': (request.POST.get('existing_document_url') or '').strip(),
+        }
+
+        if role == 'superadmin':
+            if client_id:
+                payload['client'] = client_id
+            else:
+                errors = ['Select a client at login before creating policy.']
+
+        image_file = request.FILES.get('image_file')
+        if image_file:
+            payload['image_url'] = _store_uploaded_dynamic_file(image_file, folder='policy/images')
+
+        document_file = request.FILES.get('document_file')
+        if document_file:
+            payload['document_url'] = _store_uploaded_dynamic_file(document_file, folder='policy/documents')
+
+        if not errors:
+            try:
+                if edit_id:
+                    save_resp = _api_put(request, f'/api/company-policies/{edit_id}/', payload)
+                else:
+                    save_resp = _api_post(request, '/api/company-policies/', payload)
+                redir = _handle_unauthorized(save_resp, request)
+                if redir:
+                    return redir
+                if save_resp.status_code in (200, 201):
+                    _flash(request, 'Policy saved successfully.', 'success')
+                    return redirect('policy_page')
+                errors = _error_list_from_response(save_resp, 'Failed to save policy.')
+            except requests.exceptions.ConnectionError:
+                errors = ['Backend server unreachable.']
+
     return render(request, 'policy/list.html', {
+        'policies': policies,
+        'errors': errors,
         'messages': messages,
+        'search_q': search_q,
+        'category_q': category_q,
+        'selected_active': selected_active,
+        'edit_item': edit_item,
         **_get_context(request),
     })
+
+
+@require_POST
+def policy_delete(request, pk):
+    permission_redirect = _require_module_permission(request, 'policy.delete')
+    if permission_redirect:
+        return permission_redirect
+    addon_redirect = _require_addon(request, 'policy')
+    if addon_redirect:
+        return addon_redirect
+
+    try:
+        resp = _api_delete(request, f'/api/company-policies/{pk}/')
+        redir = _handle_unauthorized(resp, request)
+        if redir:
+            return redir
+        if resp.status_code == 204:
+            _flash(request, 'Policy deleted.', 'success')
+        else:
+            _flash(request, '; '.join(_error_list_from_response(resp, 'Failed to delete policy.')), 'error')
+    except requests.exceptions.ConnectionError:
+        _flash(request, 'Backend server unreachable.', 'error')
+    return redirect('policy_page')
 
 
 def settings_page(request):
@@ -1265,6 +1392,7 @@ def role_list(request):
     messages = _pop_messages(request)
     roles = []
     client_info = {}
+    permission_options = []
     target_client_id = request.session.get('client_id')
     if request.session.get('role') == 'superadmin':
         target_client_id = request.GET.get('client_id') or target_client_id
@@ -1276,14 +1404,20 @@ def role_list(request):
             action = ''
         payload = {
             'name': (request.POST.get('name') or '').strip(),
-            'slug': (request.POST.get('slug') or '').strip(),
-            'sort_order': int(request.POST.get('sort_order') or 0),
             'is_active': (request.POST.get('is_active') or '').strip().lower() not in ('false', '0', 'off'),
+            'module_permissions': [str(p).strip() for p in request.POST.getlist('module_permissions') if str(p).strip()],
+            'enabled_addons': _normalize_enabled_addons(request.POST.getlist('enabled_addons')),
         }
-        if request.session.get('role') == 'superadmin' and target_client_id:
+        slug_value = (request.POST.get('slug') or '').strip()
+        if slug_value:
+            payload['slug'] = slug_value
+        sort_order_raw = (request.POST.get('sort_order') or '').strip()
+        if sort_order_raw:
+            payload['sort_order'] = int(sort_order_raw)
+        if target_client_id:
             payload['client'] = int(target_client_id)
-        if not payload['slug']:
-            payload['slug'] = slugify(payload['name'])
+        if not payload.get('slug'):
+            payload['slug'] = slugify(payload.get('name', ''))
         try:
             if action == 'create':
                 resp = _api_post(request, '/api/client-roles/', payload)
@@ -1323,12 +1457,18 @@ def role_list(request):
             client_resp = _api_get(request, f'/api/clients/{target_client_id}/')
             if client_resp.status_code == 200:
                 client_info = client_resp.json()
+        permission_params = {'client': target_client_id} if request.session.get('role') == 'superadmin' and target_client_id else None
+        option_resp = _api_get(request, '/api/accounts/permission-options/', params=permission_params)
+        if option_resp.status_code == 200:
+            permission_options = option_resp.json()
     except requests.exceptions.ConnectionError:
         errors.append('Backend server unreachable.')
 
     return render(request, 'roles/list.html', {
         'roles': roles,
         'client_info': client_info,
+        'permission_options': permission_options,
+        'addon_options': ADDON_OPTIONS,
         'target_client_id': target_client_id,
         'errors': errors,
         'messages': messages,
@@ -2836,6 +2976,231 @@ def holiday_delete(request, pk):
     except requests.exceptions.ConnectionError:
         _flash(request, 'Backend server unreachable.', 'error')
     return redirect('holiday_list')
+
+
+def shift_list(request):
+    permission_redirect = _require_module_permission(request, 'shifts.view')
+    if permission_redirect:
+        return permission_redirect
+    addon_redirect = _require_addon(request, 'shift_management')
+    if addon_redirect:
+        return addon_redirect
+
+    messages = _pop_messages(request)
+    errors = []
+    shifts = []
+    edit_item = None
+    search_q = (request.GET.get('q') or '').strip()
+    selected_active = (request.GET.get('is_active') or '').strip().lower()
+    edit_id = (request.GET.get('edit') or '').strip()
+
+    params = {}
+    if search_q:
+        params['search'] = search_q
+    if selected_active in ('true', 'false'):
+        params['is_active'] = selected_active
+
+    try:
+        resp = _api_get(request, '/api/shifts/', params=params or None)
+        redir = _handle_unauthorized(resp, request)
+        if redir:
+            return redir
+        if resp.status_code == 200:
+            payload = resp.json()
+            shifts = payload.get('results', payload) if isinstance(payload, dict) else payload
+        else:
+            errors = _error_list_from_response(resp, 'Failed to load shifts.')
+    except requests.exceptions.ConnectionError:
+        errors = ['Backend server unreachable.']
+
+    if edit_id:
+        edit_item = next((row for row in shifts if str(row.get('id')) == edit_id), None)
+
+    if request.method == 'POST':
+        edit_id = (request.POST.get('edit_id') or '').strip()
+        permission_key = 'shifts.edit' if edit_id else 'shifts.create'
+        permission_redirect = _require_module_permission(request, permission_key)
+        if permission_redirect:
+            return permission_redirect
+
+        payload = {
+            'name': (request.POST.get('name') or '').strip(),
+            'code': (request.POST.get('code') or '').strip(),
+            'start_time': (request.POST.get('start_time') or '').strip(),
+            'end_time': (request.POST.get('end_time') or '').strip(),
+            'grace_minutes': int((request.POST.get('grace_minutes') or '0').strip() or 0),
+            'is_night_shift': str(request.POST.get('is_night_shift') or '').strip().lower() in ('1', 'true', 'yes', 'on'),
+            'weekly_off': (request.POST.get('weekly_off') or '').strip(),
+            'is_active': str(request.POST.get('is_active') or '').strip().lower() in ('1', 'true', 'yes', 'on'),
+        }
+        try:
+            if edit_id:
+                save_resp = _api_put(request, f'/api/shifts/{edit_id}/', payload)
+            else:
+                save_resp = _api_post(request, '/api/shifts/', payload)
+            redir = _handle_unauthorized(save_resp, request)
+            if redir:
+                return redir
+            if save_resp.status_code in (200, 201):
+                _flash(request, 'Shift saved successfully.', 'success')
+                return redirect('shift_list')
+            errors = _error_list_from_response(save_resp, 'Failed to save shift.')
+        except requests.exceptions.ConnectionError:
+            errors = ['Backend server unreachable.']
+
+    return render(request, 'shifts/list.html', {
+        'shifts': shifts,
+        'errors': errors,
+        'messages': messages,
+        'search_q': search_q,
+        'selected_active': selected_active,
+        'edit_item': edit_item,
+        **_get_context(request),
+    })
+
+
+@require_POST
+def shift_delete(request, pk):
+    permission_redirect = _require_module_permission(request, 'shifts.delete')
+    if permission_redirect:
+        return permission_redirect
+    addon_redirect = _require_addon(request, 'shift_management')
+    if addon_redirect:
+        return addon_redirect
+
+    try:
+        resp = _api_delete(request, f'/api/shifts/{pk}/')
+        redir = _handle_unauthorized(resp, request)
+        if redir:
+            return redir
+        if resp.status_code == 204:
+            _flash(request, 'Shift deleted.', 'success')
+        else:
+            _flash(request, '; '.join(_error_list_from_response(resp, 'Failed to delete shift.')), 'error')
+    except requests.exceptions.ConnectionError:
+        _flash(request, 'Backend server unreachable.', 'error')
+    return redirect('shift_list')
+
+
+def bank_list(request):
+    permission_redirect = _require_module_permission(request, 'bank.view')
+    if permission_redirect:
+        return permission_redirect
+    addon_redirect = _require_addon(request, 'bank_management')
+    if addon_redirect:
+        return addon_redirect
+
+    messages = _pop_messages(request)
+    errors = []
+    bank_accounts = []
+    employees = []
+    edit_item = None
+    search_q = (request.GET.get('q') or '').strip()
+    selected_employee = (request.GET.get('employee') or '').strip()
+    edit_id = (request.GET.get('edit') or '').strip()
+
+    params = {}
+    if search_q:
+        params['search'] = search_q
+    if selected_employee:
+        params['employee'] = selected_employee
+
+    try:
+        emp_resp = _api_get(request, '/api/employees/')
+        redir = _handle_unauthorized(emp_resp, request)
+        if redir:
+            return redir
+        if emp_resp.status_code == 200:
+            emp_payload = emp_resp.json()
+            employees = emp_payload.get('results', emp_payload) if isinstance(emp_payload, dict) else emp_payload
+
+        resp = _api_get(request, '/api/bank-accounts/', params=params or None)
+        redir = _handle_unauthorized(resp, request)
+        if redir:
+            return redir
+        if resp.status_code == 200:
+            payload = resp.json()
+            bank_accounts = payload.get('results', payload) if isinstance(payload, dict) else payload
+        else:
+            errors = _error_list_from_response(resp, 'Failed to load bank accounts.')
+    except requests.exceptions.ConnectionError:
+        errors = ['Backend server unreachable.']
+
+    if edit_id:
+        edit_item = next((row for row in bank_accounts if str(row.get('id')) == edit_id), None)
+
+    if request.method == 'POST':
+        edit_id = (request.POST.get('edit_id') or '').strip()
+        permission_key = 'bank.edit' if edit_id else 'bank.create'
+        permission_redirect = _require_module_permission(request, permission_key)
+        if permission_redirect:
+            return permission_redirect
+
+        payload = {
+            'employee': (request.POST.get('employee') or '').strip() or None,
+            'bank_name': (request.POST.get('bank_name') or '').strip(),
+            'account_holder_name': (request.POST.get('account_holder_name') or '').strip(),
+            'account_number': (request.POST.get('account_number') or '').strip(),
+            'ifsc_code': (request.POST.get('ifsc_code') or '').strip(),
+            'branch_name': (request.POST.get('branch_name') or '').strip(),
+            'upi_id': (request.POST.get('upi_id') or '').strip(),
+            'is_primary': str(request.POST.get('is_primary') or '').strip().lower() in ('1', 'true', 'yes', 'on'),
+            'is_active': str(request.POST.get('is_active') or '').strip().lower() in ('1', 'true', 'yes', 'on'),
+        }
+        if payload['employee'] is None:
+            errors = ['Employee is required.']
+        else:
+            try:
+                payload['employee'] = int(payload['employee'])
+                if edit_id:
+                    save_resp = _api_put(request, f'/api/bank-accounts/{edit_id}/', payload)
+                else:
+                    save_resp = _api_post(request, '/api/bank-accounts/', payload)
+                redir = _handle_unauthorized(save_resp, request)
+                if redir:
+                    return redir
+                if save_resp.status_code in (200, 201):
+                    _flash(request, 'Bank account saved successfully.', 'success')
+                    return redirect('bank_list')
+                errors = _error_list_from_response(save_resp, 'Failed to save bank account.')
+            except ValueError:
+                errors = ['Invalid employee id.']
+            except requests.exceptions.ConnectionError:
+                errors = ['Backend server unreachable.']
+
+    return render(request, 'banks/list.html', {
+        'bank_accounts': bank_accounts,
+        'employees': employees,
+        'errors': errors,
+        'messages': messages,
+        'search_q': search_q,
+        'selected_employee': selected_employee,
+        'edit_item': edit_item,
+        **_get_context(request),
+    })
+
+
+@require_POST
+def bank_delete(request, pk):
+    permission_redirect = _require_module_permission(request, 'bank.delete')
+    if permission_redirect:
+        return permission_redirect
+    addon_redirect = _require_addon(request, 'bank_management')
+    if addon_redirect:
+        return addon_redirect
+
+    try:
+        resp = _api_delete(request, f'/api/bank-accounts/{pk}/')
+        redir = _handle_unauthorized(resp, request)
+        if redir:
+            return redir
+        if resp.status_code == 204:
+            _flash(request, 'Bank account deleted.', 'success')
+        else:
+            _flash(request, '; '.join(_error_list_from_response(resp, 'Failed to delete bank account.')), 'error')
+    except requests.exceptions.ConnectionError:
+        _flash(request, 'Backend server unreachable.', 'error')
+    return redirect('bank_list')
 
 
 def payroll_list(request):

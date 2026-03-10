@@ -25,6 +25,8 @@ class ClientForm(forms.Form):
         ('settings', 'Settings'),
         ('policy', 'Policy'),
         ('role_management', 'Role Management'),
+        ('shift_management', 'Shift Management'),
+        ('bank_management', 'Bank Management'),
     ]
 
     name = forms.CharField(

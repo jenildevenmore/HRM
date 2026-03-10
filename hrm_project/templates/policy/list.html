@@ -9,14 +9,168 @@
 
 <div class="page-header">
     <div>
-        <h1 class="page-title">Policy</h1>
-        <p class="page-subtitle">Company policy documents and guidelines.</p>
+        <h1 class="page-title">Company Policy</h1>
+        <p class="page-subtitle">Create and manage company policies, including images and documents.</p>
     </div>
 </div>
 
-<div class="card">
-    <p style="color:var(--text-muted);margin:0;">
-        Policy module is enabled for your access group. Add your policy content here.
-    </p>
+{% if errors %}
+<ul class="error-list">
+    {% for err in errors %}<li>{{ err }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<div class="card" style="margin-bottom:20px;">
+    <form method="get" class="form-row">
+        <div class="form-group">
+            <label>Search</label>
+            <input type="text" name="q" value="{{ search_q or '' }}" placeholder="Title, category, or content">
+        </div>
+        <div class="form-group">
+            <label>Category</label>
+            <input type="text" name="category" value="{{ category_q or '' }}" placeholder="e.g. Leave, Code of Conduct">
+        </div>
+        <div class="form-group">
+            <label>Status</label>
+            <select name="is_active">
+                <option value="">All</option>
+                <option value="true" {% if selected_active == 'true' %}selected{% endif %}>Active</option>
+                <option value="false" {% if selected_active == 'false' %}selected{% endif %}>Inactive</option>
+            </select>
+        </div>
+        <div class="form-actions" style="margin-top:28px;">
+            <button type="submit" class="btn btn-secondary">Search</button>
+            <a href="{{ url('policy_page') }}" class="btn btn-secondary">Reset</a>
+        </div>
+    </form>
 </div>
+
+{% if role in ['superadmin', 'admin'] or 'policy.create' in module_permissions or edit_item %}
+<div class="form-card" style="max-width:1100px;margin-bottom:20px;">
+    <form method="post" action="{{ url('policy_page') }}" enctype="multipart/form-data">
+        {{ csrf_input }}
+        <input type="hidden" name="edit_id" value="{{ edit_item.id if edit_item else '' }}">
+        <input type="hidden" name="existing_image_url" value="{{ edit_item.image_url if edit_item else '' }}">
+        <input type="hidden" name="existing_document_url" value="{{ edit_item.document_url if edit_item else '' }}">
+
+        <div class="form-row">
+            <div class="form-group">
+                <label>Policy Title *</label>
+                <input type="text" name="title" value="{{ edit_item.title if edit_item else '' }}" placeholder="e.g. Work From Home Policy" required>
+            </div>
+            <div class="form-group">
+                <label>Category</label>
+                <input type="text" name="category" value="{{ edit_item.category if edit_item else '' }}" placeholder="e.g. HR, Security, Payroll">
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Policy Content</label>
+            <textarea name="content" rows="6" placeholder="Write policy details...">{{ edit_item.content if edit_item else '' }}</textarea>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label>Image (Optional)</label>
+                <input type="file" name="image_file" accept="image/*">
+                {% if edit_item and edit_item.image_url %}
+                <p style="margin:8px 0 0 0;">
+                    <a href="{{ edit_item.image_url }}" target="_blank" rel="noopener">View current image</a>
+                </p>
+                {% endif %}
+            </div>
+            <div class="form-group">
+                <label>Document (Optional)</label>
+                <input type="file" name="document_file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,image/*">
+                {% if edit_item and edit_item.document_url %}
+                <p style="margin:8px 0 0 0;">
+                    <a href="{{ edit_item.document_url }}" target="_blank" rel="noopener">View current document</a>
+                </p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label>Active</label>
+                {% set active_value = edit_item.is_active if edit_item else true %}
+                <select name="is_active">
+                    <option value="true" {% if active_value %}selected{% endif %}>Yes</option>
+                    <option value="false" {% if not active_value %}selected{% endif %}>No</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">{{ 'Update Policy' if edit_item else 'Create Policy' }}</button>
+            {% if edit_item %}
+            <a href="{{ url('policy_page') }}" class="btn btn-secondary">Cancel Edit</a>
+            {% endif %}
+        </div>
+    </form>
+</div>
+{% endif %}
+
+{% if policies %}
+<div class="table-wrapper">
+    <table>
+        <thead>
+            <tr>
+                <th>Title</th>
+                <th>Category</th>
+                <th>Content</th>
+                <th>Image</th>
+                <th>Document</th>
+                <th>Status</th>
+                <th>Updated At</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in policies %}
+            <tr>
+                <td>{{ p.title }}</td>
+                <td>{{ p.category or '-' }}</td>
+                <td>{{ (p.content or '-')[:120] }}{% if p.content and (p.content|length) > 120 %}...{% endif %}</td>
+                <td>
+                    {% if p.image_url %}
+                    <a href="{{ p.image_url }}" target="_blank" rel="noopener">View</a>
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+                <td>
+                    {% if p.document_url %}
+                    <a href="{{ p.document_url }}" target="_blank" rel="noopener">Open</a>
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+                <td>
+                    {% if p.is_active %}
+                    <span class="badge badge-text">Active</span>
+                    {% else %}
+                    <span class="badge" style="background:rgba(248,113,113,0.16);color:var(--error);">Inactive</span>
+                    {% endif %}
+                </td>
+                <td>{{ p.updated_at }}</td>
+                <td>
+                    {% if role in ['superadmin', 'admin'] or 'policy.edit' in module_permissions %}
+                    <a href="{{ url('policy_page') }}?edit={{ p.id }}" class="btn btn-secondary btn-sm">Edit</a>
+                    {% endif %}
+                    {% if role in ['superadmin', 'admin'] or 'policy.delete' in module_permissions %}
+                    <form method="post" action="{{ url('policy_delete', args=[p.id]) }}" style="display:inline;">
+                        {{ csrf_input }}
+                        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this policy?')">Delete</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card"><div class="empty-state"><p>No policies found.</p></div></div>
+{% endif %}
 {% endblock %}

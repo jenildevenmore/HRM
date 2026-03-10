@@ -30,7 +30,10 @@ from dynamic_models.views import DynamicModelViewSet, DynamicFieldViewSet, Dynam
 from leaves.views import LeaveRequestViewSet, LeaveTypeViewSet, LeaveBalanceView
 from holidays.views import HolidayViewSet
 from payroll.views import PayrollPolicyViewSet, EmployeeCompensationViewSet, PayrollReportView
+from policies.views import CompanyPolicyViewSet
 from activity_logs.views import ActivityLogViewSet
+from shifts.views import ShiftViewSet
+from banks.views import BankAccountViewSet
 
 router = DefaultRouter()
 
@@ -47,8 +50,11 @@ router.register("dynamic-records", DynamicRecordViewSet, basename="dynamic-recor
 router.register("leaves", LeaveRequestViewSet, basename="leaves")
 router.register("leave-types", LeaveTypeViewSet, basename="leave-types")
 router.register("holidays", HolidayViewSet, basename="holidays")
+router.register("shifts", ShiftViewSet, basename="shifts")
+router.register("bank-accounts", BankAccountViewSet, basename="bank-accounts")
 router.register("payroll-policy", PayrollPolicyViewSet, basename="payroll-policy")
 router.register("employee-compensation", EmployeeCompensationViewSet, basename="employee-compensation")
+router.register("company-policies", CompanyPolicyViewSet, basename="company-policies")
 router.register("activity-logs", ActivityLogViewSet, basename="activity-logs")
 
 # Custom token view with profile info

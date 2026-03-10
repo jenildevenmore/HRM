@@ -4,6 +4,9 @@
 
 {% block content %}
 <style>
+    .payroll-header {
+        margin-bottom: 16px;
+    }
     .policy-toggle-row {
         display: flex;
         align-items: center;
@@ -37,11 +40,60 @@
         pointer-events: auto;
         cursor: pointer;
     }
+    .payroll-accordion-toggle {
+        width: 100%;
+        text-align: left;
+        background: none;
+        border: none;
+        color: var(--text);
+        font-size: 20px;
+        font-weight: 700;
+        cursor: pointer;
+        padding: 2px 0;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        transition: color 0.2s ease;
+    }
+    .payroll-accordion-toggle:hover {
+        color: var(--accent);
+    }
+    .payroll-accordion-toggle::after {
+        content: '+';
+        width: 28px;
+        height: 28px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        color: var(--text-muted);
+        font-size: 18px;
+        font-weight: 700;
+        line-height: 1;
+    }
+    .payroll-accordion-toggle.active::after {
+        content: '-';
+        color: var(--accent);
+        border-color: color-mix(in srgb, var(--accent) 45%, var(--border) 55%);
+        background: color-mix(in srgb, var(--accent) 12%, transparent 88%);
+    }
+    .payroll-accordion-body {
+        display: none;
+        margin-top: 16px;
+        padding-top: 14px;
+        border-top: 1px solid var(--border);
+    }
+    .payroll-accordion-toggle.active + .payroll-accordion-body {
+        display: block;
+    }
 </style>
 <div class="page-header">
-    <div>
+    <div class="payroll-header">
         <h1 class="page-title">Payroll Report</h1>
-        <p class="page-subtitle">Day-wise and hour-wise salary based on Attendance total time.</p>
+        <p class="page-subtitle">Day-wise and hour-wise salary based on attendance total time.</p>
     </div>
 </div>
 
@@ -99,93 +151,99 @@
 
 {% if can_manage_payroll %}
 <div class="card" style="margin-bottom:16px;">
-    <h3 style="margin-bottom:12px;">Payroll Policy Setup</h3>
-    <form method="post">
-        {{ csrf_input }}
-        <input type="hidden" name="form_action" value="save_policy">
-        <input type="hidden" name="policy_id" value="{{ policy_row.id if policy_row else '' }}">
-        <div class="form-row">
-            <div class="form-group">
-                <label>Monthly Working Days</label>
-                <input type="number" name="monthly_working_days" min="1" max="31" value="{{ policy_row.monthly_working_days if policy_row else 24 }}" required>
+    <button type="button" class="payroll-accordion-toggle" data-payroll-target="policySetup">Payroll Policy Setup</button>
+    <div class="payroll-accordion-body" data-payroll-panel="policySetup">
+        <form method="post">
+            {{ csrf_input }}
+            <input type="hidden" name="form_action" value="save_policy">
+            <input type="hidden" name="policy_id" value="{{ policy_row.id if policy_row else '' }}">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Monthly Working Days</label>
+                    <input type="number" name="monthly_working_days" min="1" max="31" value="{{ policy_row.monthly_working_days if policy_row else 24 }}" required>
+                </div>
+                <div class="form-group">
+                    <label>Standard Hours / Day</label>
+                    <input type="number" step="0.01" name="standard_hours_per_day" min="0.1" max="24" value="{{ policy_row.standard_hours_per_day if policy_row else 8 }}" required>
+                </div>
+                <div class="form-group">
+                    <label>Policy Basis</label>
+                    <select name="salary_basis" required>
+                        <option value="day" {% if (policy_row and policy_row.salary_basis == 'day') or not policy_row %}selected{% endif %}>Day</option>
+                        <option value="hour" {% if policy_row and policy_row.salary_basis == 'hour' %}selected{% endif %}>Hour</option>
+                    </select>
+                </div>
             </div>
-            <div class="form-group">
-                <label>Standard Hours / Day</label>
-                <input type="number" step="0.01" name="standard_hours_per_day" min="0.1" max="24" value="{{ policy_row.standard_hours_per_day if policy_row else 8 }}" required>
+            <div class="form-row">
+                <div class="policy-toggle-row">
+                    <input id="allow_extra_hours_payout" type="checkbox" name="allow_extra_hours_payout" {% if policy_row and policy_row.allow_extra_hours_payout %}checked{% endif %}>
+                    <label for="allow_extra_hours_payout">Allow Extra Hours Payout</label>
+                </div>
+                <div class="policy-toggle-row">
+                    <input id="allow_extra_days_payout" type="checkbox" name="allow_extra_days_payout" {% if policy_row and policy_row.allow_extra_days_payout %}checked{% endif %}>
+                    <label for="allow_extra_days_payout">Allow Extra Days Payout</label>
+                </div>
             </div>
-            <div class="form-group">
-                <label>Policy Basis</label>
-                <select name="salary_basis" required>
-                    <option value="day" {% if (policy_row and policy_row.salary_basis == 'day') or not policy_row %}selected{% endif %}>Day</option>
-                    <option value="hour" {% if policy_row and policy_row.salary_basis == 'hour' %}selected{% endif %}>Hour</option>
-                </select>
-            </div>
-        </div>
-        <div class="form-row">
-            <div class="policy-toggle-row">
-                <input id="allow_extra_hours_payout" type="checkbox" name="allow_extra_hours_payout" {% if policy_row and policy_row.allow_extra_hours_payout %}checked{% endif %}>
-                <label for="allow_extra_hours_payout">Allow Extra Hours Payout</label>
-            </div>
-            <div class="policy-toggle-row">
-                <input id="allow_extra_days_payout" type="checkbox" name="allow_extra_days_payout" {% if policy_row and policy_row.allow_extra_days_payout %}checked{% endif %}>
-                <label for="allow_extra_days_payout">Allow Extra Days Payout</label>
-            </div>
-        </div>
-        <button type="submit" class="btn btn-primary">Save Policy</button>
-    </form>
+            <button type="submit" class="btn btn-primary">Save Policy</button>
+        </form>
+    </div>
 </div>
 
 <div class="card" style="margin-bottom:16px;">
-    <h3 style="margin-bottom:12px;">Employee Salary Setup</h3>
-    <form method="post" id="compensationForm">
-        {{ csrf_input }}
-        <input type="hidden" name="form_action" value="save_compensation">
-        <input type="hidden" name="compensation_id" id="compensationIdField" value="">
-        <div class="form-row">
-            <div class="form-group">
-                <label>Employee</label>
-                <select name="employee_id" id="compEmployeeField" required>
-                    <option value="">Select employee</option>
-                    {% for emp in employees %}
-                    <option value="{{ emp.id }}">{{ emp.first_name }} {{ emp.last_name }} ({{ emp.email }})</option>
-                    {% endfor %}
-                </select>
+    <button type="button" class="payroll-accordion-toggle" data-payroll-target="employeeCompSetup">Employee Salary Setup</button>
+    <div class="payroll-accordion-body" data-payroll-panel="employeeCompSetup">
+        <form method="post" id="compensationForm">
+            {{ csrf_input }}
+            <input type="hidden" name="form_action" value="save_compensation">
+            <input type="hidden" name="compensation_id" id="compensationIdField" value="">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Employee</label>
+                    <select name="employee_id" id="compEmployeeField" required>
+                        <option value="">Select employee</option>
+                        {% for emp in employees %}
+                        <option value="{{ emp.id }}">{{ emp.first_name }} {{ emp.last_name }} ({{ emp.email }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Salary Basis</label>
+                    <select name="comp_salary_basis" id="compSalaryBasisField" required>
+                        <option value="monthly">Monthly</option>
+                        <option value="daily">Daily</option>
+                        <option value="hourly">Hourly</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Effective From</label>
+                    <input type="date" name="effective_from" id="effectiveFromField">
+                </div>
             </div>
-            <div class="form-group">
-                <label>Salary Basis</label>
-                <select name="comp_salary_basis" id="compSalaryBasisField" required>
-                    <option value="monthly">Monthly</option>
-                    <option value="daily">Daily</option>
-                    <option value="hourly">Hourly</option>
-                </select>
+            <div class="form-row">
+                <div class="form-group" id="monthlySalaryGroup">
+                    <label>Monthly Salary</label>
+                    <input type="number" step="0.01" min="0" name="monthly_salary" id="monthlySalaryField" placeholder="Enter monthly salary">
+                </div>
+                <div class="form-group" id="dailySalaryGroup">
+                    <label>Daily Salary</label>
+                    <input type="number" step="0.01" min="0" name="daily_salary" id="dailySalaryField" placeholder="Enter daily salary">
+                </div>
+                <div class="form-group" id="hourlySalaryGroup">
+                    <label>Hourly Salary</label>
+                    <input type="number" step="0.01" min="0" name="hourly_salary" id="hourlySalaryField" placeholder="Enter hourly salary">
+                </div>
             </div>
-            <div class="form-group">
-                <label>Effective From</label>
-                <input type="date" name="effective_from" id="effectiveFromField">
-            </div>
-        </div>
-        <div class="form-row">
-            <div class="form-group" id="monthlySalaryGroup">
-                <label>Monthly Salary</label>
-                <input type="number" step="0.01" min="0" name="monthly_salary" id="monthlySalaryField" placeholder="Enter monthly salary">
-            </div>
-            <div class="form-group" id="dailySalaryGroup">
-                <label>Daily Salary</label>
-                <input type="number" step="0.01" min="0" name="daily_salary" id="dailySalaryField" placeholder="Enter daily salary">
-            </div>
-            <div class="form-group" id="hourlySalaryGroup">
-                <label>Hourly Salary</label>
-                <input type="number" step="0.01" min="0" name="hourly_salary" id="hourlySalaryField" placeholder="Enter hourly salary">
-            </div>
-        </div>
-        <button type="submit" class="btn btn-primary">Save Employee Salary</button>
-    </form>
+            <button type="submit" class="btn btn-primary">Save Employee Salary</button>
+        </form>
+    </div>
 </div>
 {% endif %}
 
 <div class="card">
-    <div class="table-wrap">
-        <table>
+    <button type="button" class="payroll-accordion-toggle" data-payroll-target="payrollTable">Payroll Data</button>
+    <div class="payroll-accordion-body" data-payroll-panel="payrollTable">
+        <div class="table-wrap">
+            <table>
             <thead>
                 <tr>
                     <th>#</th>
@@ -236,13 +294,33 @@
                     </tr>
                 {% endif %}
             </tbody>
-        </table>
+            </table>
+        </div>
     </div>
 </div>
 
-{% if can_manage_payroll %}
 <script>
 (function () {
+    const payrollToggles = Array.prototype.slice.call(document.querySelectorAll('.payroll-accordion-toggle'));
+    const payrollPanels = Array.prototype.slice.call(document.querySelectorAll('.payroll-accordion-body'));
+    function closeAllPayrollPanels() {
+        payrollToggles.forEach(function (btn) { btn.classList.remove('active'); });
+        payrollPanels.forEach(function (panel) { panel.style.display = 'none'; });
+    }
+    payrollToggles.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            const target = btn.getAttribute('data-payroll-target');
+            const panel = document.querySelector('.payroll-accordion-body[data-payroll-panel="' + target + '"]');
+            const isOpen = btn.classList.contains('active');
+            closeAllPayrollPanels();
+            if (!isOpen && panel) {
+                btn.classList.add('active');
+                panel.style.display = 'block';
+            }
+        });
+    });
+    closeAllPayrollPanels();
+{% if can_manage_payroll %}
     const compensationByEmployee = {{ compensation_by_employee_json|safe }};
     const employeeField = document.getElementById('compEmployeeField');
     const basisField = document.getElementById('compSalaryBasisField');
@@ -277,7 +355,7 @@
     employeeField.addEventListener('change', applyCompensationForEmployee);
     basisField.addEventListener('change', updateBasisVisibility);
     applyCompensationForEmployee();
+{% endif %}
 })();
 </script>
-{% endif %}
 {% endblock %}

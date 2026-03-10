@@ -21,6 +21,8 @@ class ClientSerializer(serializers.ModelSerializer):
         'settings',
         'policy',
         'role_management',
+        'shift_management',
+        'bank_management',
     }
 
     class Meta:
@@ -119,6 +121,8 @@ class ClientRoleSerializer(serializers.ModelSerializer):
             'slug',
             'base_role',
             'base_role_display',
+            'module_permissions',
+            'enabled_addons',
             'is_active',
             'sort_order',
             'created_at',
@@ -148,6 +152,8 @@ class ClientRoleSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({'detail': 'Only client admin or superadmin can manage roles.'})
             if profile.role == 'admin':
                 attrs['client'] = profile.client
+            elif not attrs.get('client') and profile and profile.client_id:
+                attrs['client'] = profile.client
 
         client = attrs.get('client') or getattr(self.instance, 'client', None)
         if not client:
@@ -165,6 +171,30 @@ class ClientRoleSerializer(serializers.ModelSerializer):
                 )
 
         return attrs
+
+    def validate_module_permissions(self, value):
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            raise serializers.ValidationError('module_permissions must be a list.')
+        cleaned = []
+        for item in value:
+            key = str(item).strip()
+            if key and key not in cleaned:
+                cleaned.append(key)
+        return cleaned
+
+    def validate_enabled_addons(self, value):
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            raise serializers.ValidationError('enabled_addons must be a list.')
+        cleaned = []
+        for item in value:
+            key = str(item).strip()
+            if key and key not in cleaned:
+                cleaned.append(key)
+        return cleaned
 
     def validate_slug(self, value):
         cleaned = slugify(value or '')

@@ -2,10 +2,16 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
+from clients.models import Client
 from .models import EmployeeCompensation, PayrollPolicy
 
 
 class PayrollPolicySerializer(serializers.ModelSerializer):
+    client = serializers.PrimaryKeyRelatedField(
+        queryset=Client.objects.all(),
+        required=False,
+    )
+
     class Meta:
         model = PayrollPolicy
         fields = (
@@ -30,6 +36,46 @@ class PayrollPolicySerializer(serializers.ModelSerializer):
         if value <= 0 or value > Decimal('24'):
             raise serializers.ValidationError('standard_hours_per_day must be between 0 and 24.')
         return value
+
+    def _resolve_client_from_auth(self, request):
+        if not request:
+            return None
+        user = getattr(request, 'user', None)
+        if not user or not user.is_authenticated:
+            return None
+
+        try:
+            profile = user.profile
+            if profile and profile.client_id:
+                return profile.client
+        except Exception:
+            pass
+
+        auth = getattr(request, 'auth', None)
+        client_id = None
+        try:
+            if auth is not None:
+                client_id = auth.get('client_id')
+        except Exception:
+            client_id = None
+        if client_id:
+            return Client.objects.filter(id=client_id).first()
+        return None
+
+    def validate(self, attrs):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        resolved_client = self._resolve_client_from_auth(request)
+
+        if user and not user.is_superuser and resolved_client:
+            attrs['client'] = resolved_client
+        elif user and not user.is_superuser and not resolved_client:
+            raise serializers.ValidationError({'client': 'Client could not be resolved from your login token.'})
+
+        if not attrs.get('client') and not (user and user.is_superuser):
+            raise serializers.ValidationError({'client': 'This field is required.'})
+
+        return attrs
 
 
 class EmployeeCompensationSerializer(serializers.ModelSerializer):

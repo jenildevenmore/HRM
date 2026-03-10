@@ -12,6 +12,9 @@ STATIC_PERMISSION_KEYS = {
     'attendance.view', 'attendance.create', 'attendance.edit', 'attendance.delete',
     'leaves.view', 'leaves.create', 'leaves.edit', 'leaves.delete', 'leaves.approve',
     'holidays.view', 'holidays.create', 'holidays.edit', 'holidays.delete',
+    'shifts.view', 'shifts.create', 'shifts.edit', 'shifts.delete',
+    'bank.view', 'bank.create', 'bank.edit', 'bank.delete',
+    'policy.view', 'policy.create', 'policy.edit', 'policy.delete',
     'custom_fields.view', 'custom_fields.create', 'custom_fields.edit', 'custom_fields.delete',
     'dynamic_models.view', 'dynamic_models.create', 'dynamic_models.edit', 'dynamic_models.delete',
     'activity_logs.view',
@@ -22,6 +25,9 @@ LEGACY_PERMISSION_MAP = {
     'attendance': ['attendance.view', 'attendance.create', 'attendance.edit', 'attendance.delete'],
     'leaves': ['leaves.view', 'leaves.create', 'leaves.edit', 'leaves.delete', 'leaves.approve'],
     'holidays': ['holidays.view', 'holidays.create', 'holidays.edit', 'holidays.delete'],
+    'shifts': ['shifts.view', 'shifts.create', 'shifts.edit', 'shifts.delete'],
+    'bank': ['bank.view', 'bank.create', 'bank.edit', 'bank.delete'],
+    'policy': ['policy.view', 'policy.create', 'policy.edit', 'policy.delete'],
     'custom_fields': ['custom_fields.view', 'custom_fields.create', 'custom_fields.edit', 'custom_fields.delete'],
     'dynamic_models': ['dynamic_models.view', 'dynamic_models.create', 'dynamic_models.edit', 'dynamic_models.delete'],
 }
@@ -39,6 +45,8 @@ ALLOWED_ADDON_KEYS = {
     'settings',
     'policy',
     'role_management',
+    'shift_management',
+    'bank_management',
 }
 
 

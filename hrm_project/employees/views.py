@@ -41,6 +41,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         return candidate
 
     def _ensure_login_user_for_employee(self, employee):
+        role_permissions = list((employee.client_role.module_permissions if employee.client_role else []) or [])
+        role_addons = list((employee.client_role.enabled_addons if employee.client_role else []) or [])
         existing_profile = (
             UserProfile.objects.select_related('user')
             .filter(client_id=employee.client_id, user__email__iexact=employee.email)
@@ -52,6 +54,9 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             user.last_name = employee.last_name
             user.email = employee.email
             user.save(update_fields=['first_name', 'last_name', 'email'])
+            existing_profile.module_permissions = role_permissions
+            existing_profile.enabled_addons = role_addons
+            existing_profile.save(update_fields=['module_permissions', 'enabled_addons', 'updated_at'])
             return user
 
         username = self._build_unique_username(employee)
@@ -70,6 +75,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             user=user,
             client_id=employee.client_id,
             role='employee',
+            module_permissions=role_permissions,
+            enabled_addons=role_addons,
         )
         return user
 
@@ -151,3 +158,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             employee = serializer.save()
             login_user = self._ensure_login_user_for_employee(employee)
             self._send_password_setup_email(login_user)
+
+    def perform_update(self, serializer):
+        with transaction.atomic():
+            employee = serializer.save()
+            self._ensure_login_user_for_employee(employee)

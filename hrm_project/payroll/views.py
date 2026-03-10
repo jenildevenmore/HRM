@@ -31,11 +31,18 @@ class _PayrollAccessMixin:
         profile = self._profile()
         return bool(profile and profile.role == 'admin')
 
+    def _client_id_from_auth(self):
+        auth = getattr(self.request, 'auth', None)
+        try:
+            return auth.get('client_id') if auth is not None else None
+        except Exception:
+            return None
+
     def _client_id(self):
         profile = self._profile()
         if profile and profile.client_id:
             return profile.client_id
-        return None
+        return self._client_id_from_auth()
 
     def _can_manage_payroll(self):
         return self._is_superadmin() or self._is_client_admin()

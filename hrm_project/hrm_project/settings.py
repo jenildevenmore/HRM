@@ -103,6 +103,9 @@ INSTALLED_APPS = [
     'leaves',
     'holidays',
     'payroll',
+    'policies',
+    'shifts',
+    'banks',
     'activity_logs',
 ]
 

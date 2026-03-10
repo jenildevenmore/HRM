@@ -10,6 +10,7 @@ urlpatterns = [
     # Dashboard
     path('', views.dashboard, name='dashboard'),
     path('policy/', views.policy_page, name='policy_page'),
+    path('policy/<int:pk>/delete/', views.policy_delete, name='policy_delete'),
     path('settings/', views.settings_page, name='settings_page'),
 
     # Clients
@@ -43,6 +44,10 @@ urlpatterns = [
     # Holidays
     path('holidays/', views.holiday_list, name='holiday_list'),
     path('holidays/<int:pk>/delete/', views.holiday_delete, name='holiday_delete'),
+    path('shifts/', views.shift_list, name='shift_list'),
+    path('shifts/<int:pk>/delete/', views.shift_delete, name='shift_delete'),
+    path('banks/', views.bank_list, name='bank_list'),
+    path('banks/<int:pk>/delete/', views.bank_delete, name='bank_delete'),
 
     # Custom Fields
     path('custom-fields/', views.custom_field_list, name='custom_field_list'),
