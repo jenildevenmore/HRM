@@ -1,0 +1,257 @@
+{
+  "info": {
+    "_postman_id": "2a58d4d0-4f7f-4f08-a32c-9b0d8b280001",
+    "name": "HRM API - Full Collection",
+    "description": "Complete collection for hrm_project APIs.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Token - Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\",\n  \"client_id\": {{client_id}}\n}"
+            },
+            "url": "{{base_url}}/api/token/"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const d = pm.response.json();",
+                  "  pm.environment.set('access_token', d.access || '');",
+                  "  pm.environment.set('refresh_token', d.refresh || '');",
+                  "  pm.environment.set('client_id', d.client_id || pm.environment.get('client_id'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Token - Refresh",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh\": \"{{refresh_token}}\"\n}"
+            },
+            "url": "{{base_url}}/api/token/refresh/"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Accounts",
+      "item": [
+        { "name": "Me", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/accounts/me/" } },
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"new.user\",\n  \"email\": \"new.user@example.com\",\n  \"password\": \"StrongPass@123\",\n  \"client_id\": {{client_id}},\n  \"role\": \"employee\"\n}" },
+            "url": "{{base_url}}/api/accounts/register/"
+          }
+        },
+        {
+          "name": "Password Setup Confirm",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"uid\": \"<uid-from-mail>\",\n  \"token\": \"<token-from-mail>\",\n  \"new_password\": \"StrongPass@123\"\n}" },
+            "url": "{{base_url}}/api/accounts/password-setup-confirm/"
+          }
+        },
+        { "name": "Permission Options", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/accounts/permission-options/?client={{client_id}}" } },
+        { "name": "List Accounts", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/accounts/" } },
+        { "name": "Get Account", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/accounts/{{user_profile_id}}/" } },
+        {
+          "name": "Update Account (PATCH)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"enabled_addons\": [\"attendance\", \"leave_management\"],\n  \"module_permissions\": [\"attendance.view\", \"leaves.view\", \"leaves.create\"]\n}" },
+            "url": "{{base_url}}/api/accounts/{{user_profile_id}}/"
+          }
+        },
+        {
+          "name": "Set Permissions",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"enabled_addons\": [\"attendance\", \"leave_management\"],\n  \"module_permissions\": [\"attendance.view\", \"attendance.create\", \"leaves.view\", \"leaves.create\"]\n}" },
+            "url": "{{base_url}}/api/accounts/{{user_profile_id}}/set-permissions/"
+          }
+        },
+        {
+          "name": "Assign Group",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"permission_group\": {{group_id}}\n}" },
+            "url": "{{base_url}}/api/accounts/{{user_profile_id}}/assign-group/"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Account Groups",
+      "item": [
+        { "name": "List Groups", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/account-groups/" } },
+        {
+          "name": "Create Group",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"HR\",\n  \"client\": {{client_id}},\n  \"enabled_addons\": [\"attendance\", \"leave_management\"],\n  \"module_permissions\": [\"employees.view\", \"attendance.view\", \"attendance.create\", \"leaves.view\", \"leaves.approve\"]\n}" },
+            "url": "{{base_url}}/api/account-groups/"
+          }
+        },
+        { "name": "Get Group", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/account-groups/{{group_id}}/" } },
+        { "name": "Update Group (PATCH)", "request": { "method": "PATCH", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"enabled_addons\": [\"attendance\", \"leave_management\", \"holidays\"]\n}" }, "url": "{{base_url}}/api/account-groups/{{group_id}}/" } },
+        { "name": "Delete Group", "request": { "method": "DELETE", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/account-groups/{{group_id}}/" } }
+      ]
+    },
+    {
+      "name": "Clients",
+      "item": [
+        { "name": "Public Client List", "request": { "method": "GET", "url": "{{base_url}}/api/clients/public/" } },
+        { "name": "List Clients", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/clients/" } },
+        { "name": "Create Client", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Test\",\n  \"domain\": \"test\",\n  \"password\": \"Client@123\"\n}" }, "url": "{{base_url}}/api/clients/" } },
+        { "name": "Get Client", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/clients/{{client_id}}/" } },
+        { "name": "Update Client (PATCH)", "request": { "method": "PATCH", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"enabled_addons\": [\"attendance\", \"leave_management\", \"holidays\", \"settings\"]\n}" }, "url": "{{base_url}}/api/clients/{{client_id}}/" } },
+        { "name": "Delete Client", "request": { "method": "DELETE", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/clients/{{client_id}}/" } },
+        { "name": "Get Client App Settings", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/clients/settings/?client_id={{client_id}}" } },
+        { "name": "Save Client App Settings", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"client_id\": {{client_id}},\n  \"app_settings\": {\n    \"brand\": {\n      \"brand_name\": \"HRM\",\n      \"logo_url\": \"\"\n    },\n    \"theme\": {\n      \"primary_color\": \"#6c63ff\",\n      \"secondary_color\": \"#a78bfa\",\n      \"background_color\": \"#0d0d1a\"\n    }\n  }\n}" }, "url": "{{base_url}}/api/clients/settings/" } }
+      ]
+    },
+    {
+      "name": "Employees",
+      "item": [
+        { "name": "List Employees", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/employees/" } },
+        { "name": "Create Employee", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"first_name\": \"Jenil\",\n  \"last_name\": \"Diyora\",\n  \"email\": \"jenil.d@example.com\",\n  \"role\": \"employee\",\n  \"client\": {{client_id}},\n  \"joining_date\": \"2026-03-10\",\n  \"hr\": null,\n  \"manager\": null\n}" }, "url": "{{base_url}}/api/employees/" } },
+        { "name": "Get Employee", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/employees/{{employee_id}}/" } },
+        { "name": "Update Employee (PATCH)", "request": { "method": "PATCH", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"hr\": 1,\n  \"manager\": 2\n}" }, "url": "{{base_url}}/api/employees/{{employee_id}}/" } },
+        { "name": "Delete Employee", "request": { "method": "DELETE", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/employees/{{employee_id}}/" } }
+      ]
+    },
+    {
+      "name": "Leave Types",
+      "item": [
+        { "name": "List Leave Types", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/leave-types/" } },
+        { "name": "Create Leave Type", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Sick Leave\",\n  \"max_days_per_year\": 12,\n  \"is_paid\": true,\n  \"is_active\": true,\n  \"client\": {{client_id}}\n}" }, "url": "{{base_url}}/api/leave-types/" } },
+        { "name": "Get Leave Type", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/leave-types/{{leave_type_id}}/" } },
+        { "name": "Update Leave Type", "request": { "method": "PATCH", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"max_days_per_year\": 15\n}" }, "url": "{{base_url}}/api/leave-types/{{leave_type_id}}/" } },
+        { "name": "Delete Leave Type", "request": { "method": "DELETE", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/leave-types/{{leave_type_id}}/" } }
+      ]
+    },
+    {
+      "name": "Leaves",
+      "item": [
+        { "name": "List Leaves", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/leaves/" } },
+        { "name": "Create Leave", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"employee\": {{employee_id}},\n  \"leave_type\": \"Sick Leave\",\n  \"start_date\": \"2026-03-11\",\n  \"end_date\": \"2026-03-12\",\n  \"reason\": \"Not feeling well\"\n}" }, "url": "{{base_url}}/api/leaves/" } },
+        { "name": "Get Leave", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/leaves/{{leave_id}}/" } },
+        { "name": "Update Leave (PATCH)", "request": { "method": "PATCH", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Updated reason\"\n}" }, "url": "{{base_url}}/api/leaves/{{leave_id}}/" } },
+        { "name": "Review Leave", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"status\": \"approved\",\n  \"reviewer_comment\": \"Approved\"\n}" }, "url": "{{base_url}}/api/leaves/{{leave_id}}/review/" } },
+        { "name": "Cancel Leave", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"reviewer_comment\": \"Cancelled by admin\"\n}" }, "url": "{{base_url}}/api/leaves/{{leave_id}}/cancel/" } },
+        { "name": "Delete Leave", "request": { "method": "DELETE", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/leaves/{{leave_id}}/" } },
+        { "name": "Leave Balance Report", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/leave-balance/" } }
+      ]
+    },
+    {
+      "name": "Holidays",
+      "item": [
+        { "name": "List Holidays", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/holidays/" } },
+        { "name": "Create Holiday", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Independence Day\",\n  \"holiday_type\": \"National Holiday\",\n  \"start_date\": \"2026-08-15\",\n  \"end_date\": \"2026-08-15\",\n  \"paid\": true,\n  \"client\": {{client_id}}\n}" }, "url": "{{base_url}}/api/holidays/" } },
+        { "name": "Get Holiday", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/holidays/{{holiday_id}}/" } },
+        { "name": "Update Holiday", "request": { "method": "PATCH", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"paid\": false\n}" }, "url": "{{base_url}}/api/holidays/{{holiday_id}}/" } },
+        { "name": "Delete Holiday", "request": { "method": "DELETE", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/holidays/{{holiday_id}}/" } }
+      ]
+    },
+    {
+      "name": "Custom Fields",
+      "item": [
+        { "name": "List Custom Fields", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/custom-fields/" } },
+        { "name": "Create Custom Field", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"PAN Number\",\n  \"field_type\": \"text\",\n  \"client\": {{client_id}}\n}" }, "url": "{{base_url}}/api/custom-fields/" } },
+        { "name": "Get Custom Field", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/custom-fields/{{custom_field_id}}/" } },
+        { "name": "Update Custom Field", "request": { "method": "PATCH", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"PAN / Tax Number\"\n}" }, "url": "{{base_url}}/api/custom-fields/{{custom_field_id}}/" } },
+        { "name": "Delete Custom Field", "request": { "method": "DELETE", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/custom-fields/{{custom_field_id}}/" } }
+      ]
+    },
+    {
+      "name": "Custom Field Values",
+      "item": [
+        { "name": "List Custom Field Values", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/custom-field-values/" } },
+        { "name": "Create Custom Field Value", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"employee\": {{employee_id}},\n  \"custom_field\": {{custom_field_id}},\n  \"value\": \"ABCDE1234F\"\n}" }, "url": "{{base_url}}/api/custom-field-values/" } },
+        { "name": "Get Custom Field Value", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/custom-field-values/{{custom_field_value_id}}/" } },
+        { "name": "Update Custom Field Value", "request": { "method": "PATCH", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"value\": \"UPDATED123\"\n}" }, "url": "{{base_url}}/api/custom-field-values/{{custom_field_value_id}}/" } },
+        { "name": "Delete Custom Field Value", "request": { "method": "DELETE", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/custom-field-values/{{custom_field_value_id}}/" } }
+      ]
+    },
+    {
+      "name": "Dynamic Models",
+      "item": [
+        { "name": "List Dynamic Models", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/dynamic-models/" } },
+        { "name": "Create Dynamic Model", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Bank\",\n  \"slug\": \"bank\",\n  \"client\": {{client_id}},\n  \"show_in_employee_form\": true\n}" }, "url": "{{base_url}}/api/dynamic-models/" } },
+        { "name": "Create Attendance Module", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"client\": {{client_id}},\n  \"name\": \"Attendance\",\n  \"slug\": \"attendance\"\n}" }, "url": "{{base_url}}/api/dynamic-models/create-attendance/" } },
+        { "name": "Get Dynamic Model", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/dynamic-models/{{dynamic_model_id}}/" } },
+        { "name": "Update Dynamic Model", "request": { "method": "PATCH", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"show_in_employee_form\": true\n}" }, "url": "{{base_url}}/api/dynamic-models/{{dynamic_model_id}}/" } },
+        { "name": "Delete Dynamic Model", "request": { "method": "DELETE", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/dynamic-models/{{dynamic_model_id}}/" } }
+      ]
+    },
+    {
+      "name": "Dynamic Fields",
+      "item": [
+        { "name": "List Dynamic Fields", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/dynamic-fields/?dynamic_model={{dynamic_model_id}}" } },
+        { "name": "Create Dynamic Field", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"dynamic_model\": {{dynamic_model_id}},\n  \"name\": \"Bank Name\",\n  \"key\": \"bank_name\",\n  \"field_type\": \"text\",\n  \"required\": false,\n  \"visible_to_users\": true,\n  \"choices_json\": [],\n  \"sort_order\": 1\n}" }, "url": "{{base_url}}/api/dynamic-fields/" } },
+        { "name": "Get Dynamic Field", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/dynamic-fields/{{dynamic_field_id}}/" } },
+        { "name": "Update Dynamic Field", "request": { "method": "PATCH", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"required\": true\n}" }, "url": "{{base_url}}/api/dynamic-fields/{{dynamic_field_id}}/" } },
+        { "name": "Delete Dynamic Field", "request": { "method": "DELETE", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/dynamic-fields/{{dynamic_field_id}}/" } }
+      ]
+    },
+    {
+      "name": "Dynamic Records",
+      "item": [
+        { "name": "List Dynamic Records", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/dynamic-records/?dynamic_model={{dynamic_model_id}}" } },
+        { "name": "Create Dynamic Record", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"dynamic_model\": {{dynamic_model_id}},\n  \"employee\": {{employee_id}},\n  \"data\": {\n    \"bank_name\": \"ICICI\",\n    \"account_number\": \"1234567890\"\n  }\n}" }, "url": "{{base_url}}/api/dynamic-records/" } },
+        { "name": "Get Dynamic Record", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/dynamic-records/{{dynamic_record_id}}/" } },
+        { "name": "Update Dynamic Record", "request": { "method": "PATCH", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"data\": {\n    \"bank_name\": \"HDFC\"\n  }\n}" }, "url": "{{base_url}}/api/dynamic-records/{{dynamic_record_id}}/" } },
+        { "name": "Delete Dynamic Record", "request": { "method": "DELETE", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }], "url": "{{base_url}}/api/dynamic-records/{{dynamic_record_id}}/" } }
+      ]
+    }
+  ],
+  "variable": [
+    { "key": "base_url", "value": "http://127.0.0.1:8000" },
+    { "key": "username", "value": "admin" },
+    { "key": "password", "value": "admin" },
+    { "key": "access_token", "value": "" },
+    { "key": "refresh_token", "value": "" },
+    { "key": "client_id", "value": "1" },
+    { "key": "user_profile_id", "value": "1" },
+    { "key": "group_id", "value": "1" },
+    { "key": "employee_id", "value": "1" },
+    { "key": "leave_type_id", "value": "1" },
+    { "key": "leave_id", "value": "1" },
+    { "key": "holiday_id", "value": "1" },
+    { "key": "custom_field_id", "value": "1" },
+    { "key": "custom_field_value_id", "value": "1" },
+    { "key": "dynamic_model_id", "value": "1" },
+    { "key": "dynamic_field_id", "value": "1" },
+    { "key": "dynamic_record_id", "value": "1" }
+  ]
+}

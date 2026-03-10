@@ -35,15 +35,16 @@ class UserProfileViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Filter by authenticated user's client"""
         user = self.request.user
+        base_qs = UserProfile.objects.select_related('user', 'client', 'permission_group')
         if user.is_superuser:
-            return UserProfile.objects.all()
+            return base_qs
         try:
             profile = user.profile
             # Super admin can see all, others see only their client
             if profile.role == 'superadmin':
-                return UserProfile.objects.all()
+                return base_qs
             else:
-                return UserProfile.objects.filter(client=profile.client)
+                return base_qs.filter(client=profile.client)
         except UserProfile.DoesNotExist:
             return UserProfile.objects.none()
 
@@ -325,7 +326,7 @@ class ClientPermissionGroupViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        qs = ClientPermissionGroup.objects.annotate(user_count=Count('users'))
+        qs = ClientPermissionGroup.objects.select_related('client').annotate(user_count=Count('users'))
         if self._is_superadmin(user):
             return qs
         profile = getattr(user, 'profile', None)

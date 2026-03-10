@@ -17,15 +17,16 @@ class CustomFieldViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Filter custom fields by user's client"""
         user = self.request.user
+        base_qs = CustomField.objects.select_related('client')
         if user.is_superuser:
-            return CustomField.objects.all()
+            return base_qs
         try:
             profile = user.profile
             # Super admin sees all fields. Others can only work with employee fields.
             if profile.role == 'superadmin':
-                return CustomField.objects.all()
+                return base_qs
             else:
-                return CustomField.objects.filter(
+                return base_qs.filter(
                     client=profile.client,
                     model_name='Employee',
                 )
@@ -65,16 +66,15 @@ class CustomFieldValueViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Filter custom field values by user's client"""
         user = self.request.user
+        base_qs = CustomFieldValue.objects.select_related('employee', 'employee__client', 'field', 'field__client')
         if user.is_superuser:
-            return CustomFieldValue.objects.all()
+            return base_qs
         try:
             profile = user.profile
             # Super admin sees all, others see only their client's employee values
             if profile.role == 'superadmin':
-                return CustomFieldValue.objects.all()
+                return base_qs
             else:
-                from employees.models import Employee
-                client_employees = Employee.objects.filter(client=profile.client)
-                return CustomFieldValue.objects.filter(employee__in=client_employees)
+                return base_qs.filter(employee__client=profile.client)
         except:
             return CustomFieldValue.objects.none()

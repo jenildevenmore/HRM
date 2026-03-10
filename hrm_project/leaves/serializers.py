@@ -174,12 +174,18 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
     def get_leave_type_is_paid(self, obj):
         if not obj.client_id or not obj.leave_type:
             return None
-        leave_type = LeaveType.objects.filter(
-            client_id=obj.client_id,
-            name=obj.leave_type,
-            is_active=True,
-        ).only('is_paid').first()
-        return leave_type.is_paid if leave_type else None
+
+        # Cache lookup values per serializer instance to avoid repeated queries in list APIs.
+        cache = self.context.setdefault('_leave_type_paid_cache', {})
+        cache_key = (obj.client_id, obj.leave_type)
+        if cache_key not in cache:
+            leave_type = LeaveType.objects.filter(
+                client_id=obj.client_id,
+                name=obj.leave_type,
+                is_active=True,
+            ).only('is_paid').first()
+            cache[cache_key] = (leave_type.is_paid if leave_type else None)
+        return cache[cache_key]
 
     def get_pending_with(self, obj):
         if obj.status != LeaveRequest.STATUS_PENDING:

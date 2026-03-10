@@ -36,7 +36,7 @@ class HolidayViewSet(_HolidayAccessMixin, viewsets.ModelViewSet):
     ordering_fields = ['start_date', 'end_date', 'name', 'created_at']
 
     def get_queryset(self):
-        qs = Holiday.objects.all()
+        qs = Holiday.objects.select_related('client')
         if self._is_superadmin():
             return qs
         profile = self._profile()

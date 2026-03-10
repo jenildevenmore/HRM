@@ -48,7 +48,7 @@ class LeaveTypeViewSet(_LeaveAccessMixin, viewsets.ModelViewSet):
     filterset_fields = ['is_paid', 'is_active']
 
     def get_queryset(self):
-        qs = LeaveType.objects.all()
+        qs = LeaveType.objects.select_related('client')
         if self._is_superadmin():
             return qs
         profile = self._profile()
@@ -269,13 +269,13 @@ class LeaveBalanceView(_LeaveAccessMixin, APIView):
 
     def get(self, request):
         if self._is_superadmin():
-            employees = Employee.objects.all().order_by('first_name', 'last_name')
-            leave_types = LeaveType.objects.filter(is_active=True).order_by('name')
+            employees = Employee.objects.only('id', 'first_name', 'last_name', 'role').all().order_by('first_name', 'last_name')
+            leave_types = LeaveType.objects.only('name', 'is_paid', 'max_days_per_year').filter(is_active=True).order_by('name')
         else:
             profile = self._profile()
             if not profile or not profile.client_id:
                 return Response([], status=status.HTTP_200_OK)
-            base_employees = Employee.objects.filter(client_id=profile.client_id)
+            base_employees = Employee.objects.only('id', 'first_name', 'last_name', 'role', 'email').filter(client_id=profile.client_id)
             mapped_employee = base_employees.filter(email__iexact=(request.user.email or '')).first()
             if profile.role == 'admin':
                 employees = base_employees.order_by('first_name', 'last_name')
@@ -285,18 +285,38 @@ class LeaveBalanceView(_LeaveAccessMixin, APIView):
                 employees = base_employees.filter(id=mapped_employee.id).order_by('first_name', 'last_name')
             else:
                 employees = Employee.objects.none()
-            leave_types = LeaveType.objects.filter(client_id=profile.client_id, is_active=True).order_by('name')
+            leave_types = LeaveType.objects.only('name', 'is_paid', 'max_days_per_year').filter(
+                client_id=profile.client_id,
+                is_active=True,
+            ).order_by('name')
 
         leave_types_list = list(leave_types)
+        employees_list = list(employees)
+        employee_ids = [emp.id for emp in employees_list]
+        leave_type_names = [lt.name for lt in leave_types_list]
+
+        # Aggregate in one query instead of querying per employee x leave type.
+        used_totals_map = {}
+        if employee_ids and leave_type_names:
+            used_totals = (
+                LeaveRequest.objects.filter(
+                    employee_id__in=employee_ids,
+                    status=LeaveRequest.STATUS_APPROVED,
+                    leave_type__in=leave_type_names,
+                )
+                .values('employee_id', 'leave_type')
+                .annotate(total=Sum('total_days'))
+            )
+            used_totals_map = {
+                (row['employee_id'], row['leave_type']): int(row['total'] or 0)
+                for row in used_totals
+            }
+
         rows = []
-        for employee in employees:
+        for employee in employees_list:
             type_rows = []
             for leave_type in leave_types_list:
-                used = LeaveRequest.objects.filter(
-                    employee_id=employee.id,
-                    status=LeaveRequest.STATUS_APPROVED,
-                    leave_type=leave_type.name,
-                ).aggregate(total=Sum('total_days')).get('total') or 0
+                used = used_totals_map.get((employee.id, leave_type.name), 0)
                 total = int(leave_type.max_days_per_year or 0)
                 available = total - int(used)
                 if available < 0:

@@ -25,15 +25,16 @@ class ClientViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Filter clients by user role"""
         user = self.request.user
+        base_qs = Client.objects.all()
         if user.is_superuser:
-            return Client.objects.all()
+            return base_qs
         try:
             profile = user.profile
             # Super admin sees all clients, others see only their own client
             if profile.role == 'superadmin':
-                return Client.objects.all()
+                return base_qs
             elif profile.client:
-                return Client.objects.filter(id=profile.client.id)
+                return base_qs.filter(id=profile.client.id)
             else:
                 return Client.objects.none()
         except:

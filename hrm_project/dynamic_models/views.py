@@ -34,11 +34,11 @@ class DynamicModelViewSet(TenantScopedViewSet):
 
     def get_queryset(self):
         if self._is_superadmin():
-            return DynamicModel.objects.all()
+            return DynamicModel.objects.select_related('client')
         profile = self._profile()
         if not profile:
             return DynamicModel.objects.none()
-        return DynamicModel.objects.filter(client=profile.client)
+        return DynamicModel.objects.select_related('client').filter(client=profile.client)
 
     def perform_create(self, serializer):
         if self._is_superadmin():

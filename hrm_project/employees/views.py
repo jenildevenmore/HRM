@@ -111,17 +111,18 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         """Filter employees by user's client"""
         user = self.request.user
         role_filter = (self.request.query_params.get('role') or '').strip().lower()
+        base_qs = Employee.objects.select_related('client', 'hr', 'manager')
 
         if user.is_superuser:
-            qs = Employee.objects.all()
+            qs = base_qs
             return qs.filter(role=role_filter) if role_filter in ('employee', 'hr', 'manager') else qs
         try:
             profile = user.profile
             # Super admin sees all, others see only their client's employees
             if profile.role == 'superadmin':
-                qs = Employee.objects.all()
+                qs = base_qs
             else:
-                qs = Employee.objects.filter(client=profile.client)
+                qs = base_qs.filter(client=profile.client)
             if role_filter in ('employee', 'hr', 'manager'):
                 qs = qs.filter(role=role_filter)
             return qs
