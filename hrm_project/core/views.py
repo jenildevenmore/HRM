@@ -5,11 +5,13 @@ import calendar
 import re
 import os
 import uuid
+from urllib.parse import urlparse
 from django.conf import settings
 from django.shortcuts import render, redirect
 from django.views.decorators.http import require_POST
 from django.core.files.storage import default_storage
 from django.utils.text import slugify
+from django.test import Client as DjangoTestClient
 
 from core.forms import (
     LoginForm,
@@ -22,6 +24,7 @@ from core.forms import (
 )
 
 API = settings.BACKEND_API_URL
+API_TIMEOUT = int(getattr(settings, 'API_TIMEOUT', 10))
 
 ADDON_KEYS = {
     'custom_fields',
@@ -83,44 +86,122 @@ def _auth_headers(request):
     return {'Authorization': f'Bearer {token}'}
 
 
-def _api_get(request, path, params=None):
-    """GET from backend API.  Returns (data, response)."""
-    resp = requests.get(
-        f'{API}{path}',
-        headers=_auth_headers(request),
+class _InternalAPIResponse:
+    def __init__(self, django_response):
+        self.status_code = django_response.status_code
+        self._content = django_response.content or b''
+
+    @property
+    def content(self):
+        return self._content
+
+    @property
+    def text(self):
+        return self._content.decode('utf-8', errors='replace')
+
+    def json(self):
+        if not self._content:
+            return {}
+        return json.loads(self._content.decode('utf-8'))
+
+
+def _use_internal_api():
+    # For single-project deployment (UI + API in same Django), avoid self-HTTP calls.
+    return str(getattr(settings, 'USE_INTERNAL_API', 'true')).strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+def _to_internal_path(path):
+    raw = str(path or '').strip()
+    if raw.startswith('http://') or raw.startswith('https://'):
+        parsed = urlparse(raw)
+        suffix = f'?{parsed.query}' if parsed.query else ''
+        return f'{parsed.path}{suffix}'
+    if not raw.startswith('/'):
+        return f'/{raw}'
+    return raw
+
+
+def _internal_api_request(method, path, headers=None, params=None, data=None, host=None):
+    client = DjangoTestClient()
+    request_headers = {}
+    for key, value in (headers or {}).items():
+        normalized = str(key).strip().upper().replace('-', '_')
+        if normalized == 'CONTENT_TYPE':
+            continue
+        request_headers[f'HTTP_{normalized}'] = value
+    if host:
+        request_headers['HTTP_HOST'] = host
+
+    internal_path = _to_internal_path(path)
+    method_upper = str(method).upper()
+
+    if method_upper == 'GET':
+        resp = client.get(internal_path, data=params or None, **request_headers)
+    elif method_upper == 'POST':
+        resp = client.post(
+            internal_path,
+            data=json.dumps(data or {}),
+            content_type='application/json',
+            **request_headers,
+        )
+    elif method_upper == 'PUT':
+        resp = client.put(
+            internal_path,
+            data=json.dumps(data or {}),
+            content_type='application/json',
+            **request_headers,
+        )
+    elif method_upper == 'PATCH':
+        resp = client.patch(
+            internal_path,
+            data=json.dumps(data or {}),
+            content_type='application/json',
+            **request_headers,
+        )
+    elif method_upper == 'DELETE':
+        resp = client.delete(internal_path, data=params or None, **request_headers)
+    else:
+        raise ValueError(f'Unsupported method: {method}')
+
+    return _InternalAPIResponse(resp)
+
+
+def _external_api_request(method, path, headers=None, params=None, data=None):
+    url = f'{API.rstrip("/")}{_to_internal_path(path)}'
+    return requests.request(
+        method=method,
+        url=url,
+        headers=headers or {},
         params=params,
-        
+        json=data,
+        timeout=API_TIMEOUT,
     )
-    return resp
+
+
+def _api_request(method, path, headers=None, params=None, data=None, host=None):
+    if _use_internal_api():
+        return _internal_api_request(method, path, headers=headers, params=params, data=data, host=host)
+    return _external_api_request(method, path, headers=headers, params=params, data=data)
+
+
+def _api_get(request, path, params=None):
+    host = request.get_host() if request else None
+    return _api_request('GET', path, headers=_auth_headers(request), params=params, host=host)
 
 
 def _api_post(request, path, data):
-    resp = requests.post(
-        f'{API}{path}',
-        json=data,
-        headers=_auth_headers(request),
-        
-    )
-    return resp
+    host = request.get_host() if request else None
+    return _api_request('POST', path, headers=_auth_headers(request), data=data, host=host)
 
 
 def _api_put(request, path, data):
-    resp = requests.put(
-        f'{API}{path}',
-        json=data,
-        headers=_auth_headers(request),
-        
-    )
-    return resp
+    host = request.get_host() if request else None
+    return _api_request('PUT', path, headers=_auth_headers(request), data=data, host=host)
 
 
 def _api_delete(request, path):
-    resp = requests.delete(
-        f'{API}{path}',
-        headers=_auth_headers(request),
-        
-    )
-    return resp
+    host = request.get_host() if request else None
+    return _api_request('DELETE', path, headers=_auth_headers(request), host=host)
 
 
 def _serialize_data(data):
@@ -336,11 +417,7 @@ def _load_client_addons(request, access_token=None, client_id=None):
         headers = {'Authorization': f'Bearer {access_token}'}
 
     try:
-        resp = requests.get(
-            f'{API}/api/clients/{target_client_id}/',
-            headers=headers,
-            
-        )
+        resp = _api_request('GET', f'/api/clients/{target_client_id}/', headers=headers, host=request.get_host())
         if resp.status_code == 200:
             return _normalize_enabled_addons(resp.json().get('enabled_addons') or [])
     except requests.exceptions.RequestException:
@@ -358,11 +435,7 @@ def _load_client_app_settings(request, access_token=None, client_id=None):
         headers = {'Authorization': f'Bearer {access_token}'}
 
     try:
-        resp = requests.get(
-            f'{API}/api/clients/{target_client_id}/',
-            headers=headers,
-            
-        )
+        resp = _api_request('GET', f'/api/clients/{target_client_id}/', headers=headers, host=request.get_host())
         if resp.status_code == 200:
             payload = resp.json()
             app_settings = payload.get('app_settings')
@@ -544,7 +617,7 @@ def login_view(request):
 
     if login_mode != 'superadmin':
         try:
-            clients_resp = requests.get(f'{API}/api/clients/public/', )
+            clients_resp = _api_request('GET', '/api/clients/public/', host=request.get_host())
             if clients_resp.status_code == 200:
                 clients = clients_resp.json()
             else:
@@ -580,7 +653,7 @@ def login_view(request):
             else:
                 payload['client_id'] = selected_client_id
             try:
-                resp = requests.post(f'{API}/api/token/', json=payload, )
+                resp = _api_request('POST', '/api/token/', data=payload, host=request.get_host())
                 if resp.status_code == 200:
                     data = resp.json()
                     request.session['access_token'] = data['access']
@@ -649,10 +722,11 @@ def reset_password_view(request):
             error = 'Password and confirm password do not match.'
         else:
             try:
-                resp = requests.post(
-                    f'{API}/api/accounts/password-setup-confirm/',
-                    json={'uid': uid, 'token': token, 'new_password': password},
-                    
+                resp = _api_request(
+                    'POST',
+                    '/api/accounts/password-setup-confirm/',
+                    data={'uid': uid, 'token': token, 'new_password': password},
+                    host=request.get_host(),
                 )
                 if resp.status_code == 200:
                     success = 'Password set successfully. You can now login.'
