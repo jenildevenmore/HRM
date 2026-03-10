@@ -59,7 +59,12 @@ def provision_client_schema(client):
     conn = connections[database]
 
     if conn.vendor != 'postgresql':
-        return False, 'Client schema provisioning requires PostgreSQL.'
+        # Non-PostgreSQL databases (e.g. SQLite) do not support schemas.
+        # Treat as successful no-op so client creation works in local/dev setups.
+        if client.schema_provisioned:
+            client.schema_provisioned = False
+            client.save(update_fields=['schema_provisioned'])
+        return True, None
 
     schema_name = client.schema_name or build_schema_name(client)
     if not validate_schema_name(schema_name):
