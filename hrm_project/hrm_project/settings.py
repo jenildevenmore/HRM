@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 import os
+import re
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -45,6 +46,23 @@ def _env_bool(name, default=False):
 
 def _env_csv(name, default=''):
     return [part.strip() for part in os.getenv(name, default).split(',') if part.strip()]
+
+
+def _resolve_sqlite_db_name():
+    raw = str(os.getenv('DJANGO_DB_NAME', '')).strip()
+    default_db = BASE_DIR / 'HRM_db.sqlite3'
+    if not raw:
+        return str(default_db)
+
+    # If Windows-style path is present on Linux host, fallback to default local DB.
+    if os.name != 'nt' and re.match(r'^[A-Za-z]:[\\/]', raw):
+        return str(default_db)
+
+    db_path = Path(raw)
+    if not db_path.is_absolute():
+        db_path = BASE_DIR / db_path
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    return str(db_path)
 
 
 # SECURITY WARNING: keep the secret key used in production secret!
@@ -127,24 +145,25 @@ WSGI_APPLICATION = 'hrm_project.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
-
-# DATABASES = {
-#     "default": {
-#         "ENGINE": "django.db.backends.postgresql",
-#         "NAME": "HRM",
-#         "USER": "admin",
-#         "PASSWORD": "admin",
-#         "HOST": "localhost",
-#         "PORT": "5433",
-#     }
-# }
-
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": os.getenv('DJANGO_DB_NAME', str(BASE_DIR / 'HRM_db.sqlite3')),
+DB_ENGINE = os.getenv('DJANGO_DB_ENGINE', 'sqlite').strip().lower()
+if DB_ENGINE in ('postgres', 'postgresql'):
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.getenv('DJANGO_PG_NAME', 'HRM'),
+            "USER": os.getenv('DJANGO_PG_USER', 'admin'),
+            "PASSWORD": os.getenv('DJANGO_PG_PASSWORD', 'admin'),
+            "HOST": os.getenv('DJANGO_PG_HOST', 'localhost'),
+            "PORT": os.getenv('DJANGO_PG_PORT', '5433'),
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": _resolve_sqlite_db_name(),
+        }
+    }
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
@@ -229,6 +248,7 @@ SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', not DEBUG)
 CSRF_COOKIE_SECURE = _env_bool('CSRF_COOKIE_SECURE', not DEBUG)
 SECURE_SSL_REDIRECT = _env_bool('SECURE_SSL_REDIRECT', False)
 BACKEND_API_URL = os.getenv('BACKEND_API_URL', 'http://127.0.0.1:8000')
+USE_INTERNAL_API = _env_bool('USE_INTERNAL_API', True)
 
 FRONTEND_BASE_URLS = [
     url.strip().rstrip('/')
