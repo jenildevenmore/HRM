@@ -38,6 +38,7 @@ ALLOWED_ADDON_KEYS = {
     'activity_logs',
     'settings',
     'policy',
+    'role_management',
 }
 
 

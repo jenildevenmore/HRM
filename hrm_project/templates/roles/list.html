@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}Role Management - HRM System{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <span class="current">Role Management</span>
+</div>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Role Management</h1>
+        <p class="page-subtitle">Create client roles and map them to Employee/HR/Manager base roles.</p>
+    </div>
+</div>
+
+{% if errors %}
+<ul class="error-list">
+    {% for err in errors %}<li>{{ err }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<div class="card" style="margin-bottom:20px;">
+    <h3 class="section-title">Create Role</h3>
+    <form method="post">
+        {{ csrf_input }}
+        <input type="hidden" name="action" value="create">
+        <div class="form-row">
+            <div class="form-group">
+                <label>Role Name</label>
+                <input type="text" name="name" placeholder="e.g. Senior HR" required>
+            </div>
+            <div class="form-group">
+                <label>Slug (optional)</label>
+                <input type="text" name="slug" placeholder="e.g. senior-hr">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Sort Order</label>
+                <input type="number" name="sort_order" value="0">
+            </div>
+        </div>
+        <p style="margin:4px 0 12px;color:var(--text-muted);">
+            Base role is auto-detected from role name (contains "HR" or "Manager"; otherwise Employee).
+        </p>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Create Role</button>
+        </div>
+        {% if client_info %}
+        <p style="margin-top:10px;color:var(--text-muted);">
+            Role Limit: {{ client_info.role_limit or 0 }} (0 means unlimited)
+        </p>
+        {% endif %}
+    </form>
+</div>
+
+{% if roles %}
+<div class="permissions-grid">
+    {% for role in roles %}
+    <form method="post" class="permission-card">
+        {{ csrf_input }}
+        <input type="hidden" name="action" value="update">
+        <input type="hidden" name="role_id" value="{{ role.id }}">
+        <div class="form-row">
+            <div class="form-group">
+                <label>Role Name</label>
+                <input type="text" name="name" value="{{ role.name }}" required>
+            </div>
+            <div class="form-group">
+                <label>Slug</label>
+                <input type="text" name="slug" value="{{ role.slug }}">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Sort Order</label>
+                <input type="number" name="sort_order" value="{{ role.sort_order or 0 }}">
+            </div>
+        </div>
+        <p style="margin:4px 0 12px;color:var(--text-muted);">
+            Detected base role: {{ role.base_role|upper }}
+        </p>
+        <div class="form-group">
+            <label class="permission-list-item">
+                <input type="checkbox" name="is_active" value="true" {% if role.is_active %}checked{% endif %}>
+                <span>Active</span>
+            </label>
+        </div>
+        <div class="form-actions permission-group-actions">
+            <button type="submit" class="btn btn-primary">Save</button>
+            <button type="submit" class="btn btn-danger" formaction="{{ url('role_delete', args=[role.id]) }}" onclick="return confirm('Delete this role?')">Delete</button>
+        </div>
+    </form>
+    {% endfor %}
+</div>
+{% else %}
+<div class="card">
+    <div class="empty-state">
+        <p>No roles created yet.</p>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

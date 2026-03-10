@@ -32,6 +32,7 @@
                 <th>#</th>
                 <th>Name</th>
                 <th>Domain</th>
+                <th>Role Limit</th>
                 <th>Enabled Add-Ons</th>
                 <th>Actions</th>
             </tr>
@@ -42,6 +43,7 @@
                 <td>{{ client.id }}</td>
                 <td>{{ client.name }}</td>
                 <td>{{ client.domain }}</td>
+                <td>{{ client.role_limit or 0 }}</td>
                 <td>{{ (client.enabled_addons or [])|join(', ') if client.enabled_addons else '-' }}</td>
                 <td>
                     <a href="{{ url('client_edit', args=[client.id]) }}" class="btn btn-secondary btn-sm">✏️ Edit</a>

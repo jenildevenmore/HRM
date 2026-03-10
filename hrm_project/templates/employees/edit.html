@@ -52,9 +52,9 @@
             <label>Role</label>
             {% set current_role = form.role.value() or employee.role or 'employee' %}
             <select name="role" required>
-                <option value="employee" {% if current_role == 'employee' %}selected{% endif %}>Employee</option>
-                <option value="hr" {% if current_role == 'hr' %}selected{% endif %}>HR</option>
-                <option value="manager" {% if current_role == 'manager' %}selected{% endif %}>Manager</option>
+                {% for role_value, role_label in form.fields['role'].choices %}
+                <option value="{{ role_value }}" {% if current_role|string == role_value|string %}selected{% endif %}>{{ role_label }}</option>
+                {% endfor %}
             </select>
         </div>
 
@@ -218,8 +218,21 @@ document.addEventListener('DOMContentLoaded', function () {
         var selected = groupSelect.options[groupSelect.selectedIndex];
         if (!selected) return;
         var inferred = inferRoleFromGroupName(selected.textContent || '');
-        if (inferred) {
-            roleSelect.value = inferred;
+        if (!inferred) return;
+
+        var options = Array.prototype.slice.call(roleSelect.options || []);
+        var byExact = options.find(function (opt) { return String(opt.value).toLowerCase() === inferred; });
+        if (byExact) {
+            roleSelect.value = byExact.value;
+            return;
+        }
+
+        var byLabel = options.find(function (opt) {
+            var text = String(opt.textContent || '').toLowerCase();
+            return text.indexOf('(' + inferred + ')') !== -1;
+        });
+        if (byLabel) {
+            roleSelect.value = byLabel.value;
         }
     }
 

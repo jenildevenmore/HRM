@@ -25,6 +25,8 @@ urlpatterns = [
     path('employees/<int:pk>/', views.employee_detail, name='employee_detail'),
     path('employees/<int:pk>/edit/', views.employee_edit, name='employee_edit'),
     path('employees/<int:pk>/delete/', views.employee_delete, name='employee_delete'),
+    path('roles/', views.role_list, name='role_list'),
+    path('roles/<int:pk>/delete/', views.role_delete, name='role_delete'),
 
     # Leaves
     path('leaves/', views.leave_list, name='leave_list'),

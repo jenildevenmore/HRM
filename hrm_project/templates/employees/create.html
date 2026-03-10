@@ -48,10 +48,11 @@
 
         <div class="form-group">
             <label>Role</label>
+            {% set selected_role = form.role.value() or '' %}
             <select name="role" required>
-                <option value="employee" {% if (form.role.value() or 'employee') == 'employee' %}selected{% endif %}>Employee</option>
-                <option value="hr" {% if form.role.value() == 'hr' %}selected{% endif %}>HR</option>
-                <option value="manager" {% if form.role.value() == 'manager' %}selected{% endif %}>Manager</option>
+                {% for role_value, role_label in form.fields['role'].choices %}
+                <option value="{{ role_value }}" {% if selected_role|string == role_value|string %}selected{% endif %}>{{ role_label }}</option>
+                {% endfor %}
             </select>
         </div>
 

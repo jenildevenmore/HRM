@@ -43,6 +43,12 @@
             <input type="password" name="password" placeholder="Leave blank to keep current password"
                 value="{{ form.password.value() or '' }}">
         </div>
+        <div class="form-group">
+            <label>Role Limit (Role Management Add-On)</label>
+            <input type="number" name="role_limit" min="0" placeholder="e.g. 3"
+                value="{{ form.role_limit.value() or client.role_limit or 0 }}">
+            <small style="color: var(--text-muted);">Set maximum custom roles this client can create. 0 = no limit.</small>
+        </div>
         <div class="form-section">
             <h3 class="section-title">Add-On Access</h3>
             <p class="section-subtitle">Enable only modules this client can use.</p>

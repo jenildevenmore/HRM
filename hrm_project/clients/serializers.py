@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from django.contrib.auth.hashers import make_password
-from .models import Client
+from django.utils.text import slugify
+import re
+from .models import Client, ClientRole
 from .services import build_schema_name, provision_client_schema
 
 
@@ -18,6 +20,7 @@ class ClientSerializer(serializers.ModelSerializer):
         'activity_logs',
         'settings',
         'policy',
+        'role_management',
     }
 
     class Meta:
@@ -31,6 +34,7 @@ class ClientSerializer(serializers.ModelSerializer):
             'schema_provisioned',
             'enabled_addons',
             'app_settings',
+            'role_limit',
             'created_at',
         )
         read_only_fields = ('id', 'schema_provisioned', 'created_at')
@@ -68,6 +72,13 @@ class ClientSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('app_settings must be an object.')
         return value
 
+    def validate_role_limit(self, value):
+        if value is None:
+            return 0
+        if value < 0:
+            raise serializers.ValidationError('role_limit must be 0 or greater.')
+        return value
+
     def create(self, validated_data):
         password = validated_data.pop('password')
         if not validated_data.get('schema_name'):
@@ -89,4 +100,85 @@ class ClientSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'schema_name': 'schema_name cannot be changed after creation.'})
         if password:
             validated_data['password'] = make_password(password)
+        return super().update(instance, validated_data)
+
+
+class ClientRoleSerializer(serializers.ModelSerializer):
+    client = serializers.PrimaryKeyRelatedField(
+        queryset=Client.objects.all(),
+        required=False,
+    )
+    base_role_display = serializers.CharField(source='get_base_role_display', read_only=True)
+
+    class Meta:
+        model = ClientRole
+        fields = (
+            'id',
+            'client',
+            'name',
+            'slug',
+            'base_role',
+            'base_role_display',
+            'is_active',
+            'sort_order',
+            'created_at',
+            'updated_at',
+        )
+        read_only_fields = ('id', 'created_at', 'updated_at')
+        extra_kwargs = {
+            'slug': {'required': False},
+            'base_role': {'required': False},
+        }
+
+    def _infer_base_role(self, name):
+        text = str(name or '').strip().lower()
+        if 'manager' in text:
+            return ClientRole.BASE_ROLE_MANAGER
+        if re.search(r'(^|[^a-z])hr([^a-z]|$)', text) or 'human resource' in text:
+            return ClientRole.BASE_ROLE_HR
+        return ClientRole.BASE_ROLE_EMPLOYEE
+
+    def validate(self, attrs):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        profile = getattr(user, 'profile', None) if user else None
+
+        if user and not user.is_superuser:
+            if not profile or profile.role not in ('admin', 'superadmin'):
+                raise serializers.ValidationError({'detail': 'Only client admin or superadmin can manage roles.'})
+            if profile.role == 'admin':
+                attrs['client'] = profile.client
+
+        client = attrs.get('client') or getattr(self.instance, 'client', None)
+        if not client:
+            raise serializers.ValidationError({'client': 'This field is required.'})
+
+        if 'role_management' not in (client.enabled_addons or []):
+            raise serializers.ValidationError({'client': 'Role Management add-on is disabled for this client.'})
+
+        limit = int(client.role_limit or 0)
+        if self.instance is None and limit > 0:
+            existing_count = ClientRole.objects.filter(client=client).count()
+            if existing_count >= limit:
+                raise serializers.ValidationError(
+                    {'name': f'Role limit reached. This client can create maximum {limit} roles.'}
+                )
+
+        return attrs
+
+    def validate_slug(self, value):
+        cleaned = slugify(value or '')
+        if not cleaned:
+            raise serializers.ValidationError('Invalid slug.')
+        return cleaned
+
+    def create(self, validated_data):
+        if not validated_data.get('slug'):
+            validated_data['slug'] = slugify(validated_data.get('name', ''))
+        validated_data['base_role'] = self._infer_base_role(validated_data.get('name'))
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        if 'name' in validated_data:
+            validated_data['base_role'] = self._infer_base_role(validated_data.get('name'))
         return super().update(instance, validated_data)

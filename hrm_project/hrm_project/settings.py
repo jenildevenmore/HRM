@@ -150,20 +150,7 @@ WSGI_APPLICATION = 'hrm_project.wsgi.application'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 
-# DATABASES = {
-#         "default": {
-#             "ENGINE": "django.db.backends.postgresql",
-#             "NAME": os.getenv('DJANGO_PG_NAME', 'HRM'),
-#             "USER": os.getenv('DJANGO_PG_USER', 'admin'),
-#             "PASSWORD": os.getenv('DJANGO_PG_PASSWORD', 'admin'),
-#             "HOST": os.getenv('DJANGO_PG_HOST', 'localhost'),
-#             "PORT": os.getenv('DJANGO_PG_PORT', '5433'),
-#         }
-#     }
-
-DB_ENGINE = os.getenv('DJANGO_DB_ENGINE', 'sqlite').strip().lower()
-if DB_ENGINE in ('postgres', 'postgresql'):
-    DATABASES = {
+DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
             "NAME": os.getenv('DJANGO_PG_NAME', 'HRM'),
@@ -173,13 +160,26 @@ if DB_ENGINE in ('postgres', 'postgresql'):
             "PORT": os.getenv('DJANGO_PG_PORT', '5433'),
         }
     }
-else:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": _resolve_sqlite_db_name(),
-        }
-    }
+
+# DB_ENGINE = os.getenv('DJANGO_DB_ENGINE', 'sqlite').strip().lower()
+# if DB_ENGINE in ('postgres', 'postgresql'):
+#     DATABASES = {
+#         "default": {
+#             "ENGINE": "django.db.backends.postgresql",
+#             "NAME": os.getenv('DJANGO_PG_NAME', 'HRM'),
+#             "USER": os.getenv('DJANGO_PG_USER', 'admin'),
+#             "PASSWORD": os.getenv('DJANGO_PG_PASSWORD', 'admin'),
+#             "HOST": os.getenv('DJANGO_PG_HOST', 'localhost'),
+#             "PORT": os.getenv('DJANGO_PG_PORT', '5433'),
+#         }
+#     }
+# else:
+#     DATABASES = {
+#         "default": {
+#             "ENGINE": "django.db.backends.sqlite3",
+#             "NAME": _resolve_sqlite_db_name(),
+#         }
+#     }
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators

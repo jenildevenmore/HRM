@@ -25,7 +25,7 @@ from accounts.views import UserProfileViewSet, ClientPermissionGroupViewSet
 from accounts.serializers import CustomTokenObtainPairSerializer
 from employees.views import EmployeeViewSet
 from custom_fields.views import CustomFieldViewSet, CustomFieldValueViewSet
-from clients.views import ClientViewSet
+from clients.views import ClientViewSet, ClientRoleViewSet
 from dynamic_models.views import DynamicModelViewSet, DynamicFieldViewSet, DynamicRecordViewSet, AutoClockoutRunView
 from leaves.views import LeaveRequestViewSet, LeaveTypeViewSet, LeaveBalanceView
 from holidays.views import HolidayViewSet
@@ -37,6 +37,7 @@ router = DefaultRouter()
 router.register("accounts", UserProfileViewSet, basename="accounts")
 router.register("account-groups", ClientPermissionGroupViewSet, basename="account-groups")
 router.register("clients", ClientViewSet, basename="clients")
+router.register("client-roles", ClientRoleViewSet, basename="client-roles")
 router.register("employees", EmployeeViewSet, basename="employees")
 router.register("custom-fields", CustomFieldViewSet, basename="custom-fields")
 router.register("custom-field-values", CustomFieldValueViewSet, basename="custom-field-values")

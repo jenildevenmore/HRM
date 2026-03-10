@@ -203,6 +203,14 @@
     </a>
     {% endif %}
 
+    {% if role == 'superadmin' or (role == 'admin' and 'role_management' in enabled_addons) %}
+    <a href="{{ url('role_list') }}"
+       class="nav-link {% if 'role_' in request.resolver_match.url_name %}active{% endif %}">
+      <span class="nav-icon">RL</span>
+      <span class="nav-label">Roles</span>
+    </a>
+    {% endif %}
+
     {% if role == 'superadmin' or (role == 'admin' and 'settings' in enabled_addons) %}
     <a href="{{ url('settings_page') }}"
        class="nav-link {% if 'settings' in request.resolver_match.url_name %}active{% endif %}">

@@ -63,10 +63,16 @@
             <input type="password" name="admin_password" placeholder="Enter admin password"
                 value="{{ form.admin_password.value() or '' }}" required>
         </div>
+        <div class="form-group">
+            <label>Role Limit (Role Management Add-On)</label>
+            <input type="number" name="role_limit" min="0" placeholder="e.g. 3"
+                value="{{ form.role_limit.value() or 0 }}">
+            <small style="color: var(--text-muted);">Set maximum custom roles this client can create. 0 = no limit.</small>
+        </div>
         <div class="form-section">
             <h3 class="section-title">Add-On Access</h3>
             <p class="section-subtitle">Enable only modules this client can use.</p>
-            {% set selected_addons = form.enabled_addons.value() or ['custom_fields', 'dynamic_models', 'attendance', 'leave_management', 'holidays', 'payroll', 'activity_logs', 'settings'] %}
+            {% set selected_addons = form.enabled_addons.value() or ['custom_fields', 'dynamic_models', 'attendance', 'leave_management', 'holidays', 'payroll', 'activity_logs', 'settings', 'role_management'] %}
             <div class="addon-grid">
                 {% for key, label in form.enabled_addons.field.choices %}
                 <label class="addon-item">

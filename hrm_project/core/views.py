@@ -38,6 +38,7 @@ ADDON_KEYS = {
     'activity_logs',
     'settings',
     'policy',
+    'role_management',
 }
 ADDON_OPTIONS = [
     ('custom_fields', 'Custom Fields'),
@@ -51,6 +52,7 @@ ADDON_OPTIONS = [
     ('activity_logs', 'Activity Logs'),
     ('settings', 'Settings'),
     ('policy', 'Policy'),
+    ('role_management', 'Role Management'),
 ]
 
 STATIC_PERMISSION_KEYS = {
@@ -1116,6 +1118,7 @@ def client_create(request):
                     'domain': form.cleaned_data['domain'],
                     'password': client_password,
                     'enabled_addons': form.cleaned_data.get('enabled_addons', []),
+                    'role_limit': form.cleaned_data.get('role_limit') or 0,
                 }
                 if form.cleaned_data.get('schema_name'):
                     client_payload['schema_name'] = form.cleaned_data['schema_name']
@@ -1200,6 +1203,7 @@ def client_edit(request, pk):
                     'domain': form.cleaned_data['domain'],
                     'password': form.cleaned_data['password'],
                     'enabled_addons': form.cleaned_data.get('enabled_addons', []),
+                    'role_limit': form.cleaned_data.get('role_limit') or 0,
                 }
                 resp = _api_put(request, f'/api/clients/{pk}/', update_payload)
                 redir = _handle_unauthorized(resp, request)
@@ -1216,6 +1220,7 @@ def client_edit(request, pk):
     else:
         initial = dict(client_data)
         initial['enabled_addons'] = client_data.get('enabled_addons', [])
+        initial['role_limit'] = client_data.get('role_limit', 0)
         form = ClientForm(initial=initial)
 
     return render(request, 'clients/edit.html', {
@@ -1247,6 +1252,109 @@ def client_delete(request, pk):
         _flash(request, 'Backend server unreachable.', 'error')
 
     return redirect('client_list')
+
+
+def role_list(request):
+    if request.session.get('role') not in ('admin', 'superadmin'):
+        return render(request, 'errors/403.html', status=403)
+    addon_redirect = _require_addon(request, 'role_management')
+    if addon_redirect:
+        return addon_redirect
+
+    errors = []
+    messages = _pop_messages(request)
+    roles = []
+    client_info = {}
+    target_client_id = request.session.get('client_id')
+    if request.session.get('role') == 'superadmin':
+        target_client_id = request.GET.get('client_id') or target_client_id
+
+    if request.method == 'POST':
+        action = (request.POST.get('action') or '').strip()
+        if request.session.get('role') == 'superadmin' and not target_client_id:
+            errors = ['Select a client first (use ?client_id=<id> in URL).']
+            action = ''
+        payload = {
+            'name': (request.POST.get('name') or '').strip(),
+            'slug': (request.POST.get('slug') or '').strip(),
+            'sort_order': int(request.POST.get('sort_order') or 0),
+            'is_active': (request.POST.get('is_active') or '').strip().lower() not in ('false', '0', 'off'),
+        }
+        if request.session.get('role') == 'superadmin' and target_client_id:
+            payload['client'] = int(target_client_id)
+        if not payload['slug']:
+            payload['slug'] = slugify(payload['name'])
+        try:
+            if action == 'create':
+                resp = _api_post(request, '/api/client-roles/', payload)
+                redir = _handle_unauthorized(resp, request)
+                if redir:
+                    return redir
+                if resp.status_code == 201:
+                    _flash(request, 'Role created successfully.', 'success')
+                    return redirect('role_list')
+                errors = _error_list_from_response(resp, 'Failed to create role.')
+            elif action == 'update':
+                role_id = request.POST.get('role_id')
+                resp = _api_put(request, f'/api/client-roles/{role_id}/', payload)
+                redir = _handle_unauthorized(resp, request)
+                if redir:
+                    return redir
+                if resp.status_code == 200:
+                    _flash(request, 'Role updated successfully.', 'success')
+                    return redirect('role_list')
+                errors = _error_list_from_response(resp, 'Failed to update role.')
+        except requests.exceptions.ConnectionError:
+            errors = ['Backend server unreachable.']
+
+    try:
+        params = {}
+        if target_client_id:
+            params['client'] = target_client_id
+        roles_resp = _api_get(request, '/api/client-roles/', params=params)
+        redir = _handle_unauthorized(roles_resp, request)
+        if redir:
+            return redir
+        if roles_resp.status_code == 200:
+            payload = roles_resp.json()
+            roles = payload.get('results', payload) if isinstance(payload, dict) else payload
+
+        if target_client_id:
+            client_resp = _api_get(request, f'/api/clients/{target_client_id}/')
+            if client_resp.status_code == 200:
+                client_info = client_resp.json()
+    except requests.exceptions.ConnectionError:
+        errors.append('Backend server unreachable.')
+
+    return render(request, 'roles/list.html', {
+        'roles': roles,
+        'client_info': client_info,
+        'target_client_id': target_client_id,
+        'errors': errors,
+        'messages': messages,
+        **_get_context(request),
+    })
+
+
+@require_POST
+def role_delete(request, pk):
+    if request.session.get('role') not in ('admin', 'superadmin'):
+        return render(request, 'errors/403.html', status=403)
+    addon_redirect = _require_addon(request, 'role_management')
+    if addon_redirect:
+        return addon_redirect
+    try:
+        resp = _api_delete(request, f'/api/client-roles/{pk}/')
+        redir = _handle_unauthorized(resp, request)
+        if redir:
+            return redir
+        if resp.status_code == 204:
+            _flash(request, 'Role deleted.', 'success')
+        else:
+            _flash(request, '; '.join(_error_list_from_response(resp, 'Failed to delete role.')), 'error')
+    except requests.exceptions.ConnectionError:
+        _flash(request, 'Backend server unreachable.', 'error')
+    return redirect('role_list')
 
 
 def permission_list(request):
@@ -1284,6 +1392,26 @@ def permission_list(request):
             users_data = users_resp.json()
             users = users_data.get('results', users_data) if isinstance(users_data, dict) else users_data
             users = [u for u in users if u.get('role') != 'superadmin']
+            try:
+                emp_resp = _api_get(request, '/api/employees/')
+                if emp_resp.status_code == 200:
+                    emp_payload = emp_resp.json()
+                    employee_rows = (
+                        emp_payload.get('results', emp_payload)
+                        if isinstance(emp_payload, dict) else emp_payload
+                    )
+                    active_employee_emails = {
+                        str(row.get('email') or '').strip().lower()
+                        for row in employee_rows
+                        if str(row.get('email') or '').strip()
+                    }
+                    users = [
+                        u for u in users
+                        if u.get('role') == 'admin'
+                        or str((u.get('user') or {}).get('email') or '').strip().lower() in active_employee_emails
+                    ]
+            except requests.exceptions.ConnectionError:
+                pass
         auto_clockout_alerts = _load_auto_clockout_alerts(request, limit=8)
     except requests.exceptions.ConnectionError:
         errors = ['Backend server unreachable.']
@@ -1373,6 +1501,7 @@ def permission_list(request):
                     inferred_role = _infer_employee_role_from_group_name(
                         (selected_group or {}).get('name', '')
                     ) if selected_group else ''
+                    client_roles = _load_client_roles(request)
                     target_email = str((target_user or {}).get('user', {}).get('email') or '').strip().lower()
                     if inferred_role and target_email:
                         try:
@@ -1394,11 +1523,16 @@ def permission_list(request):
                                     None,
                                 )
                                 if linked_employee and str(linked_employee.get('role') or '').strip().lower() != inferred_role:
+                                    inferred_client_role_id = _infer_client_role_id_from_group_name(
+                                        (selected_group or {}).get('name', ''),
+                                        client_roles,
+                                    )
                                     role_update_payload = {
                                         'first_name': linked_employee.get('first_name', ''),
                                         'last_name': linked_employee.get('last_name', ''),
                                         'email': linked_employee.get('email', ''),
                                         'role': inferred_role,
+                                        'client_role': int(inferred_client_role_id) if str(inferred_client_role_id).isdigit() else None,
                                         'client': linked_employee.get('client'),
                                         'hr': linked_employee.get('hr'),
                                         'manager': linked_employee.get('manager'),
@@ -1436,12 +1570,13 @@ def employee_list(request):
         return permission_redirect
     messages = _pop_messages(request)
     search_q = request.GET.get('q', '')
-    selected_role = (request.GET.get('role') or '').strip().lower()
-    params   = {}
+    selected_role = (request.GET.get('role') or '').strip()
+    client_roles = _load_client_roles(request)
+    params = {}
     if search_q:
         params['search'] = search_q
-    if selected_role in ('employee', 'hr', 'manager'):
-        params['role'] = selected_role
+    if selected_role.isdigit():
+        params['client_role'] = selected_role
 
     try:
         resp = _api_get(request, '/api/employees/', params=params)
@@ -1498,6 +1633,7 @@ def employee_list(request):
         'week_end': week_end.isoformat(),
         'search_q': search_q,
         'selected_role': selected_role,
+        'role_filter_options': client_roles,
         'messages': messages,
         **_get_context(request),
     })
@@ -1614,7 +1750,7 @@ def _employee_error_list(resp, fallback):
     errors = _error_list_from_response(
         resp,
         fallback,
-        include_keys=['email', 'first_name', 'last_name', 'role', 'joining_date', 'hr', 'manager'],
+        include_keys=['email', 'first_name', 'last_name', 'role', 'client_role', 'joining_date', 'hr', 'manager'],
     )
     friendly = []
     for msg in errors:
@@ -1624,6 +1760,30 @@ def _employee_error_list(resp, fallback):
         else:
             friendly.append(msg)
     return friendly
+
+
+def _load_client_roles(request, active_only=True):
+    params = {}
+    if active_only:
+        params['active'] = 'true'
+    try:
+        resp = _api_get(request, '/api/client-roles/', params=params)
+        if resp.status_code != 200:
+            return []
+        payload = resp.json()
+        rows = payload.get('results', payload) if isinstance(payload, dict) else payload
+    except requests.exceptions.ConnectionError:
+        return []
+
+    items = []
+    for row in rows:
+        items.append({
+            'id': str(row.get('id')),
+            'name': row.get('name') or '',
+            'base_role': str(row.get('base_role') or 'employee').lower(),
+            'label': f"{row.get('name') or 'Role'} ({str(row.get('base_role') or 'employee').upper()})",
+        })
+    return items
 
 
 def _employee_assignment_options(request, role):
@@ -1657,6 +1817,16 @@ def _infer_employee_role_from_group_name(group_name):
         return 'hr'
     if 'employee' in name:
         return 'employee'
+    return ''
+
+
+def _infer_client_role_id_from_group_name(group_name, client_roles):
+    base_role = _infer_employee_role_from_group_name(group_name)
+    if not base_role:
+        return ''
+    for role_item in client_roles:
+        if role_item.get('base_role') == base_role:
+            return role_item.get('id') or ''
     return ''
 
 
@@ -1770,8 +1940,11 @@ def employee_create(request):
     custom_field_values = {}
     dynamic_models = []
     dynamic_fields_by_model = {}
+    client_roles = _load_client_roles(request)
+    role_choices = [(item['id'], item['label']) for item in client_roles]
     hr_options = _employee_assignment_options(request, 'hr')
     manager_options = _employee_assignment_options(request, 'manager')
+    form.fields['role'].choices = role_choices
 
     form.fields['hr'].choices = [('', 'Select HR (Optional)')] + [
         (item['id'], item['label']) for item in hr_options
@@ -1782,8 +1955,25 @@ def employee_create(request):
 
     dynamic_models, dynamic_fields_by_model = _get_dynamic_models_with_fields(request)
 
+    if not client_roles:
+        errors = ['No roles found. First create at least one role from Role Management, then create employees.']
+        return render(request, 'employees/create.html', {
+            'form': form,
+            'errors': errors,
+            'messages': messages,
+            'custom_fields': custom_fields,
+            'custom_field_values': custom_field_values,
+            'hr_options': hr_options,
+            'manager_options': manager_options,
+            'client_roles': client_roles,
+            'dynamic_models': dynamic_models,
+            'dynamic_fields_by_model': dynamic_fields_by_model,
+            **_get_context(request),
+        })
+
     if request.method == 'POST':
         form = EmployeeForm(request.POST)
+        form.fields['role'].choices = role_choices
         form.fields['hr'].choices = [('', 'Select HR (Optional)')] + [
             (item['id'], item['label']) for item in hr_options
         ]
@@ -1799,9 +1989,30 @@ def employee_create(request):
                     errors = ['You are not assigned to any client. Contact your administrator.']
                 else:
                     employee_data = form.cleaned_data.copy()
+                    selected_role = str(employee_data.pop('role', '')).strip()
                     hr_value = employee_data.pop('hr', '')
                     manager_value = employee_data.pop('manager', '')
                     employee_data['client'] = client_id
+
+                    if not selected_role.isdigit():
+                        errors = ['Select a valid role.']
+                        return render(request, 'employees/create.html', {
+                            'form': form,
+                            'errors': errors,
+                            'messages': messages,
+                            'custom_fields': custom_fields,
+                            'custom_field_values': custom_field_values,
+                            'hr_options': hr_options,
+                            'manager_options': manager_options,
+                            'client_roles': client_roles,
+                            'dynamic_models': dynamic_models,
+                            'dynamic_fields_by_model': dynamic_fields_by_model,
+                            **_get_context(request),
+                        })
+                    selected_role_item = next((item for item in client_roles if item['id'] == selected_role), None)
+                    employee_data['client_role'] = int(selected_role)
+                    employee_data['role'] = (selected_role_item or {}).get('base_role', 'employee')
+
                     employee_data['hr'] = int(hr_value) if hr_value else None
                     employee_data['manager'] = int(manager_value) if manager_value else None
                     employee_data = _serialize_data(employee_data)
@@ -1858,6 +2069,7 @@ def employee_create(request):
         'custom_field_values': custom_field_values,
         'hr_options': hr_options,
         'manager_options': manager_options,
+        'client_roles': client_roles,
         'dynamic_models': dynamic_models,
         'dynamic_fields_by_model': dynamic_fields_by_model,
         **_get_context(request),
@@ -1875,6 +2087,8 @@ def employee_edit(request, pk):
     dynamic_models = []
     dynamic_fields_by_model = {}
     dynamic_records_by_model = {}
+    client_roles = _load_client_roles(request)
+    role_choices = [(item['id'], item['label']) for item in client_roles]
     hr_options = _employee_assignment_options(request, 'hr')
     manager_options = _employee_assignment_options(request, 'manager')
     group_options = []
@@ -1950,6 +2164,7 @@ def employee_edit(request, pk):
             selected_permission_group = (request.POST.get('permission_group') or '').strip()
             account_profile_id = (request.POST.get('account_profile_id') or '').strip()
         form = EmployeeForm(request.POST)
+        form.fields['role'].choices = role_choices
         form.fields['hr'].choices = [('', 'Select HR (Optional)')] + [
             (item['id'], item['label']) for item in hr_options
         ]
@@ -1965,6 +2180,7 @@ def employee_edit(request, pk):
                     errors = ['You are not assigned to any client. Contact your administrator.']
                 else:
                     emp_update_data = form.cleaned_data.copy()
+                    selected_role = str(emp_update_data.pop('role', '')).strip()
                     hr_value = emp_update_data.pop('hr', '')
                     manager_value = emp_update_data.pop('manager', '')
                     if can_manage_permission_group and selected_permission_group:
@@ -1976,8 +2192,22 @@ def employee_edit(request, pk):
                             (selected_group or {}).get('name', '')
                         )
                         if inferred_role:
-                            emp_update_data['role'] = inferred_role
+                            inferred_client_role_id = _infer_client_role_id_from_group_name(
+                                (selected_group or {}).get('name', ''),
+                                client_roles,
+                            )
+                            if inferred_client_role_id:
+                                selected_role = inferred_client_role_id
+                            else:
+                                selected_role = inferred_role
                     emp_update_data['client'] = client_id
+                    if selected_role.isdigit():
+                        selected_role_item = next((item for item in client_roles if item['id'] == selected_role), None)
+                        emp_update_data['client_role'] = int(selected_role)
+                        emp_update_data['role'] = (selected_role_item or {}).get('base_role', 'employee')
+                    else:
+                        emp_update_data['role'] = employee_data.get('role') or 'employee'
+                        emp_update_data['client_role'] = employee_data.get('client_role')
                     emp_update_data['hr'] = int(hr_value) if hr_value else None
                     emp_update_data['manager'] = int(manager_value) if manager_value else None
                     emp_update_data = _serialize_data(emp_update_data)
@@ -2049,6 +2279,7 @@ def employee_edit(request, pk):
                                     'custom_field_values': custom_field_values,
                                     'hr_options': hr_options,
                                     'manager_options': manager_options,
+                                    'client_roles': client_roles,
                                     'group_options': group_options,
                                     'account_profile_id': account_profile_id,
                                     'selected_permission_group': selected_permission_group,
@@ -2068,9 +2299,11 @@ def employee_edit(request, pk):
     else:
         # Pre-fill form with existing data
         initial_data = employee_data.copy()
+        initial_data['role'] = str(employee_data.get('client_role') or '')
         initial_data['hr'] = str(employee_data.get('hr') or '')
         initial_data['manager'] = str(employee_data.get('manager') or '')
         form = EmployeeForm(initial=initial_data)
+        form.fields['role'].choices = role_choices
         form.fields['hr'].choices = [('', 'Select HR (Optional)')] + [
             (item['id'], item['label']) for item in hr_options
         ]
@@ -2104,6 +2337,7 @@ def employee_edit(request, pk):
         'custom_field_values': custom_field_values,
         'hr_options': hr_options,
         'manager_options': manager_options,
+        'client_roles': client_roles,
         'group_options': group_options,
         'account_profile_id': account_profile_id,
         'selected_permission_group': selected_permission_group,
@@ -3065,6 +3299,8 @@ def dynamic_model_list(request):
         return addon_redirect
     messages = _pop_messages(request)
     role = request.session.get('role', 'employee')
+    clients = []
+    client_name_map = {}
 
     try:
         resp = _api_get(request, '/api/dynamic-models/')
@@ -3073,12 +3309,30 @@ def dynamic_model_list(request):
             return redir
         data = resp.json() if resp.status_code == 200 else []
         dynamic_models = data.get('results', data) if isinstance(data, dict) else data
+
+        if role == 'superadmin':
+            client_resp = _api_get(request, '/api/clients/')
+            redir = _handle_unauthorized(client_resp, request)
+            if redir:
+                return redir
+            if client_resp.status_code == 200:
+                client_payload = client_resp.json()
+                clients = client_payload.get('results', client_payload) if isinstance(client_payload, dict) else client_payload
+                client_name_map = {
+                    str(c.get('id')): str(c.get('name') or '')
+                    for c in clients
+                }
     except requests.exceptions.ConnectionError:
         dynamic_models = []
         messages.append({'message': 'Backend server unreachable.', 'level': 'error'})
 
+    if role == 'superadmin':
+        for model in dynamic_models:
+            model['client_name'] = client_name_map.get(str(model.get('client')), str(model.get('client') or '-'))
+
     return render(request, 'dynamic_models/list.html', {
         'dynamic_models': dynamic_models,
+        'clients': clients,
         'messages': messages,
         'role': role,
         **_get_context(request),

@@ -1,5 +1,5 @@
 from django.db import models
-from clients.models import Client
+from clients.models import Client, ClientRole
 
 
 class Employee(models.Model):
@@ -18,6 +18,13 @@ class Employee(models.Model):
     last_name = models.CharField(max_length=100)
     email = models.EmailField(unique=True)
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default=ROLE_EMPLOYEE)
+    client_role = models.ForeignKey(
+        ClientRole,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='employees',
+    )
     hr = models.ForeignKey(
         'self',
         on_delete=models.SET_NULL,

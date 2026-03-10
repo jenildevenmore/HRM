@@ -24,6 +24,7 @@ class ClientForm(forms.Form):
         ('activity_logs', 'Activity Logs'),
         ('settings', 'Settings'),
         ('policy', 'Policy'),
+        ('role_management', 'Role Management'),
     ]
 
     name = forms.CharField(
@@ -68,15 +69,15 @@ class ClientForm(forms.Form):
         widget=forms.CheckboxSelectMultiple,
         initial=[k for k, _ in ADDON_CHOICES],
     )
+    role_limit = forms.IntegerField(
+        required=False,
+        min_value=0,
+        initial=0,
+        widget=forms.NumberInput(attrs={'placeholder': 'e.g. 3'}),
+    )
 
 
 class EmployeeForm(forms.Form):
-    ROLE_CHOICES = [
-        ('employee', 'Employee'),
-        ('hr', 'HR'),
-        ('manager', 'Manager'),
-    ]
-
     first_name = forms.CharField(
         max_length=100,
         widget=forms.TextInput(attrs={'placeholder': 'First Name'}),
@@ -89,8 +90,7 @@ class EmployeeForm(forms.Form):
         widget=forms.EmailInput(attrs={'placeholder': 'Email Address'}),
     )
     role = forms.ChoiceField(
-        choices=ROLE_CHOICES,
-        initial='employee',
+        choices=[],
     )
     hr = forms.ChoiceField(
         required=False,
