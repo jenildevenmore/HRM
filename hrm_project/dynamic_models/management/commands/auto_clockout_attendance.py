@@ -1,9 +1,9 @@
 from datetime import date
 
-from django.conf import settings
-from django.core.mail import send_mail
 from django.core.management.base import BaseCommand
+from django.utils import timezone
 
+from core.mailers import send_branded_email
 from dynamic_models.models import DynamicRecord
 
 
@@ -29,7 +29,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         dry_run = bool(options.get('dry_run'))
         no_email = bool(options.get('no_email'))
-        today = date.today()
+        today = timezone.localdate()
         today_iso = today.isoformat()
 
         qs = (
@@ -121,19 +121,23 @@ class Command(BaseCommand):
                 continue
 
             subject = f'Attendance Alert: Missed Punch-Out Auto-Closed ({attendance_date.isoformat()})'
-            message = (
-                f'Employee: {employee_name or "-"}\n'
-                f'Employee Email: {(employee.email if employee else "-")}\n'
-                f'Date: {attendance_date.isoformat()}\n'
-                f'Check-In: {check_in}\n'
-                f'Check-Out: {auto_checkout_time} (auto)\n\n'
-                'Reason: Employee missed punch-out. System automatically closed attendance at end of day.'
-            )
-            send_mail(
+            send_branded_email(
                 subject=subject,
-                message=message,
-                from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@example.com'),
                 recipient_list=recipients,
+                heading='Attendance Alert',
+                greeting='Hello,',
+                lines=[
+                    f'Employee: {employee_name or "-"}',
+                    f'Employee Email: {(employee.email if employee else "-")}',
+                    f'Date: {attendance_date.isoformat()}',
+                    f'Check-In: {check_in}',
+                    f'Check-Out: {auto_checkout_time} (auto)',
+                    'Reason: Employee missed punch-out. System automatically closed attendance at end of day.',
+                ],
+                cta_text='Open HRM',
+                cta_url='',
+                closing='This is an automated system notification.',
+                client=record.dynamic_model.client,
                 fail_silently=True,
             )
             emailed += 1

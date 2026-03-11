@@ -7,6 +7,7 @@ PUBLIC_PREFIXES = (
     '/admin/',
     '/static/',
     '/media/',
+    '/document-upload/',
     '/favicon.ico',
 )
 

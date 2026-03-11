@@ -3,11 +3,9 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.exceptions import PermissionDenied
-from django.conf import settings
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.tokens import default_token_generator
-from django.core.mail import send_mail
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Count
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
@@ -16,6 +14,7 @@ import re
 from .models import UserProfile, ClientPermissionGroup
 from .serializers import UserProfileSerializer, UserSerializer, ClientPermissionGroupSerializer
 from dynamic_models.models import DynamicModel
+from core.mailers import send_branded_email
 
 
 class UserProfileViewSet(viewsets.ModelViewSet):
@@ -135,26 +134,30 @@ class UserProfileViewSet(viewsets.ModelViewSet):
 
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             token = default_token_generator.make_token(user)
-            frontend_base = str(getattr(settings, 'FRONTEND_BASE_URL', '') or '').rstrip('/')
+            frontend_base = request.build_absolute_uri('/').rstrip('/')
             if not frontend_base:
-                frontend_base = request.build_absolute_uri('/').rstrip('/')
+                frontend_base = str(getattr(settings, 'FRONTEND_BASE_URL', '') or '').rstrip('/')
+            if not frontend_base:
+                frontend_base = 'http://127.0.0.1:8000'
             reset_link = f'{frontend_base}/reset-password/?uid={uid}&token={token}'
 
             email_sent = False
             email_error = ''
             if email:
                 try:
-                    send_mail(
+                    send_branded_email(
                         subject='Set your HRM account password',
-                        message=(
-                            f'Hello {username},\n\n'
-                            'Your HRM account has been created.\n'
-                            'Use this link to set/reset your password:\n'
-                            f'{reset_link}\n\n'
-                            'If you did not request this, contact your administrator.'
-                        ),
-                        from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', None),
                         recipient_list=[email],
+                        heading='Set your HRM account password',
+                        greeting=f'Hello {username},',
+                        lines=[
+                            'Your HRM account has been created.',
+                            'Use the button below to set/reset your password.',
+                        ],
+                        cta_text='Set Password',
+                        cta_url=reset_link,
+                        closing='If you did not request this, contact your administrator.',
+                        client=client,
                         fail_silently=False,
                     )
                     email_sent = True
@@ -282,6 +285,15 @@ class UserProfileViewSet(viewsets.ModelViewSet):
                     {'key': 'policy.create', 'label': 'Can create Policy'},
                     {'key': 'policy.edit', 'label': 'Can edit Policy'},
                     {'key': 'policy.delete', 'label': 'Can delete Policy'},
+                ],
+            },
+            {
+                'title': 'Documents',
+                'permissions': [
+                    {'key': 'documents.view', 'label': 'Can view Documents'},
+                    {'key': 'documents.create', 'label': 'Can create Documents'},
+                    {'key': 'documents.edit', 'label': 'Can edit Documents'},
+                    {'key': 'documents.delete', 'label': 'Can delete Documents'},
                 ],
             },
             {

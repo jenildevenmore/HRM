@@ -15,6 +15,7 @@ STATIC_PERMISSION_KEYS = {
     'shifts.view', 'shifts.create', 'shifts.edit', 'shifts.delete',
     'bank.view', 'bank.create', 'bank.edit', 'bank.delete',
     'policy.view', 'policy.create', 'policy.edit', 'policy.delete',
+    'documents.view', 'documents.create', 'documents.edit', 'documents.delete',
     'custom_fields.view', 'custom_fields.create', 'custom_fields.edit', 'custom_fields.delete',
     'dynamic_models.view', 'dynamic_models.create', 'dynamic_models.edit', 'dynamic_models.delete',
     'activity_logs.view',
@@ -28,6 +29,7 @@ LEGACY_PERMISSION_MAP = {
     'shifts': ['shifts.view', 'shifts.create', 'shifts.edit', 'shifts.delete'],
     'bank': ['bank.view', 'bank.create', 'bank.edit', 'bank.delete'],
     'policy': ['policy.view', 'policy.create', 'policy.edit', 'policy.delete'],
+    'documents': ['documents.view', 'documents.create', 'documents.edit', 'documents.delete'],
     'custom_fields': ['custom_fields.view', 'custom_fields.create', 'custom_fields.edit', 'custom_fields.delete'],
     'dynamic_models': ['dynamic_models.view', 'dynamic_models.create', 'dynamic_models.edit', 'dynamic_models.delete'],
 }
@@ -44,6 +46,7 @@ ALLOWED_ADDON_KEYS = {
     'activity_logs',
     'settings',
     'policy',
+    'documents',
     'role_management',
     'shift_management',
     'bank_management',

@@ -20,6 +20,7 @@ class ClientSerializer(serializers.ModelSerializer):
         'activity_logs',
         'settings',
         'policy',
+        'documents',
         'role_management',
         'shift_management',
         'bank_management',

@@ -24,6 +24,7 @@ class ClientForm(forms.Form):
         ('activity_logs', 'Activity Logs'),
         ('settings', 'Settings'),
         ('policy', 'Policy'),
+        ('documents', 'Documents'),
         ('role_management', 'Role Management'),
         ('shift_management', 'Shift Management'),
         ('bank_management', 'Bank Management'),

@@ -1,7 +1,5 @@
-from django.conf import settings
 from django.contrib.auth.models import User
 from django.contrib.auth.tokens import default_token_generator
-from django.core.mail import send_mail
 from django.db import transaction
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
@@ -9,6 +7,7 @@ from rest_framework import viewsets
 from rest_framework.exceptions import PermissionDenied
 
 from accounts.models import UserProfile
+from core.mailers import send_branded_email
 from .models import Employee
 from .serializers import EmployeeSerializer
 from rest_framework.permissions import IsAuthenticated
@@ -80,37 +79,30 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         )
         return user
 
-    def _send_password_setup_email(self, user):
+    def _send_password_setup_email(self, user, employee):
         if not user.email:
             return
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
-        base_urls = getattr(settings, 'FRONTEND_BASE_URLS', None) or [
-            getattr(settings, 'FRONTEND_BASE_URL', 'http://127.0.0.1:8001')
-        ]
-        reset_links = [
-            f"{str(base_url).rstrip('/')}/reset-password/?uid={uid}&token={token}"
-            for base_url in base_urls
-            if str(base_url).strip()
-        ]
-        if not reset_links:
-            reset_links = [f'http://127.0.0.1:8001/reset-password/?uid={uid}&token={token}']
-        links_text = '\n'.join(reset_links)
+        frontend_base = self.request.build_absolute_uri('/').rstrip('/')
+        if not frontend_base:
+            frontend_base = 'http://127.0.0.1:8000'
+        reset_link = f'{frontend_base}/reset-password/?uid={uid}&token={token}'
 
-        subject = 'Set your HRM account password'
-        message = (
-            f'Hi {user.first_name or user.username},\n\n'
-            'Your employee account was created.\n'
-            f'Username: {user.username}\n\n'
-            'Please set your password using one of these links:\n'
-            f'{links_text}\n\n'
-            'If you did not expect this, please contact your HR admin.'
-        )
-        send_mail(
-            subject=subject,
-            message=message,
-            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@hrm.local'),
+        send_branded_email(
+            subject='Set your HRM account password',
             recipient_list=[user.email],
+            heading='Set your HRM account password',
+            greeting=f'Hi {user.first_name or user.username},',
+            lines=[
+                'Your employee account was created.',
+                f'Username: {user.username}',
+                'Click below to set your password.',
+            ],
+            cta_text='Set Password',
+            cta_url=reset_link,
+            closing='If you did not expect this, please contact your HR admin.',
+            client=employee.client,
             fail_silently=True,
         )
     
@@ -157,7 +149,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             employee = serializer.save()
             login_user = self._ensure_login_user_for_employee(employee)
-            self._send_password_setup_email(login_user)
+            self._send_password_setup_email(login_user, employee)
 
     def perform_update(self, serializer):
         with transaction.atomic():

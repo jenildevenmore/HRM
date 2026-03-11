@@ -1,0 +1,327 @@
+{% extends "base.html" %}
+
+{% block title %}Documents - HRM System{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <span class="current">Documents</span>
+</div>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Manage Documents</h1>
+        <p class="page-subtitle">Upload internal documents and create public upload links for external users.</p>
+    </div>
+</div>
+
+{% if errors %}
+<ul class="error-list">
+    {% for err in errors %}<li>{{ err }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<div class="card" style="margin-bottom:20px;">
+    <form method="get" class="form-row">
+        <div class="form-group">
+            <label>Search</label>
+            <input type="text" name="q" value="{{ search_q or '' }}" placeholder="Search documents...">
+        </div>
+        <div class="form-group">
+            <label>Category</label>
+            <input type="text" name="category" value="{{ category_q or '' }}" placeholder="e.g. Legal, HR, Contract">
+        </div>
+        <div class="form-group">
+            <label>Status</label>
+            <select name="status">
+                <option value="">All</option>
+                <option value="pending" {% if selected_status == 'pending' %}selected{% endif %}>Pending</option>
+                <option value="approved" {% if selected_status == 'approved' %}selected{% endif %}>Approved</option>
+                <option value="rejected" {% if selected_status == 'rejected' %}selected{% endif %}>Rejected</option>
+            </select>
+        </div>
+        <div class="form-actions" style="margin-top:28px;">
+            <button type="submit" class="btn btn-secondary">Search</button>
+            <a href="{{ url('document_list') }}" class="btn btn-secondary">Reset</a>
+        </div>
+    </form>
+</div>
+
+{% if role in ['superadmin', 'admin'] or 'documents.create' in module_permissions or edit_item %}
+<div class="form-card" style="max-width:1100px;margin-bottom:20px;">
+    <h3 class="section-title">{{ 'Edit Document' if edit_item else 'Create Document' }}</h3>
+    <form method="post" enctype="multipart/form-data">
+        {{ csrf_input }}
+        <input type="hidden" name="action" value="save_document">
+        <input type="hidden" name="edit_id" value="{{ edit_item.id if edit_item else '' }}">
+        <input type="hidden" name="existing_file_url" value="{{ edit_item.file_url if edit_item else '' }}">
+
+        <div class="form-row">
+            <div class="form-group">
+                <label>Title *</label>
+                <input type="text" name="title" value="{{ edit_item.title if edit_item else '' }}" placeholder="Document title" required>
+            </div>
+            <div class="form-group">
+                <label>Category</label>
+                <input type="text" name="category" value="{{ edit_item.category if edit_item else '' }}" placeholder="Document category">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Effective Date</label>
+                <input type="date" name="effective_date" value="{{ edit_item.effective_date if edit_item else '' }}">
+            </div>
+            <div class="form-group">
+                <label>Status</label>
+                {% set status_value = edit_item.status if edit_item else 'pending' %}
+                <select name="status">
+                    <option value="pending" {% if status_value == 'pending' %}selected{% endif %}>Pending</option>
+                    <option value="approved" {% if status_value == 'approved' %}selected{% endif %}>Approved</option>
+                    <option value="rejected" {% if status_value == 'rejected' %}selected{% endif %}>Rejected</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Notes</label>
+            <textarea name="notes" rows="3" placeholder="Optional notes">{{ edit_item.notes if edit_item else '' }}</textarea>
+        </div>
+        <div class="form-group">
+            <label>Document File</label>
+            <input type="file" name="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,image/*">
+            {% if edit_item and edit_item.file_url %}
+            <p style="margin-top:8px;"><a href="{{ edit_item.file_url }}" target="_blank" rel="noopener">Open current file</a></p>
+            {% endif %}
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">{{ 'Save Changes' if edit_item else 'Create Document' }}</button>
+            {% if edit_item %}
+            <a href="{{ url('document_list') }}" class="btn btn-secondary">Cancel Edit</a>
+            {% endif %}
+        </div>
+    </form>
+</div>
+{% endif %}
+
+<div class="card" style="margin-bottom:20px;">
+    <h3 class="section-title">Public Upload Links</h3>
+    <p class="section-subtitle">Create a link and send it via email/chat. User can upload one document without login.</p>
+
+    {% if role in ['superadmin', 'admin'] or 'documents.create' in module_permissions %}
+    <form method="post" class="form-row" style="margin-bottom:14px;">
+        {{ csrf_input }}
+        <input type="hidden" name="action" value="create_link">
+        <div class="form-group">
+            <label>Title *</label>
+            <input type="text" name="request_title" placeholder="Requested document title" required>
+        </div>
+        <div class="form-group">
+            <label>Category</label>
+            <input type="text" name="request_category" placeholder="Category">
+        </div>
+        <div class="form-group" style="grid-column:1 / -1;">
+            <label>Recipient Emails</label>
+            <div id="recipientDropdown" style="position:relative;">
+                <button
+                    type="button"
+                    id="recipientToggle"
+                    class="btn btn-secondary"
+                    style="width:100%;text-align:left;justify-content:space-between;display:flex;align-items:center;gap:10px;min-height:44px;"
+                >
+                    <span id="recipientToggleText">Click to select recipient emails</span>
+                    <span aria-hidden="true">v</span>
+                </button>
+                <div
+                    id="recipientPanel"
+                    style="display:none;position:absolute;left:0;right:0;top:calc(100% + 8px);z-index:30;border:1px solid var(--border);border-radius:10px;background:#121527;padding:10px;box-shadow:0 10px 28px rgba(0,0,0,0.45);"
+                >
+                    <input
+                        type="text"
+                        id="recipientSearch"
+                        placeholder="Search by name or email"
+                        style="margin-bottom:8px;"
+                    >
+                    <div style="max-height:220px;overflow:auto;display:grid;gap:6px;" id="recipientOptions">
+                        {% for opt in employee_email_options %}
+                        <label class="recipient-option" data-search="{{ ((opt.email or '') ~ ' ' ~ (opt.name or ''))|lower }}" style="display:flex;align-items:flex-start;gap:8px;padding:8px;border-radius:8px;border:1px solid var(--border);background:rgba(255,255,255,0.01);">
+                            <input type="checkbox" name="request_emails" value="{{ opt.email }}" class="recipient-checkbox" style="width:auto;height:auto;min-width:16px;min-height:16px;padding:0;margin-top:2px;border:0;background:transparent;box-shadow:none;flex:0 0 auto;">
+                            <span>{{ opt.email }}{% if opt.name %} - {{ opt.name }}{% endif %}</span>
+                        </label>
+                        {% endfor %}
+                        {% if not employee_email_options %}
+                        <div style="color:var(--text-muted);">No employee emails found.</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="form-group" style="grid-column:1 / -1;">
+            <label>Extra Emails (Optional)</label>
+            <input type="text" name="request_email" placeholder="Add more emails separated by comma">
+        </div>
+        <div class="form-group">
+            <label>Expires In (Days)</label>
+            <input type="number" name="expires_in_days" min="1" max="365" placeholder="e.g. 7">
+        </div>
+        <div class="form-group" style="grid-column:1 / -1;">
+            <label>Notes</label>
+            <textarea name="request_notes" rows="2" placeholder="Instructions for uploader"></textarea>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Create Upload Link</button>
+        </div>
+    </form>
+    {% endif %}
+
+    {% if requests_list %}
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Email</th>
+                    <th>Expires</th>
+                    <th>Status</th>
+                    <th>Link</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in requests_list %}
+                <tr>
+                    <td>{{ r.title }}</td>
+                    <td>{{ r.request_email or '-' }}</td>
+                    <td>{{ r.expires_at or '-' }}</td>
+                    <td>{{ 'Active' if r.is_active else 'Used/Closed' }}</td>
+                    <td>
+                        {% if r.upload_url %}
+                        <a href="{{ r.upload_url }}" target="_blank" rel="noopener">{{ r.upload_url }}</a>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if role in ['superadmin', 'admin'] or 'documents.delete' in module_permissions %}
+                        <form method="post" action="{{ url('document_request_delete', args=[r.id]) }}" style="display:inline;">
+                            {{ csrf_input }}
+                            <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this upload link?')">Delete</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state"><p>No upload links created yet.</p></div>
+    {% endif %}
+</div>
+
+{% if documents %}
+<div class="table-wrapper">
+    <table>
+        <thead>
+            <tr>
+                <th>Title</th>
+                <th>Category</th>
+                <th>Effective Date</th>
+                <th>Uploaded By</th>
+                <th>Status</th>
+                <th>File</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for d in documents %}
+            <tr>
+                <td>{{ d.title }}</td>
+                <td>{{ d.category or '-' }}</td>
+                <td>{{ d.effective_date or '-' }}</td>
+                <td>{{ d.uploaded_by_username or d.uploader_name or '-' }}</td>
+                <td>
+                    {% if d.status == 'approved' %}
+                    <span class="badge badge-text">Approved</span>
+                    {% elif d.status == 'rejected' %}
+                    <span class="badge" style="background:rgba(248,113,113,0.16);color:var(--error);">Rejected</span>
+                    {% else %}
+                    <span class="badge badge-number">Pending</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if d.file_url %}
+                    <a href="{{ d.file_url }}" target="_blank" rel="noopener">Open</a>
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+                <td>
+                    {% if role in ['superadmin', 'admin'] or 'documents.edit' in module_permissions %}
+                    <a href="{{ url('document_list') }}?edit={{ d.id }}" class="btn btn-secondary btn-sm">Edit</a>
+                    {% endif %}
+                    {% if role in ['superadmin', 'admin'] or 'documents.delete' in module_permissions %}
+                    <form method="post" action="{{ url('document_delete', args=[d.id]) }}" style="display:inline;">
+                        {{ csrf_input }}
+                        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this document?')">Delete</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card"><div class="empty-state"><p>No documents found.</p></div></div>
+{% endif %}
+
+<script>
+(function () {
+    const root = document.getElementById('recipientDropdown');
+    if (!root) return;
+
+    const toggle = document.getElementById('recipientToggle');
+    const toggleText = document.getElementById('recipientToggleText');
+    const panel = document.getElementById('recipientPanel');
+    const search = document.getElementById('recipientSearch');
+    const options = Array.from(root.querySelectorAll('.recipient-option'));
+    const checkboxes = Array.from(root.querySelectorAll('.recipient-checkbox'));
+
+    function refreshToggleText() {
+        const selected = checkboxes.filter(cb => cb.checked).map(cb => cb.value);
+        if (!selected.length) {
+            toggleText.textContent = 'Click to select recipient emails';
+            return;
+        }
+        if (selected.length <= 2) {
+            toggleText.textContent = selected.join(', ');
+            return;
+        }
+        toggleText.textContent = selected.slice(0, 2).join(', ') + ' +' + (selected.length - 2) + ' more';
+    }
+
+    function filterOptions() {
+        const q = (search.value || '').trim().toLowerCase();
+        options.forEach(opt => {
+            const hay = String(opt.getAttribute('data-search') || '');
+            opt.style.display = (!q || hay.indexOf(q) !== -1) ? 'flex' : 'none';
+        });
+    }
+
+    toggle.addEventListener('click', function () {
+        const isOpen = panel.style.display === 'block';
+        panel.style.display = isOpen ? 'none' : 'block';
+        if (!isOpen) search.focus();
+    });
+
+    document.addEventListener('click', function (event) {
+        if (!root.contains(event.target)) {
+            panel.style.display = 'none';
+        }
+    });
+
+    search.addEventListener('input', filterOptions);
+    checkboxes.forEach(cb => cb.addEventListener('change', refreshToggleText));
+    refreshToggleText();
+})();
+</script>
+{% endblock %}
+

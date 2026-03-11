@@ -213,3 +213,5 @@ __marimo__/
 hrm_frontend/sessions/
 
 hrm_project/*.sqlite3
+
+hrm_project/media/

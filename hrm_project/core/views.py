@@ -10,8 +10,12 @@ from django.conf import settings
 from django.shortcuts import render, redirect
 from django.views.decorators.http import require_POST
 from django.core.files.storage import default_storage
+from django.core.validators import validate_email
+from django.core.exceptions import ValidationError
 from django.utils.text import slugify
+from django.utils import timezone
 from django.test import Client as DjangoTestClient
+from core.mailers import send_branded_email
 
 from core.forms import (
     LoginForm,
@@ -38,6 +42,7 @@ ADDON_KEYS = {
     'activity_logs',
     'settings',
     'policy',
+    'documents',
     'role_management',
     'shift_management',
     'bank_management',
@@ -54,6 +59,7 @@ ADDON_OPTIONS = [
     ('activity_logs', 'Activity Logs'),
     ('settings', 'Settings'),
     ('policy', 'Policy'),
+    ('documents', 'Documents'),
     ('role_management', 'Role Management'),
     ('shift_management', 'Shift Management'),
     ('bank_management', 'Bank Management'),
@@ -67,6 +73,7 @@ STATIC_PERMISSION_KEYS = {
     'shifts.view', 'shifts.create', 'shifts.edit', 'shifts.delete',
     'bank.view', 'bank.create', 'bank.edit', 'bank.delete',
     'policy.view', 'policy.create', 'policy.edit', 'policy.delete',
+    'documents.view', 'documents.create', 'documents.edit', 'documents.delete',
     'custom_fields.view', 'custom_fields.create', 'custom_fields.edit', 'custom_fields.delete',
     'dynamic_models.view', 'dynamic_models.create', 'dynamic_models.edit', 'dynamic_models.delete',
     'activity_logs.view',
@@ -80,6 +87,7 @@ LEGACY_PERMISSION_MAP = {
     'shifts': ['shifts.view', 'shifts.create', 'shifts.edit', 'shifts.delete'],
     'bank': ['bank.view', 'bank.create', 'bank.edit', 'bank.delete'],
     'policy': ['policy.view', 'policy.create', 'policy.edit', 'policy.delete'],
+    'documents': ['documents.view', 'documents.create', 'documents.edit', 'documents.delete'],
     'custom_fields': ['custom_fields.view', 'custom_fields.create', 'custom_fields.edit', 'custom_fields.delete'],
     'dynamic_models': ['dynamic_models.view', 'dynamic_models.create', 'dynamic_models.edit', 'dynamic_models.delete'],
 }
@@ -94,6 +102,7 @@ ADDON_VIEW_PERMISSION_MAP = {
     'payroll': 'payroll.view',
     'activity_logs': 'activity_logs.view',
     'policy': 'policy.view',
+    'documents': 'documents.view',
 }
 
 
@@ -256,7 +265,7 @@ def _parse_time_to_datetime(value):
         return value
 
     if isinstance(value, datetime.time):
-        return datetime.datetime.combine(datetime.date.today(), value)
+        return datetime.datetime.combine(timezone.localdate(), value)
 
     raw = str(value).strip()
     if not raw:
@@ -265,7 +274,7 @@ def _parse_time_to_datetime(value):
     for fmt in ('%H:%M:%S', '%H:%M'):
         try:
             parsed_time = datetime.datetime.strptime(raw, fmt).time()
-            return datetime.datetime.combine(datetime.date.today(), parsed_time)
+            return datetime.datetime.combine(timezone.localdate(), parsed_time)
         except ValueError:
             continue
 
@@ -306,7 +315,7 @@ def _attendance_total_time(data, end_override=None):
 
 def _build_attendance_calendar(employee, attendance_records, year, month):
     month_matrix = calendar.Calendar(firstweekday=0).monthdatescalendar(year, month)
-    today = datetime.date.today()
+    today = timezone.localdate()
     joining_date_raw = employee.get('joining_date')
     joining_date = None
     if joining_date_raw:
@@ -1015,6 +1024,377 @@ def policy_delete(request, pk):
     except requests.exceptions.ConnectionError:
         _flash(request, 'Backend server unreachable.', 'error')
     return redirect('policy_page')
+
+
+def document_list(request):
+    permission_redirect = _require_module_permission(request, 'documents.view')
+    if permission_redirect:
+        return permission_redirect
+    addon_redirect = _require_addon(request, 'documents')
+    if addon_redirect:
+        return addon_redirect
+
+    messages = _pop_messages(request)
+    errors = []
+    documents = []
+    requests_list = []
+    employee_email_options = []
+    edit_item = None
+    search_q = (request.GET.get('q') or '').strip()
+    category_q = (request.GET.get('category') or '').strip()
+    selected_status = (request.GET.get('status') or '').strip().lower()
+    edit_id = (request.GET.get('edit') or '').strip()
+
+    role = request.session.get('role', 'employee')
+    client_id = request.session.get('client_id')
+
+    params = {}
+    if search_q:
+        params['search'] = search_q
+    if category_q:
+        params['category'] = category_q
+    if selected_status in ('pending', 'approved', 'rejected'):
+        params['status'] = selected_status
+    if role == 'superadmin' and client_id:
+        params['client'] = client_id
+
+    try:
+        doc_resp = _api_get(request, '/api/documents/', params=params or None)
+        redir = _handle_unauthorized(doc_resp, request)
+        if redir:
+            return redir
+        if doc_resp.status_code == 200:
+            payload = doc_resp.json()
+            documents = payload.get('results', payload) if isinstance(payload, dict) else payload
+        else:
+            errors = _error_list_from_response(doc_resp, 'Failed to load documents.')
+
+        req_params = {}
+        if role == 'superadmin' and client_id:
+            req_params['client'] = client_id
+        req_resp = _api_get(request, '/api/document-upload-requests/', params=req_params or None)
+        redir = _handle_unauthorized(req_resp, request)
+        if redir:
+            return redir
+        if req_resp.status_code == 200:
+            payload = req_resp.json()
+            requests_list = payload.get('results', payload) if isinstance(payload, dict) else payload
+
+        emp_params = {}
+        if role == 'superadmin' and client_id:
+            emp_params['client'] = client_id
+        emp_resp = _api_get(request, '/api/employees/', params=emp_params or None)
+        redir = _handle_unauthorized(emp_resp, request)
+        if redir:
+            return redir
+        if emp_resp.status_code == 200:
+            emp_payload = emp_resp.json()
+            employees = emp_payload.get('results', emp_payload) if isinstance(emp_payload, dict) else emp_payload
+            seen_emails = set()
+            for emp in employees or []:
+                email = str(emp.get('email') or '').strip()
+                if not email:
+                    continue
+                lowered = email.lower()
+                if lowered in seen_emails:
+                    continue
+                seen_emails.add(lowered)
+                first_name = str(emp.get('first_name') or '').strip()
+                last_name = str(emp.get('last_name') or '').strip()
+                full_name = f'{first_name} {last_name}'.strip()
+                employee_email_options.append({
+                    'email': email,
+                    'name': full_name,
+                })
+    except requests.exceptions.ConnectionError:
+        errors = ['Backend server unreachable.']
+
+    if edit_id:
+        edit_item = next((row for row in documents if str(row.get('id')) == edit_id), None)
+
+    if request.method == 'POST':
+        action = (request.POST.get('action') or '').strip()
+
+        if action == 'save_document':
+            edit_id = (request.POST.get('edit_id') or '').strip()
+            permission_key = 'documents.edit' if edit_id else 'documents.create'
+            permission_redirect = _require_module_permission(request, permission_key)
+            if permission_redirect:
+                return permission_redirect
+
+            payload = {
+                'title': (request.POST.get('title') or '').strip(),
+                'category': (request.POST.get('category') or '').strip(),
+                'effective_date': (request.POST.get('effective_date') or '').strip() or None,
+                'status': (request.POST.get('status') or 'pending').strip().lower() or 'pending',
+                'notes': (request.POST.get('notes') or '').strip(),
+                'file_url': (request.POST.get('existing_file_url') or '').strip(),
+            }
+            if role == 'superadmin' and client_id:
+                payload['client'] = client_id
+
+            file_obj = request.FILES.get('file')
+            if file_obj:
+                payload['file_url'] = _store_uploaded_dynamic_file(file_obj, folder='documents/files')
+
+            try:
+                if edit_id:
+                    save_resp = _api_put(request, f'/api/documents/{edit_id}/', payload)
+                else:
+                    save_resp = _api_post(request, '/api/documents/', payload)
+                redir = _handle_unauthorized(save_resp, request)
+                if redir:
+                    return redir
+                if save_resp.status_code in (200, 201):
+                    _flash(request, 'Document saved successfully.', 'success')
+                    return redirect('document_list')
+                errors = _error_list_from_response(save_resp, 'Failed to save document.')
+            except requests.exceptions.ConnectionError:
+                errors = ['Backend server unreachable.']
+
+        elif action == 'create_link':
+            permission_redirect = _require_module_permission(request, 'documents.create')
+            if permission_redirect:
+                return permission_redirect
+
+            selected_emails = [str(v).strip() for v in request.POST.getlist('request_emails') if str(v).strip()]
+            manual_raw = (request.POST.get('request_email') or '').strip()
+            manual_emails = []
+            if manual_raw:
+                manual_emails = [part.strip() for part in re.split(r'[,;\s]+', manual_raw) if part.strip()]
+
+            unique_emails = []
+            seen = set()
+            for email in (selected_emails + manual_emails):
+                lowered = email.lower()
+                if lowered in seen:
+                    continue
+                seen.add(lowered)
+                unique_emails.append(email)
+
+            valid_emails = []
+            invalid_emails = []
+            for email in unique_emails:
+                try:
+                    validate_email(email)
+                    valid_emails.append(email)
+                except ValidationError:
+                    invalid_emails.append(email)
+
+            if not valid_emails:
+                errors = ['Select at least one valid recipient email to send upload links.']
+                return render(request, 'documents/list.html', {
+                    'documents': documents,
+                    'requests_list': requests_list,
+                    'employee_email_options': employee_email_options,
+                    'edit_item': edit_item,
+                    'search_q': search_q,
+                    'category_q': category_q,
+                    'selected_status': selected_status,
+                    'errors': errors,
+                    'messages': messages,
+                    **_get_context(request),
+                })
+
+            days_raw = (request.POST.get('expires_in_days') or '').strip()
+            expires_at = None
+            if days_raw:
+                try:
+                    days_int = max(1, min(365, int(days_raw)))
+                    expires_at = (timezone.now() + datetime.timedelta(days=days_int)).isoformat()
+                except (TypeError, ValueError):
+                    expires_at = None
+
+            payload = {
+                'title': (request.POST.get('request_title') or '').strip(),
+                'category': (request.POST.get('request_category') or '').strip(),
+                'notes': (request.POST.get('request_notes') or '').strip(),
+                'is_active': True,
+            }
+            if expires_at:
+                payload['expires_at'] = expires_at
+            if role == 'superadmin' and client_id:
+                payload['client'] = client_id
+
+            try:
+                created_count = 0
+                mailed_count = 0
+                failed_recipients = []
+
+                for recipient_email in valid_emails:
+                    single_payload = dict(payload)
+                    single_payload['request_email'] = recipient_email
+                    link_resp = _api_post(request, '/api/document-upload-requests/', single_payload)
+                    redir = _handle_unauthorized(link_resp, request)
+                    if redir:
+                        return redir
+                    if link_resp.status_code not in (200, 201):
+                        failed_recipients.append(recipient_email)
+                        continue
+
+                    created_count += 1
+                    data = link_resp.json() if hasattr(link_resp, 'json') else {}
+                    upload_url = str((data or {}).get('upload_url') or '').strip()
+                    title = single_payload.get('title') or 'Document Upload Request'
+                    category = single_payload.get('category') or '-'
+                    notes = single_payload.get('notes') or '-'
+                    expires_text = 'No expiry' if not expires_at else str(expires_at)
+
+                    if upload_url:
+                        try:
+                            send_branded_email(
+                                subject=f'Document Upload Link: {title}',
+                                recipient_list=[recipient_email],
+                                heading='Document Upload Request',
+                                greeting='Hello,',
+                                lines=[
+                                    f'Title: {title}',
+                                    f'Category: {category}',
+                                    f'Notes: {notes}',
+                                    f'Expires At: {expires_text}',
+                                ],
+                                cta_text='Upload Document',
+                                cta_url=upload_url,
+                                closing='Please use this secure link to upload your document.',
+                                app_settings=request.session.get('app_settings', {}),
+                                fail_silently=False,
+                            )
+                            mailed_count += 1
+                        except Exception:
+                            failed_recipients.append(recipient_email)
+
+                if invalid_emails:
+                    _flash(request, f'Ignored invalid emails: {", ".join(invalid_emails)}', 'error')
+                if created_count == 0:
+                    errors = ['Failed to create upload links for selected recipients.']
+                    return render(request, 'documents/list.html', {
+                        'documents': documents,
+                        'requests_list': requests_list,
+                        'employee_email_options': employee_email_options,
+                        'edit_item': edit_item,
+                        'search_q': search_q,
+                        'category_q': category_q,
+                        'selected_status': selected_status,
+                        'errors': errors,
+                        'messages': messages,
+                        **_get_context(request),
+                    })
+
+                if failed_recipients:
+                    _flash(
+                        request,
+                        f'Created {created_count} link(s), sent {mailed_count} email(s). Failed recipients: {", ".join(failed_recipients)}',
+                        'error',
+                    )
+                else:
+                    _flash(request, f'Created {created_count} link(s) and sent {mailed_count} email(s) successfully.', 'success')
+
+                    return redirect('document_list')
+            except requests.exceptions.ConnectionError:
+                errors = ['Backend server unreachable.']
+
+    return render(request, 'documents/list.html', {
+        'documents': documents,
+        'requests_list': requests_list,
+        'employee_email_options': employee_email_options,
+        'edit_item': edit_item,
+        'search_q': search_q,
+        'category_q': category_q,
+        'selected_status': selected_status,
+        'errors': errors,
+        'messages': messages,
+        **_get_context(request),
+    })
+
+
+@require_POST
+def document_delete(request, pk):
+    permission_redirect = _require_module_permission(request, 'documents.delete')
+    if permission_redirect:
+        return permission_redirect
+    addon_redirect = _require_addon(request, 'documents')
+    if addon_redirect:
+        return addon_redirect
+
+    try:
+        resp = _api_delete(request, f'/api/documents/{pk}/')
+        redir = _handle_unauthorized(resp, request)
+        if redir:
+            return redir
+        if resp.status_code == 204:
+            _flash(request, 'Document deleted.', 'success')
+        else:
+            _flash(request, '; '.join(_error_list_from_response(resp, 'Failed to delete document.')), 'error')
+    except requests.exceptions.ConnectionError:
+        _flash(request, 'Backend server unreachable.', 'error')
+    return redirect('document_list')
+
+
+@require_POST
+def document_request_delete(request, pk):
+    permission_redirect = _require_module_permission(request, 'documents.delete')
+    if permission_redirect:
+        return permission_redirect
+    addon_redirect = _require_addon(request, 'documents')
+    if addon_redirect:
+        return addon_redirect
+
+    try:
+        resp = _api_delete(request, f'/api/document-upload-requests/{pk}/')
+        redir = _handle_unauthorized(resp, request)
+        if redir:
+            return redir
+        if resp.status_code == 204:
+            _flash(request, 'Upload link deleted.', 'success')
+        else:
+            _flash(request, '; '.join(_error_list_from_response(resp, 'Failed to delete upload link.')), 'error')
+    except requests.exceptions.ConnectionError:
+        _flash(request, 'Backend server unreachable.', 'error')
+    return redirect('document_list')
+
+
+def document_upload_page(request, token):
+    info = {}
+    errors = []
+    success_message = ''
+    token = str(token).strip()
+
+    try:
+        resp = _api_request('GET', f'/api/document-upload/{token}/', host=request.get_host())
+        if resp.status_code == 200:
+            info = resp.json() if isinstance(resp.json(), dict) else {}
+        else:
+            errors = _error_list_from_response(resp, 'Upload link is invalid.')
+    except requests.exceptions.ConnectionError:
+        errors = ['Server unavailable. Please try again later.']
+
+    if request.method == 'POST' and not errors:
+        payload = {
+            'title': (request.POST.get('title') or '').strip() or info.get('title', ''),
+            'category': (request.POST.get('category') or '').strip() or info.get('category', ''),
+            'effective_date': (request.POST.get('effective_date') or '').strip(),
+            'uploader_name': (request.POST.get('uploader_name') or '').strip(),
+            'uploader_email': (request.POST.get('uploader_email') or '').strip(),
+            'notes': (request.POST.get('notes') or '').strip() or info.get('notes', ''),
+        }
+        upload_file = request.FILES.get('file')
+        if upload_file:
+            payload['file_url'] = _store_uploaded_dynamic_file(upload_file, folder='documents/public')
+
+        try:
+            post_resp = _api_request('POST', f'/api/document-upload/{token}/', data=payload, host=request.get_host())
+            if post_resp.status_code in (200, 201):
+                success_message = 'Document uploaded successfully. You can close this page.'
+            else:
+                errors = _error_list_from_response(post_resp, 'Failed to upload document.')
+        except requests.exceptions.ConnectionError:
+            errors = ['Server unavailable. Please try again later.']
+
+    return render(request, 'documents/public_upload.html', {
+        'info': info,
+        'errors': errors,
+        'success_message': success_message,
+    })
 
 
 def settings_page(request):
@@ -4450,7 +4830,7 @@ def dynamic_entity_list(request, model_id):
             }
 
             if can_view_all_attendance and not selected_employee_id:
-                today_iso = datetime.date.today().isoformat()
+                today_iso = timezone.localdate().isoformat()
                 today_records = []
                 for rec in records:
                     if str((rec.get('data') or {}).get('attendance_date')) == today_iso:
@@ -4477,7 +4857,7 @@ def dynamic_entity_list(request, model_id):
 
             # For regular employee login, lock Add Attendance after first check-in of the day.
             if (not can_view_all_attendance) and current_employee_id:
-                today_iso = datetime.date.today().isoformat()
+                today_iso = timezone.localdate().isoformat()
                 today_rows = [
                     row for row in records
                     if str(row.get('employee')) == str(current_employee_id)
@@ -4544,8 +4924,8 @@ def dynamic_entity_punch(request, model_id):
             _flash(request, 'Employee ID is required.', 'error')
             return redirect('dynamic_entity_list', model_id=model_id)
 
-        today = datetime.date.today().isoformat()
-        now_time = datetime.datetime.now().strftime('%H:%M:%S')
+        today = timezone.localdate().isoformat()
+        now_time = timezone.localtime().strftime('%H:%M:%S')
         shift = (request.POST.get('shift') or '').strip()
         remarks = (request.POST.get('remarks') or '').strip()
         location_lat = (request.POST.get('location_lat') or '').strip()
@@ -4690,7 +5070,7 @@ def dynamic_entity_create(request, model_id):
         if addon_redirect:
             return addon_redirect
     attendance_flags = _attendance_feature_flags(request)
-    current_time = datetime.datetime.now().strftime('%H:%M:%S')
+    current_time = timezone.localtime().strftime('%H:%M:%S')
     attendance_locked_employee_id = None
     if is_attendance:
         session_employee_role = (request.session.get('employee_role') or '').strip().lower()
@@ -4726,7 +5106,7 @@ def dynamic_entity_create(request, model_id):
                     **_get_context(request),
                 })
 
-            today = datetime.date.today().isoformat()
+            today = timezone.localdate().isoformat()
             rec_resp = _api_get(
                 request,
                 f'/api/dynamic-records/?dynamic_model={model_id}&employee={employee_id}',
@@ -4858,7 +5238,7 @@ def dynamic_entity_edit(request, model_id, pk):
         if addon_redirect:
             return addon_redirect
     attendance_flags = _attendance_feature_flags(request)
-    current_time = datetime.datetime.now().strftime('%H:%M:%S')
+    current_time = timezone.localtime().strftime('%H:%M:%S')
     attendance_total_time = ''
     attendance_total_time_preview = ''
 

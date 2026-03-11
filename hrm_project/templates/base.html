@@ -177,6 +177,14 @@
     </a>
     {% endif %}
 
+    {% if role == 'superadmin' or ('documents' in enabled_addons and (role == 'admin' or 'documents.view' in module_permissions)) %}
+    <a href="{{ url('document_list') }}"
+       class="nav-link {% if 'document_' in request.resolver_match.url_name %}active{% endif %}">
+      <span class="nav-icon">DC</span>
+      <span class="nav-label">Documents</span>
+    </a>
+    {% endif %}
+
     {% for dm in nav_dynamic_models %}
     <a href="{{ url('dynamic_entity_list', args=[dm.id]) }}"
        class="nav-link {% if request.resolver_match.url_name in ['dynamic_entity_list', 'dynamic_entity_create', 'dynamic_entity_edit'] and request.resolver_match.kwargs.get('model_id') == dm.id %}active{% endif %}">

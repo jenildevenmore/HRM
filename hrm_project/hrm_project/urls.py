@@ -31,6 +31,7 @@ from leaves.views import LeaveRequestViewSet, LeaveTypeViewSet, LeaveBalanceView
 from holidays.views import HolidayViewSet
 from payroll.views import PayrollPolicyViewSet, EmployeeCompensationViewSet, PayrollReportView
 from policies.views import CompanyPolicyViewSet
+from documents.views import DocumentViewSet, DocumentUploadRequestViewSet, PublicDocumentUploadView
 from activity_logs.views import ActivityLogViewSet
 from shifts.views import ShiftViewSet
 from banks.views import BankAccountViewSet
@@ -55,6 +56,8 @@ router.register("bank-accounts", BankAccountViewSet, basename="bank-accounts")
 router.register("payroll-policy", PayrollPolicyViewSet, basename="payroll-policy")
 router.register("employee-compensation", EmployeeCompensationViewSet, basename="employee-compensation")
 router.register("company-policies", CompanyPolicyViewSet, basename="company-policies")
+router.register("documents", DocumentViewSet, basename="documents")
+router.register("document-upload-requests", DocumentUploadRequestViewSet, basename="document-upload-requests")
 router.register("activity-logs", ActivityLogViewSet, basename="activity-logs")
 
 # Custom token view with profile info
@@ -67,6 +70,7 @@ urlpatterns = [
 
     path('api/leave-balance/', LeaveBalanceView.as_view()),
     path('api/payroll-report/', PayrollReportView.as_view()),
+    path('api/document-upload/<uuid:token>/', PublicDocumentUploadView.as_view()),
     path('api/attendance/auto-clockout/run/', AutoClockoutRunView.as_view()),
     path('api/', include(router.urls)),
 
