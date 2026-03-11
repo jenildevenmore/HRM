@@ -104,6 +104,7 @@ INSTALLED_APPS = [
     'holidays',
     'payroll',
     'policies',
+    'documents',
     'shifts',
     'banks',
     'activity_logs',
@@ -208,7 +209,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = str(os.getenv('DJANGO_TIME_ZONE', 'Asia/Kolkata')).strip() or 'Asia/Kolkata'
 
 USE_I18N = True
 
@@ -281,3 +282,4 @@ FRONTEND_BASE_URL = os.getenv(
     'FRONTEND_BASE_URL',
     FRONTEND_BASE_URLS[0] if FRONTEND_BASE_URLS else 'http://127.0.0.1:8000',
 ).rstrip('/')
+
