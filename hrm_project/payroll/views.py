@@ -270,6 +270,7 @@ class PayrollReportView(_PayrollAccessMixin, APIView):
 
         # Approved paid leave should contribute to payroll (days/hours).
         paid_leave_days_by_employee = {emp_id: set() for emp_id in employee_ids}
+        paid_leave_half_days_by_employee = {emp_id: set() for emp_id in employee_ids}
         paid_leave_hours_by_employee = {emp_id: Decimal('0') for emp_id in employee_ids}
         paid_type_names_by_client = {}
         for leave_type in LeaveType.objects.filter(
@@ -300,9 +301,14 @@ class PayrollReportView(_PayrollAccessMixin, APIView):
 
             overlap_start = leave.start_date if leave.start_date >= month_start else month_start
             overlap_end = leave.end_date if leave.end_date <= month_end else month_end
+            target_set = (
+                paid_leave_half_days_by_employee[leave.employee_id]
+                if leave_unit == LeaveRequest.UNIT_HALF_DAY
+                else paid_leave_days_by_employee[leave.employee_id]
+            )
             d = overlap_start
             while d <= overlap_end:
-                paid_leave_days_by_employee[leave.employee_id].add(d)
+                target_set.add(d)
                 d += timedelta(days=1)
 
         rows = []
@@ -318,13 +324,18 @@ class PayrollReportView(_PayrollAccessMixin, APIView):
             paid_leave_hours = paid_leave_hours_by_employee.get(emp.id, Decimal('0'))
             attendance_day_set = present_days_by_employee.get(emp.id, set())
             paid_leave_day_set = paid_leave_days_by_employee.get(emp.id, set())
+            paid_leave_half_day_set = paid_leave_half_days_by_employee.get(emp.id, set())
             combined_paid_day_set = attendance_day_set.union(paid_leave_day_set)
-            paid_leave_days = Decimal(len(paid_leave_day_set))
+            half_day_set = paid_leave_half_day_set - paid_leave_day_set
+            half_day_count = Decimal(len(half_day_set)) * Decimal('0.5')
+            paid_leave_days = Decimal(len(paid_leave_day_set)) + half_day_count
             present_days = Decimal(len(attendance_day_set))
-            effective_present_days = Decimal(len(combined_paid_day_set))
+            half_day_credit_set = half_day_set - combined_paid_day_set
+            effective_present_days = Decimal(len(combined_paid_day_set)) + (Decimal(len(half_day_credit_set)) * Decimal('0.5'))
             paid_leave_day_hours = Decimal(len(paid_leave_day_set - attendance_day_set)) * standard_hours_per_day
+            paid_leave_half_day_hours = half_day_count * standard_hours_per_day
 
-            total_hours = attendance_hours + paid_leave_day_hours + paid_leave_hours
+            total_hours = attendance_hours + paid_leave_day_hours + paid_leave_half_day_hours + paid_leave_hours
             day_equivalent = (total_hours / standard_hours_per_day) if standard_hours_per_day > 0 else Decimal('0')
 
             payable_hours = total_hours if allow_extra_hours else min(total_hours, month_target_hours)

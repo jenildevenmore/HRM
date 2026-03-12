@@ -125,7 +125,8 @@
                 <div class="form-group">
                     <label>Leave Unit *</label>
                     <select name="leave_unit" id="leaveUnitSelect" required>
-                        <option value="day" {% if create_form_values.leave_unit != 'hour' %}selected{% endif %}>Day Leave</option>
+                        <option value="day" {% if create_form_values.leave_unit == 'day' %}selected{% endif %}>Day Leave</option>
+                        <option value="half_day" {% if create_form_values.leave_unit == 'half_day' %}selected{% endif %}>Half Day Leave</option>
                         <option value="hour" {% if create_form_values.leave_unit == 'hour' %}selected{% endif %}>Hourly Leave</option>
                     </select>
                 </div>
@@ -191,7 +192,13 @@
                 </td>
                 <td>{{ leave.start_date }}</td>
                 <td>{{ leave.end_date }}</td>
-                <td>{{ leave.total_days }}</td>
+                <td>
+                    {% if leave.leave_unit == 'half_day' %}
+                        0.5
+                    {% else %}
+                        {{ leave.total_days }}
+                    {% endif %}
+                </td>
                 <td>{{ leave.created_at[:10] if leave.created_at else '-' }}</td>
                 <td>
                     {% if leave.leave_type_is_paid %}
@@ -311,12 +318,13 @@ document.addEventListener('DOMContentLoaded', function () {
     function applyLeaveUnitBehavior() {
         if (!leaveUnitSelect) return;
         var isHourly = leaveUnitSelect.value === 'hour';
+        var isSingleDate = isHourly || leaveUnitSelect.value === 'half_day';
         if (leaveHoursGroup) leaveHoursGroup.style.display = isHourly ? '' : 'none';
         if (leaveHoursInput) {
             leaveHoursInput.required = isHourly;
             if (!isHourly) leaveHoursInput.value = '';
         }
-        if (startDateInput && endDateInput && isHourly && startDateInput.value) {
+        if (startDateInput && endDateInput && isSingleDate && startDateInput.value) {
             endDateInput.value = startDateInput.value;
         }
     }
@@ -325,7 +333,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (leaveUnitSelect) leaveUnitSelect.addEventListener('change', applyLeaveUnitBehavior);
     if (startDateInput) {
         startDateInput.addEventListener('change', function () {
-            if (leaveUnitSelect && leaveUnitSelect.value === 'hour' && endDateInput) {
+            if (leaveUnitSelect && (leaveUnitSelect.value === 'hour' || leaveUnitSelect.value === 'half_day') && endDateInput) {
                 endDateInput.value = startDateInput.value;
             }
         });

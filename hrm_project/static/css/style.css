@@ -431,7 +431,10 @@ td {
   background: rgba(108,99,255,0.05);
 }
 
-.form-group select option { background: #1a1a2e; color: var(--text); }
+.form-group select option {
+  background: var(--bg-2);
+  color: var(--text);
+}
 
 .form-group textarea { resize: vertical; min-height: 80px; }
 
@@ -696,6 +699,24 @@ td {
   color: #d9d3ff;
 }
 
+body.theme-mode-light .permission-group-tab-btn {
+  color: #3f4960;
+  background: rgba(17,24,39,0.02);
+  border-color: rgba(17,24,39,0.16);
+}
+
+body.theme-mode-light .permission-group-tab-btn:hover {
+  color: #1f2937;
+  border-color: rgba(108,99,255,0.5);
+  background: rgba(108,99,255,0.08);
+}
+
+body.theme-mode-light .permission-group-tab-btn.active {
+  color: #1f2a44;
+  background: rgba(108,99,255,0.22);
+  border-color: rgba(108,99,255,0.55);
+}
+
 .permission-group-panels {
   display: flex;
   flex-direction: column;
@@ -761,12 +782,12 @@ td {
 }
 
 .search-form select.search-input option {
-  background: #17172f;
-  color: #f3f4ff;
+  background: var(--bg-2);
+  color: var(--text);
 }
 
 .search-form select.search-input option:checked {
-  background: #3c63c9;
+  background: var(--accent);
   color: #ffffff;
 }
 
@@ -816,12 +837,12 @@ td {
 }
 
 .attendance-filter-inline select option {
-  background: #17172f;
-  color: #f3f4ff;
+  background: var(--bg-2);
+  color: var(--text);
 }
 
 .attendance-filter-inline select option:checked {
-  background: #3c63c9;
+  background: var(--accent);
   color: #ffffff;
 }
 

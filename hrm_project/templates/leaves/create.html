@@ -69,6 +69,7 @@
                 <label>Leave Unit *</label>
                 <select name="leave_unit" id="leaveUnitSelect" required>
                     <option value="day" selected>Day Leave</option>
+                    <option value="half_day">Half Day Leave</option>
                     <option value="hour">Hourly Leave</option>
                 </select>
             </div>
@@ -130,6 +131,7 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
         var isHourly = leaveUnitSelect.value === 'hour';
+        var isSingleDate = isHourly || leaveUnitSelect.value === 'half_day';
         if (leaveHoursGroup) {
             leaveHoursGroup.style.display = isHourly ? '' : 'none';
         }
@@ -139,7 +141,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 leaveHoursInput.value = '';
             }
         }
-        if (startDateInput && endDateInput && isHourly && startDateInput.value) {
+        if (startDateInput && endDateInput && isSingleDate && startDateInput.value) {
             endDateInput.value = startDateInput.value;
         }
     }
@@ -152,7 +154,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     if (startDateInput) {
         startDateInput.addEventListener('change', function () {
-            if (leaveUnitSelect && leaveUnitSelect.value === 'hour' && endDateInput) {
+            if (leaveUnitSelect && (leaveUnitSelect.value === 'hour' || leaveUnitSelect.value === 'half_day') && endDateInput) {
                 endDateInput.value = startDateInput.value;
             }
         });

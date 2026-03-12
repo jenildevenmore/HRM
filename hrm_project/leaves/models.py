@@ -45,8 +45,10 @@ class LeaveRequest(models.Model):
     )
     UNIT_DAY = 'day'
     UNIT_HOUR = 'hour'
+    UNIT_HALF_DAY = 'half_day'
     LEAVE_UNIT_CHOICES = (
         (UNIT_DAY, 'Day'),
+        (UNIT_HALF_DAY, 'Half Day'),
         (UNIT_HOUR, 'Hour'),
     )
 

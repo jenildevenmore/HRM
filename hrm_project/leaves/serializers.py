@@ -219,8 +219,8 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'leave_type': 'This field is required.'})
         if end_date < start_date:
             raise serializers.ValidationError({'end_date': 'End date must be same or after start date.'})
-        if leave_unit not in (LeaveRequest.UNIT_DAY, LeaveRequest.UNIT_HOUR):
-            raise serializers.ValidationError({'leave_unit': 'Leave unit must be day or hour.'})
+        if leave_unit not in (LeaveRequest.UNIT_DAY, LeaveRequest.UNIT_HALF_DAY, LeaveRequest.UNIT_HOUR):
+            raise serializers.ValidationError({'leave_unit': 'Leave unit must be day, half_day, or hour.'})
 
         leave_type = LeaveType.objects.filter(
             client_id=employee.client_id,
@@ -253,6 +253,11 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
             if leave_hours > 3:
                 raise serializers.ValidationError({'leave_hours': 'Maximum hourly leave is 3 hours in a day.'})
             attrs['total_days'] = 0
+        elif leave_unit == LeaveRequest.UNIT_HALF_DAY:
+            if start_date != end_date:
+                raise serializers.ValidationError({'end_date': 'Half-day leave must be for a single date.'})
+            attrs['leave_hours'] = None
+            attrs['total_days'] = 1
         else:
             attrs['leave_hours'] = None
             attrs['total_days'] = (end_date - start_date + timedelta(days=1)).days

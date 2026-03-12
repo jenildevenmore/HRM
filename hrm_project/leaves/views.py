@@ -1,4 +1,6 @@
-from django.db.models import Sum
+from decimal import Decimal
+
+from django.db.models import Case, DecimalField, F, Sum, Value, When
 from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.views import APIView
@@ -268,6 +270,12 @@ class LeaveBalanceView(_LeaveAccessMixin, APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        def _format_days_value(value):
+            decimal_value = Decimal(str(value or 0))
+            if decimal_value == decimal_value.to_integral():
+                return int(decimal_value)
+            return float(decimal_value)
+
         if self._is_superadmin():
             employees = Employee.objects.only('id', 'first_name', 'last_name', 'role').all().order_by('first_name', 'last_name')
             leave_types = LeaveType.objects.only('name', 'is_paid', 'max_days_per_year').filter(is_active=True).order_by('name')
@@ -305,10 +313,19 @@ class LeaveBalanceView(_LeaveAccessMixin, APIView):
                     leave_type__in=leave_type_names,
                 )
                 .values('employee_id', 'leave_type')
-                .annotate(total=Sum('total_days'))
+                .annotate(
+                    total=Sum(
+                        Case(
+                            When(leave_unit=LeaveRequest.UNIT_HOUR, then=Value(Decimal('0'))),
+                            When(leave_unit=LeaveRequest.UNIT_HALF_DAY, then=Value(Decimal('0.5'))),
+                            default=F('total_days'),
+                            output_field=DecimalField(max_digits=10, decimal_places=2),
+                        )
+                    )
+                )
             )
             used_totals_map = {
-                (row['employee_id'], row['leave_type']): int(row['total'] or 0)
+                (row['employee_id'], row['leave_type']): Decimal(str(row['total'] or 0))
                 for row in used_totals
             }
 
@@ -316,17 +333,17 @@ class LeaveBalanceView(_LeaveAccessMixin, APIView):
         for employee in employees_list:
             type_rows = []
             for leave_type in leave_types_list:
-                used = used_totals_map.get((employee.id, leave_type.name), 0)
-                total = int(leave_type.max_days_per_year or 0)
-                available = total - int(used)
+                used = used_totals_map.get((employee.id, leave_type.name), Decimal('0'))
+                total = Decimal(str(leave_type.max_days_per_year or 0))
+                available = total - used
                 if available < 0:
-                    available = 0
+                    available = Decimal('0')
                 type_rows.append({
                     'leave_type': leave_type.name,
                     'is_paid': leave_type.is_paid,
-                    'total': total,
-                    'used': int(used),
-                    'available': available,
+                    'total': _format_days_value(total),
+                    'used': _format_days_value(used),
+                    'available': _format_days_value(available),
                 })
             rows.append({
                 'employee_id': employee.id,
