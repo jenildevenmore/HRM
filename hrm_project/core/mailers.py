@@ -54,6 +54,7 @@ def send_branded_email(
     closing='',
     client=None,
     app_settings=None,
+    attachments=None,
     fail_silently=False,
 ):
     recipients = [str(r).strip() for r in (recipient_list or []) if str(r).strip()]
@@ -136,6 +137,13 @@ def send_branded_email(
         to=recipients,
         reply_to=reply_to,
     )
+    for attachment in (attachments or []):
+        if not isinstance(attachment, (list, tuple)) or len(attachment) < 2:
+            continue
+        filename = str(attachment[0] or '').strip() or 'attachment.bin'
+        content = attachment[1]
+        mimetype = attachment[2] if len(attachment) > 2 else None
+        email.attach(filename, content, mimetype)
     email.attach_alternative(html_content, 'text/html')
     email.send(fail_silently=fail_silently)
     return 1

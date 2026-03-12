@@ -734,6 +734,90 @@ def _flash(request, message, level='success'):
     request.session.modified = True
 
 
+def _pdf_escape_text(value):
+    raw = str(value or '')
+    return raw.replace('\\', '\\\\').replace('(', '\\(').replace(')', '\\)')
+
+
+def _build_simple_text_pdf(lines):
+    safe_lines = [str(line or '').strip() for line in (lines or []) if str(line or '').strip()]
+    if not safe_lines:
+        safe_lines = ['Offer Letter']
+
+    content_parts = ['BT', '/F1 11 Tf', '50 790 Td']
+    first = True
+    for line in safe_lines:
+        if not first:
+            content_parts.append('0 -16 Td')
+        first = False
+        content_parts.append(f'({_pdf_escape_text(line)}) Tj')
+    content_parts.append('ET')
+    stream_data = '\n'.join(content_parts).encode('latin-1', errors='replace')
+
+    objects = [
+        b'1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+        b'2 0 obj\n<< /Type /Pages /Count 1 /Kids [3 0 R] >>\nendobj\n',
+        b'3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>\nendobj\n',
+        b'4 0 obj\n<< /Length ' + str(len(stream_data)).encode('ascii') + b' >>\nstream\n' + stream_data + b'\nendstream\nendobj\n',
+        b'5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n',
+    ]
+
+    header = b'%PDF-1.4\n%\xe2\xe3\xcf\xd3\n'
+    body = b''
+    offsets = [0]
+    current_offset = len(header)
+    for obj in objects:
+        offsets.append(current_offset)
+        body += obj
+        current_offset += len(obj)
+
+    xref_offset = len(header) + len(body)
+    xref = b'xref\n0 6\n0000000000 65535 f \n'
+    for i in range(1, 6):
+        xref += f'{offsets[i]:010d} 00000 n \n'.encode('ascii')
+
+    trailer = b'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n' + str(xref_offset).encode('ascii') + b'\n%%EOF'
+    return header + body + xref + trailer
+
+
+def _build_offer_letter_pdf(employee_name, state_name, annual_income, components):
+    safe_name = str(employee_name or 'Candidate').strip() or 'Candidate'
+    safe_state = str(state_name or 'N/A').strip() or 'N/A'
+    annual_income_num = float(annual_income or 0)
+    lines = [
+        'Offer Letter',
+        f'Employee: {safe_name}',
+        f'State: {safe_state}',
+        f'Annual Income (CTC): INR {annual_income_num:,.2f}',
+        '-' * 65,
+        'Component                             %           Annual            Monthly',
+        '-' * 65,
+    ]
+    total_pct = 0.0
+    total_annual = 0.0
+    for comp in components or []:
+        name = str(comp.get('name') or '').strip()
+        if not name:
+            continue
+        try:
+            pct = float(comp.get('pct') or 0)
+        except (TypeError, ValueError):
+            pct = 0.0
+        annual_amt = (annual_income_num * pct) / 100.0
+        monthly_amt = annual_amt / 12.0
+        total_pct += pct
+        total_annual += annual_amt
+        lines.append(f'{name[:28]:<28} {pct:>8.2f}% {annual_amt:>14,.2f} {monthly_amt:>14,.2f}')
+
+    lines.extend([
+        '-' * 65,
+        f'Total                                {total_pct:>8.2f}% {total_annual:>14,.2f} {total_annual/12.0:>14,.2f}',
+        '',
+        'This is a system-generated offer letter summary.',
+    ])
+    return _build_simple_text_pdf(lines)
+
+
 def _pop_messages(request):
     """Pop and return all flash messages."""
     msgs = request.session.pop('_messages', [])
@@ -1932,6 +2016,82 @@ def document_list(request):
                     return redirect('document_list')
             except requests.exceptions.ConnectionError:
                 errors = ['Backend server unreachable.']
+
+        elif action == 'send_offer_letter_pdf':
+            permission_redirect = _require_module_permission(request, 'documents.create')
+            if permission_redirect:
+                return permission_redirect
+
+            candidate_name = (request.POST.get('offer_candidate_name') or '').strip()
+            recipient_email = (request.POST.get('offer_recipient_email') or '').strip()
+            state_name = (request.POST.get('offer_state') or '').strip() or 'Gujarat'
+            annual_income_raw = (request.POST.get('offer_annual_income') or '').strip()
+            components_raw = (request.POST.get('offer_components_json') or '').strip()
+
+            if not candidate_name:
+                errors = ['Candidate name is required for offer letter.']
+            if not recipient_email:
+                errors.append('Recipient email is required.')
+            else:
+                try:
+                    validate_email(recipient_email)
+                except ValidationError:
+                    errors.append('Recipient email is invalid.')
+
+            try:
+                annual_income = float(annual_income_raw or 0)
+                if annual_income <= 0:
+                    errors.append('Annual income must be greater than 0.')
+            except (TypeError, ValueError):
+                annual_income = 0
+                errors.append('Annual income must be a valid number.')
+
+            components = []
+            if components_raw:
+                try:
+                    parsed = json.loads(components_raw)
+                    if isinstance(parsed, list):
+                        for row in parsed:
+                            if not isinstance(row, dict):
+                                continue
+                            name = str(row.get('name') or '').strip()
+                            if not name:
+                                continue
+                            try:
+                                pct = float(row.get('pct') or 0)
+                            except (TypeError, ValueError):
+                                pct = 0
+                            components.append({'name': name, 'pct': pct})
+                except json.JSONDecodeError:
+                    errors.append('Invalid component data. Please calculate again and submit.')
+
+            if not components:
+                errors.append('Add at least one salary component.')
+
+            if not errors:
+                try:
+                    pdf_bytes = _build_offer_letter_pdf(candidate_name, state_name, annual_income, components)
+                    file_name = f"offer_letter_{slugify(candidate_name) or 'candidate'}.pdf"
+                    send_branded_email(
+                        subject=f'Offer Letter - {candidate_name}',
+                        recipient_list=[recipient_email],
+                        heading='Offer Letter',
+                        greeting='Hello,',
+                        lines=[
+                            f'Please find attached your offer letter summary.',
+                            f'Candidate: {candidate_name}',
+                            f'State: {state_name}',
+                            f'Annual Income (CTC): INR {annual_income:,.2f}',
+                        ],
+                        closing='Regards, HR Team',
+                        app_settings=request.session.get('app_settings', {}),
+                        attachments=[(file_name, pdf_bytes, 'application/pdf')],
+                        fail_silently=False,
+                    )
+                    _flash(request, f'Offer letter PDF sent successfully to {recipient_email}.', 'success')
+                    return redirect('document_list')
+                except Exception:
+                    errors = ['Failed to generate or send offer letter PDF.']
 
     return render(request, 'documents/list.html', {
         'documents': documents,
@@ -4345,6 +4505,30 @@ def leave_balance(request):
         if resp.status_code == 200:
             payload = resp.json()
             balances = payload.get('results', payload) if isinstance(payload, dict) else payload
+            normalized_rows = []
+            for row in balances or []:
+                row_balances = row.get('balances', []) if isinstance(row, dict) else []
+                normalized_balances = []
+                for bal in row_balances:
+                    if not isinstance(bal, dict):
+                        continue
+                    total_value = bal.get('total', bal.get('total_days', 0))
+                    used_value = bal.get('used', bal.get('used_days', bal.get('consumed', 0)))
+                    available_value = bal.get(
+                        'available',
+                        bal.get('remaining', bal.get('remaining_days', total_value)),
+                    )
+                    normalized_balances.append({
+                        **bal,
+                        'total': total_value,
+                        'used': used_value,
+                        'available': available_value,
+                    })
+                normalized_rows.append({
+                    **row,
+                    'balances': normalized_balances,
+                } if isinstance(row, dict) else row)
+            balances = normalized_rows
         else:
             errors = _error_list_from_response(resp, 'Failed to load leave balances.')
     except requests.exceptions.ConnectionError:
@@ -6195,10 +6379,13 @@ def dynamic_entity_create(request, model_id):
         if probe_resp.status_code == 200:
             probe_model = probe_resp.json()
             is_attendance_model = str(probe_model.get('slug', '')).lower() == 'attendance'
-            permission_redirect = _require_module_permission(
-                request,
-                'attendance.create' if is_attendance_model else f'dynamic_model.{model_id}.create'
-            )
+            if is_attendance_model:
+                permission_redirect = None
+                if not _has_any_module_permission(request, ['attendance.create', 'attendance.edit']):
+                    _flash(request, 'You do not have permission to mark attendance.', 'error')
+                    permission_redirect = redirect('dashboard')
+            else:
+                permission_redirect = _require_module_permission(request, f'dynamic_model.{model_id}.create')
             if permission_redirect:
                 return permission_redirect
     except requests.exceptions.ConnectionError:

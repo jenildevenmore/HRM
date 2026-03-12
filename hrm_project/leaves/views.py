@@ -351,6 +351,12 @@ class LeaveBalanceView(_LeaveAccessMixin, APIView):
                 client_id=profile.client_id,
                 is_active=True,
             ).order_by('name')
+            # Fallback: if only one active type is present, include all client leave types.
+            # This avoids incomplete balance cards when types were accidentally deactivated.
+            if leave_types.count() <= 1:
+                leave_types = LeaveType.objects.only('name', 'is_paid', 'max_days_per_year').filter(
+                    client_id=profile.client_id,
+                ).order_by('name')
 
         leave_types_list = list(leave_types)
         employees_list = list(employees)

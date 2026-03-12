@@ -23,6 +23,7 @@
 <div class="card" style="margin-bottom:20px;">
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
         <button type="button" class="btn btn-secondary doc-section-btn" data-target="section-create">Create Document</button>
+        <button type="button" class="btn btn-secondary doc-section-btn" data-target="section-offer">Offer Letter Builder</button>
         <button type="button" class="btn btn-secondary doc-section-btn" data-target="section-public">Public Upload Links</button>
         <button type="button" class="btn btn-secondary doc-section-btn" data-target="section-list">Documents List</button>
     </div>
@@ -76,11 +77,11 @@
         <div class="form-row">
             <div class="form-group">
                 <label>Title *</label>
-                <input type="text" name="title" value="" placeholder="Document title" required>
+                <input type="text" id="docCreateTitle" name="title" value="" placeholder="Document title" required>
             </div>
             <div class="form-group">
                 <label>Category</label>
-                <input type="text" name="category" value="" placeholder="Document category">
+                <input type="text" id="docCreateCategory" name="category" value="" placeholder="Document category">
             </div>
         </div>
         <div class="form-row">
@@ -99,7 +100,7 @@
         </div>
         <div class="form-group">
             <label>Notes</label>
-            <textarea name="notes" rows="3" placeholder="Optional notes"></textarea>
+            <textarea id="docCreateNotes" name="notes" rows="3" placeholder="Optional notes"></textarea>
         </div>
         <div class="form-group">
             <label>Document File</label>
@@ -112,6 +113,90 @@
 </div>
 {% endif %}
     </div>
+
+<div id="section-offer" class="doc-section">
+{% if role in ['superadmin', 'admin'] or 'documents.create' in module_permissions %}
+<div class="form-card" style="max-width:1100px;margin-bottom:20px;">
+    <h3 class="section-title">Offer Letter Salary Breakup Builder</h3>
+    <p class="section-subtitle">Set annual income, state, and percentage components. Amounts are auto calculated and can be copied into document notes.</p>
+
+    <div class="form-row">
+        <div class="form-group">
+            <label>State *</label>
+            <select id="offerState">
+                <option value="gujarat" selected>Gujarat</option>
+                <option value="maharashtra">Maharashtra</option>
+                <option value="rajasthan">Rajasthan</option>
+                <option value="madhya_pradesh">Madhya Pradesh</option>
+                <option value="other">Other</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Annual Income (CTC) *</label>
+            <input type="number" id="offerAnnualIncome" min="0" step="1" placeholder="e.g. 1200000">
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label>Allowance Components (%)</label>
+        <div id="offerComponentsWrap" style="border:1px solid var(--border);border-radius:10px;padding:10px;background:rgba(255,255,255,0.01);display:grid;gap:8px;"></div>
+        <div style="display:flex;gap:8px;margin-top:10px;">
+            <button type="button" id="offerAddComponentBtn" class="btn btn-secondary btn-sm">+ Add Component</button>
+            <span id="offerPctSummary" style="color:var(--text-muted);font-size:13px;align-self:center;"></span>
+        </div>
+    </div>
+
+    <div class="table-wrapper" style="margin-top:14px;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Component</th>
+                    <th>Percentage</th>
+                    <th>Annual Amount</th>
+                    <th>Monthly Amount</th>
+                </tr>
+            </thead>
+            <tbody id="offerBreakupBody">
+                <tr><td colspan="4" style="color:var(--text-muted);">Enter annual income and percentages to preview breakup.</td></tr>
+            </tbody>
+            <tfoot>
+                <tr>
+                    <th>Total</th>
+                    <th id="offerTotalPct">0%</th>
+                    <th id="offerTotalAnnual">0.00</th>
+                    <th id="offerTotalMonthly">0.00</th>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+
+    <div class="form-actions">
+        <button type="button" id="offerUseInCreateBtn" class="btn btn-primary">Use In Create Document</button>
+    </div>
+
+    <form method="post" id="offerSendForm" style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px;">
+        {{ csrf_input }}
+        <input type="hidden" name="action" value="send_offer_letter_pdf">
+        <input type="hidden" name="offer_state" id="offerStateHidden">
+        <input type="hidden" name="offer_annual_income" id="offerAnnualIncomeHidden">
+        <input type="hidden" name="offer_components_json" id="offerComponentsJsonHidden">
+        <div class="form-row">
+            <div class="form-group">
+                <label>Candidate Name *</label>
+                <input type="text" name="offer_candidate_name" id="offerCandidateName" placeholder="e.g. Rahul Patel" required>
+            </div>
+            <div class="form-group">
+                <label>Recipient Email *</label>
+                <input type="email" name="offer_recipient_email" id="offerRecipientEmail" placeholder="employee@example.com" required>
+            </div>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Generate PDF & Send Email</button>
+        </div>
+    </form>
+</div>
+{% endif %}
+</div>
 
 <div id="section-public" class="doc-section">
 <div class="card" style="margin-bottom:20px;">
@@ -511,6 +596,7 @@
     const searchCard = document.getElementById('documents-search-card');
     const sections = {
         'section-create': document.getElementById('section-create'),
+        'section-offer': document.getElementById('section-offer'),
         'section-public': document.getElementById('section-public'),
         'section-list': document.getElementById('section-list'),
     };
@@ -530,6 +616,7 @@
             searchCard.style.display = targetId === 'section-list' ? 'block' : 'none';
         }
     }
+    window.showDocumentSection = showSection;
 
     const hasEditButtons = document.querySelector('.doc-edit-btn');
     showSection(hasEditButtons ? 'section-list' : 'section-public');
@@ -539,6 +626,199 @@
             showSection(btn.getAttribute('data-target'));
         });
     });
+})();
+
+(function () {
+    const stateEl = document.getElementById('offerState');
+    const annualEl = document.getElementById('offerAnnualIncome');
+    const componentsWrap = document.getElementById('offerComponentsWrap');
+    const addBtn = document.getElementById('offerAddComponentBtn');
+    const summaryEl = document.getElementById('offerPctSummary');
+    const tbody = document.getElementById('offerBreakupBody');
+    const totalPctEl = document.getElementById('offerTotalPct');
+    const totalAnnualEl = document.getElementById('offerTotalAnnual');
+    const totalMonthlyEl = document.getElementById('offerTotalMonthly');
+    const useBtn = document.getElementById('offerUseInCreateBtn');
+    const sendForm = document.getElementById('offerSendForm');
+    const stateHidden = document.getElementById('offerStateHidden');
+    const annualHidden = document.getElementById('offerAnnualIncomeHidden');
+    const componentsHidden = document.getElementById('offerComponentsJsonHidden');
+    if (!stateEl || !annualEl || !componentsWrap || !addBtn || !summaryEl || !tbody || !totalPctEl || !totalAnnualEl || !totalMonthlyEl || !useBtn) return;
+
+    const defaultsByState = {
+        gujarat: [
+            { name: 'Basic', pct: 40 },
+            { name: 'HRA', pct: 20 },
+            { name: 'Conveyance', pct: 10 },
+            { name: 'Medical', pct: 10 },
+            { name: 'Special Allowance', pct: 20 }
+        ],
+        maharashtra: [
+            { name: 'Basic', pct: 40 },
+            { name: 'HRA', pct: 20 },
+            { name: 'Special Allowance', pct: 30 },
+            { name: 'Other Allowance', pct: 10 }
+        ],
+        rajasthan: [
+            { name: 'Basic', pct: 40 },
+            { name: 'HRA', pct: 20 },
+            { name: 'Special Allowance', pct: 40 }
+        ],
+        madhya_pradesh: [
+            { name: 'Basic', pct: 40 },
+            { name: 'HRA', pct: 20 },
+            { name: 'Special Allowance', pct: 40 }
+        ],
+        other: [
+            { name: 'Basic', pct: 40 },
+            { name: 'HRA', pct: 20 },
+            { name: 'Special Allowance', pct: 40 }
+        ]
+    };
+
+    function money(v) {
+        const n = Number(v || 0);
+        return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function componentRows() {
+        return Array.from(componentsWrap.querySelectorAll('.offer-comp-row'));
+    }
+
+    function renderComponents(items) {
+        componentsWrap.innerHTML = '';
+        (items || []).forEach(function (item) {
+            const row = document.createElement('div');
+            row.className = 'offer-comp-row';
+            row.style.display = 'grid';
+            row.style.gridTemplateColumns = '1fr 160px auto';
+            row.style.gap = '8px';
+            row.innerHTML =
+                '<input type="text" class="offer-comp-name" placeholder="Component name">' +
+                '<input type="number" class="offer-comp-pct" min="0" max="100" step="0.01" placeholder="%">' +
+                '<button type="button" class="btn btn-danger btn-sm offer-comp-remove">Remove</button>';
+            const nameInput = row.querySelector('.offer-comp-name');
+            const pctInput = row.querySelector('.offer-comp-pct');
+            const removeBtn = row.querySelector('.offer-comp-remove');
+            nameInput.value = item.name || '';
+            pctInput.value = item.pct != null ? String(item.pct) : '';
+            nameInput.addEventListener('input', recalc);
+            pctInput.addEventListener('input', function () {
+                if (pctInput.value !== '' && Number(pctInput.value) > 100) pctInput.value = '100';
+                recalc();
+            });
+            removeBtn.addEventListener('click', function () {
+                row.remove();
+                recalc();
+            });
+            componentsWrap.appendChild(row);
+        });
+        recalc();
+    }
+
+    function recalc() {
+        const annual = Number(annualEl.value || 0);
+        const rows = componentRows();
+        let totalPct = 0;
+        let totalAnnual = 0;
+        tbody.innerHTML = '';
+
+        rows.forEach(function (row) {
+            const name = (row.querySelector('.offer-comp-name').value || '').trim();
+            const pct = Number(row.querySelector('.offer-comp-pct').value || 0);
+            if (!name && !pct) return;
+            const annualAmt = (annual * pct) / 100;
+            const monthlyAmt = annualAmt / 12;
+            totalPct += pct;
+            totalAnnual += annualAmt;
+            const tr = document.createElement('tr');
+            tr.innerHTML =
+                '<td>' + (name || '-') + '</td>' +
+                '<td>' + pct.toFixed(2) + '%</td>' +
+                '<td>' + money(annualAmt) + '</td>' +
+                '<td>' + money(monthlyAmt) + '</td>';
+            tbody.appendChild(tr);
+        });
+
+        if (!tbody.children.length) {
+            const tr = document.createElement('tr');
+            tr.innerHTML = '<td colspan="4" style="color:var(--text-muted);">Enter annual income and percentages to preview breakup.</td>';
+            tbody.appendChild(tr);
+        }
+
+        summaryEl.textContent = 'Total Percentage: ' + totalPct.toFixed(2) + '%' + (totalPct > 100 ? ' (Over 100%)' : '');
+        summaryEl.style.color = totalPct > 100 ? 'var(--error)' : 'var(--text-muted)';
+        totalPctEl.textContent = totalPct.toFixed(2) + '%';
+        totalAnnualEl.textContent = money(totalAnnual);
+        totalMonthlyEl.textContent = money(totalAnnual / 12);
+    }
+
+    function collectComponents() {
+        return componentRows().map(function (row) {
+            return {
+                name: (row.querySelector('.offer-comp-name').value || '').trim(),
+                pct: Number(row.querySelector('.offer-comp-pct').value || 0)
+            };
+        }).filter(function (row) {
+            return row.name && row.pct >= 0;
+        });
+    }
+
+    addBtn.addEventListener('click', function () {
+        const current = componentRows().map(function (row) {
+            return {
+                name: row.querySelector('.offer-comp-name').value || '',
+                pct: row.querySelector('.offer-comp-pct').value || ''
+            };
+        });
+        current.push({ name: '', pct: '' });
+        renderComponents(current);
+    });
+
+    stateEl.addEventListener('change', function () {
+        renderComponents(defaultsByState[stateEl.value] || defaultsByState.other);
+    });
+    annualEl.addEventListener('input', recalc);
+
+    useBtn.addEventListener('click', function () {
+        const annual = Number(annualEl.value || 0);
+        const rows = componentRows();
+        const lines = [];
+        lines.push('Offer Letter Salary Breakup');
+        lines.push('State: ' + (stateEl.options[stateEl.selectedIndex] ? stateEl.options[stateEl.selectedIndex].text : stateEl.value));
+        lines.push('Annual Income (CTC): INR ' + money(annual));
+        lines.push('--------------------------------------------------');
+        rows.forEach(function (row) {
+            const name = (row.querySelector('.offer-comp-name').value || '').trim();
+            const pct = Number(row.querySelector('.offer-comp-pct').value || 0);
+            if (!name && !pct) return;
+            const annualAmt = (annual * pct) / 100;
+            const monthlyAmt = annualAmt / 12;
+            lines.push(name + ': ' + pct.toFixed(2) + '% | Annual INR ' + money(annualAmt) + ' | Monthly INR ' + money(monthlyAmt));
+        });
+        lines.push('--------------------------------------------------');
+        lines.push('Total Percentage: ' + totalPctEl.textContent);
+        lines.push('Total Annual: INR ' + totalAnnualEl.textContent);
+        lines.push('Total Monthly: INR ' + totalMonthlyEl.textContent);
+
+        const titleInput = document.getElementById('docCreateTitle');
+        const categoryInput = document.getElementById('docCreateCategory');
+        const notesInput = document.getElementById('docCreateNotes');
+        if (titleInput && !titleInput.value) titleInput.value = 'Offer Letter - Salary Breakup';
+        if (categoryInput && !categoryInput.value) categoryInput.value = 'Offer Letter';
+        if (notesInput) notesInput.value = lines.join('\n');
+        if (typeof window.showDocumentSection === 'function') window.showDocumentSection('section-create');
+    });
+
+    if (sendForm) {
+        sendForm.addEventListener('submit', function () {
+            if (stateHidden) stateHidden.value = stateEl.value || '';
+            if (annualHidden) annualHidden.value = annualEl.value || '';
+            if (componentsHidden) componentsHidden.value = JSON.stringify(collectComponents());
+        });
+    }
+
+    renderComponents(defaultsByState[stateEl.value] || defaultsByState.other);
 })();
 
 (function () {
