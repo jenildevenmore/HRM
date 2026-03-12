@@ -21,6 +21,7 @@ class ClientSerializer(serializers.ModelSerializer):
         'settings',
         'policy',
         'documents',
+        'import_export',
         'role_management',
         'shift_management',
         'bank_management',

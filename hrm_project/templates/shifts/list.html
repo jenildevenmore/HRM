@@ -21,6 +21,13 @@
 {% endif %}
 
 <div class="card" style="margin-bottom:20px;">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button type="button" class="btn btn-secondary shift-section-btn" data-target="shift-section-create">Create Shift</button>
+        <button type="button" class="btn btn-secondary shift-section-btn" data-target="shift-section-list">Shifts List</button>
+    </div>
+</div>
+
+<div id="shifts-search-card" class="card" style="margin-bottom:20px;">
     <form method="get" class="form-row">
         <div class="form-group">
             <label>Search</label>
@@ -41,69 +48,67 @@
     </form>
 </div>
 
-{% if role in ['superadmin', 'admin'] or 'shifts.create' in module_permissions or edit_item %}
+<div id="shift-section-create" class="shift-section">
+{% if role in ['superadmin', 'admin'] or 'shifts.create' in module_permissions %}
 <div class="form-card" style="max-width:980px;margin-bottom:20px;">
     <form method="post" action="{{ url('shift_list') }}">
         {{ csrf_input }}
-        <input type="hidden" name="edit_id" value="{{ edit_item.id if edit_item else '' }}">
+        <input type="hidden" name="edit_id" value="">
         <div class="form-row">
             <div class="form-group">
                 <label>Shift Name *</label>
-                <input type="text" name="name" value="{{ edit_item.name if edit_item else '' }}" required>
+                <input type="text" name="name" value="" required>
             </div>
             <div class="form-group">
                 <label>Code</label>
-                <input type="text" name="code" value="{{ edit_item.code if edit_item else '' }}" placeholder="e.g. GEN-A">
+                <input type="text" name="code" value="" placeholder="e.g. GEN-A">
             </div>
         </div>
         <div class="form-row">
             <div class="form-group">
                 <label>Start Time *</label>
-                <input type="time" name="start_time" value="{{ edit_item.start_time if edit_item else '' }}" required>
+                <input type="time" name="start_time" value="" required>
             </div>
             <div class="form-group">
                 <label>End Time *</label>
-                <input type="time" name="end_time" value="{{ edit_item.end_time if edit_item else '' }}" required>
+                <input type="time" name="end_time" value="" required>
             </div>
         </div>
         <div class="form-row">
             <div class="form-group">
                 <label>Grace Minutes</label>
-                <input type="number" name="grace_minutes" min="0" value="{{ edit_item.grace_minutes if edit_item else 0 }}">
+                <input type="number" name="grace_minutes" min="0" value="0">
             </div>
             <div class="form-group">
                 <label>Weekly Off</label>
-                <input type="text" name="weekly_off" value="{{ edit_item.weekly_off if edit_item else '' }}" placeholder="Sunday">
+                <input type="text" name="weekly_off" value="" placeholder="Sunday">
             </div>
         </div>
         <div class="form-row">
             <div class="form-group">
                 <label>Night Shift</label>
-                {% set night_value = edit_item.is_night_shift if edit_item else false %}
                 <select name="is_night_shift">
-                    <option value="false" {% if not night_value %}selected{% endif %}>No</option>
-                    <option value="true" {% if night_value %}selected{% endif %}>Yes</option>
+                    <option value="false" selected>No</option>
+                    <option value="true">Yes</option>
                 </select>
             </div>
             <div class="form-group">
                 <label>Active</label>
-                {% set active_value = edit_item.is_active if edit_item else true %}
                 <select name="is_active">
-                    <option value="true" {% if active_value %}selected{% endif %}>Yes</option>
-                    <option value="false" {% if not active_value %}selected{% endif %}>No</option>
+                    <option value="true" selected>Yes</option>
+                    <option value="false">No</option>
                 </select>
             </div>
         </div>
         <div class="form-actions">
-            <button type="submit" class="btn btn-primary">{{ 'Update Shift' if edit_item else 'Create Shift' }}</button>
-            {% if edit_item %}
-            <a href="{{ url('shift_list') }}" class="btn btn-secondary">Cancel Edit</a>
-            {% endif %}
+            <button type="submit" class="btn btn-primary">Create Shift</button>
         </div>
     </form>
 </div>
 {% endif %}
+</div>
 
+<div id="shift-section-list" class="shift-section">
 {% if shifts %}
 <div class="table-wrapper">
     <table>
@@ -133,7 +138,19 @@
                 <td>{{ 'Active' if s.is_active else 'Inactive' }}</td>
                 <td>
                     {% if role in ['superadmin', 'admin'] or 'shifts.edit' in module_permissions %}
-                    <a href="{{ url('shift_list') }}?edit={{ s.id }}" class="btn btn-secondary btn-sm">Edit</a>
+                    <button
+                        type="button"
+                        class="btn btn-secondary btn-sm shift-edit-btn"
+                        data-id="{{ s.id }}"
+                        data-name="{{ s.name|e }}"
+                        data-code="{{ s.code|e }}"
+                        data-start-time="{{ s.start_time|e }}"
+                        data-end-time="{{ s.end_time|e }}"
+                        data-grace-minutes="{{ s.grace_minutes }}"
+                        data-weekly-off="{{ s.weekly_off|e }}"
+                        data-is-night-shift="{{ 'true' if s.is_night_shift else 'false' }}"
+                        data-is-active="{{ 'true' if s.is_active else 'false' }}"
+                    >Edit</button>
                     {% endif %}
                     {% if role in ['superadmin', 'admin'] or 'shifts.delete' in module_permissions %}
                     <form method="post" action="{{ url('shift_delete', args=[s.id]) }}" style="display:inline;">
@@ -150,4 +167,143 @@
 {% else %}
 <div class="card"><div class="empty-state"><p>No shifts found.</p></div></div>
 {% endif %}
+</div>
+
+{% if role in ['superadmin', 'admin'] or 'shifts.edit' in module_permissions %}
+<div id="shiftEditModal" style="display:none;position:fixed;inset:0;background:rgba(3,6,16,0.82);backdrop-filter:blur(2px);z-index:3000;padding:24px;overflow:auto;">
+    <div class="form-card" style="max-width:920px;margin:30px auto;background:#0f1326;border:1px solid var(--border);box-shadow:0 20px 55px rgba(0,0,0,0.55);position:relative;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+            <h3 class="section-title" style="margin:0;">Edit Shift</h3>
+            <button type="button" id="shiftEditModalClose" class="btn btn-secondary btn-sm">Close</button>
+        </div>
+        <form method="post" action="{{ url('shift_list') }}" style="margin-top:12px;">
+            {{ csrf_input }}
+            <input type="hidden" name="edit_id" id="shiftEditId">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Shift Name *</label>
+                    <input type="text" name="name" id="shiftEditName" required>
+                </div>
+                <div class="form-group">
+                    <label>Code</label>
+                    <input type="text" name="code" id="shiftEditCode" placeholder="e.g. GEN-A">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Start Time *</label>
+                    <input type="time" name="start_time" id="shiftEditStartTime" required>
+                </div>
+                <div class="form-group">
+                    <label>End Time *</label>
+                    <input type="time" name="end_time" id="shiftEditEndTime" required>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Grace Minutes</label>
+                    <input type="number" name="grace_minutes" id="shiftEditGraceMinutes" min="0">
+                </div>
+                <div class="form-group">
+                    <label>Weekly Off</label>
+                    <input type="text" name="weekly_off" id="shiftEditWeeklyOff">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Night Shift</label>
+                    <select name="is_night_shift" id="shiftEditIsNightShift">
+                        <option value="false">No</option>
+                        <option value="true">Yes</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Active</label>
+                    <select name="is_active" id="shiftEditIsActive">
+                        <option value="true">Yes</option>
+                        <option value="false">No</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Update Shift</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<script>
+(function () {
+    const sectionButtons = Array.from(document.querySelectorAll('.shift-section-btn'));
+    const searchCard = document.getElementById('shifts-search-card');
+    const sections = {
+        'shift-section-create': document.getElementById('shift-section-create'),
+        'shift-section-list': document.getElementById('shift-section-list'),
+    };
+    if (!sectionButtons.length) return;
+
+    function showSection(targetId) {
+        Object.keys(sections).forEach(function (key) {
+            if (!sections[key]) return;
+            sections[key].style.display = key === targetId ? 'block' : 'none';
+        });
+        sectionButtons.forEach(function (btn) {
+            const active = btn.getAttribute('data-target') === targetId;
+            btn.classList.toggle('btn-primary', active);
+            btn.classList.toggle('btn-secondary', !active);
+        });
+        if (searchCard) {
+            searchCard.style.display = targetId === 'shift-section-create' ? 'none' : 'block';
+        }
+    }
+
+    showSection('shift-section-list');
+    sectionButtons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            showSection(btn.getAttribute('data-target'));
+        });
+    });
+})();
+
+(function () {
+    const modal = document.getElementById('shiftEditModal');
+    const closeBtn = document.getElementById('shiftEditModalClose');
+    const openButtons = Array.from(document.querySelectorAll('.shift-edit-btn'));
+    if (!modal || !closeBtn || !openButtons.length) return;
+
+    function bind(btn) {
+        document.getElementById('shiftEditId').value = btn.getAttribute('data-id') || '';
+        document.getElementById('shiftEditName').value = btn.getAttribute('data-name') || '';
+        document.getElementById('shiftEditCode').value = btn.getAttribute('data-code') || '';
+        document.getElementById('shiftEditStartTime').value = btn.getAttribute('data-start-time') || '';
+        document.getElementById('shiftEditEndTime').value = btn.getAttribute('data-end-time') || '';
+        document.getElementById('shiftEditGraceMinutes').value = btn.getAttribute('data-grace-minutes') || '0';
+        document.getElementById('shiftEditWeeklyOff').value = btn.getAttribute('data-weekly-off') || '';
+        document.getElementById('shiftEditIsNightShift').value = btn.getAttribute('data-is-night-shift') || 'false';
+        document.getElementById('shiftEditIsActive').value = btn.getAttribute('data-is-active') || 'true';
+    }
+
+    function openModal(btn) {
+        bind(btn);
+        modal.style.display = 'block';
+        document.body.style.overflow = 'hidden';
+    }
+    function closeModal() {
+        modal.style.display = 'none';
+        document.body.style.overflow = '';
+    }
+
+    openButtons.forEach(function (btn) {
+        btn.addEventListener('click', function () { openModal(btn); });
+    });
+    closeBtn.addEventListener('click', closeModal);
+    modal.addEventListener('click', function (event) {
+        if (event.target === modal) closeModal();
+    });
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && modal.style.display === 'block') closeModal();
+    });
+})();
+</script>
 {% endblock %}

@@ -144,6 +144,45 @@
                     </div>
                 </div>
                 <div class="form-group">
+                    <label>Sidebar Logo URL</label>
+                    <input type="url" name="sidebar_logo_url" placeholder="https://example.com/sidebar-logo.png" value="{{ (ui.sidebar_logo_url if ui else '') or '' }}">
+                </div>
+                {% if (ui and ui.sidebar_logo_url) or (settings_data.brand and settings_data.brand.logo_url) %}
+                <div class="form-group">
+                    <label>Current Sidebar Logo</label>
+                    <div style="display:flex;align-items:center;gap:12px;">
+                        <img src="{{ (ui.sidebar_logo_url if (ui and ui.sidebar_logo_url) else settings_data.brand.logo_url) }}" alt="Current sidebar logo" style="width:48px;height:48px;border-radius:10px;object-fit:cover;border:1px solid var(--border);">
+                        <label class="addon-item" style="max-width:260px;">
+                            <input type="checkbox" name="remove_sidebar_logo">
+                            <span>Remove sidebar logo (fallback to Brand Logo)</span>
+                        </label>
+                    </div>
+                </div>
+                {% endif %}
+                <div class="form-group">
+                    <label>Sidebar Logo File (Local Upload)</label>
+                    <input type="file" name="sidebar_logo_file" accept="image/*">
+                </div>
+                {% set module_icons = ui.sidebar_module_icons or {} %}
+                <h3 class="section-title" style="margin-top:8px;">Module Logos (Sidebar)</h3>
+                <input type="hidden" name="sidebar_module_icon_keys" value="{{ sidebar_module_icon_keys_csv or '' }}">
+                {% for module in sidebar_logo_modules %}
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>{{ module.label }} Logo URL</label>
+                        <input type="url" name="module_logo_{{ module.key }}_url" placeholder="https://example.com/{{ module.key }}.png" value="{{ module_icons.get(module.key) or '' }}">
+                    </div>
+                    <div class="form-group">
+                        <label>{{ module.label }} Logo File</label>
+                        <input type="file" name="module_logo_{{ module.key }}_file" accept="image/*">
+                        <label class="addon-item" style="max-width:260px;margin-top:8px;">
+                            <input type="checkbox" name="remove_module_logo_{{ module.key }}">
+                            <span>Remove {{ module.label }} logo</span>
+                        </label>
+                    </div>
+                </div>
+                {% endfor %}
+                <div class="form-group">
                     <label>Sidebar Style</label>
                     <div class="settings-choice-row">
                         <input id="sidebar_style_plain" type="radio" name="sidebar_style" value="plain" {% if (ui.sidebar_style or 'plain') == 'plain' %}checked{% endif %}>
@@ -167,9 +206,9 @@
                 <h3 class="section-title" style="margin-top:8px;">Theme Mode</h3>
                 <div class="form-group">
                     <div class="settings-choice-row">
-                        <input id="theme_mode_light" type="radio" name="theme_mode" value="light" {% if ui.theme_mode == 'light' %}checked{% endif %}>
+                        <input id="theme_mode_light" type="radio" name="theme_mode" value="light" {% if (ui.theme_mode or 'light') == 'light' %}checked{% endif %}>
                         <label class="settings-choice" for="theme_mode_light">Light</label>
-                        <input id="theme_mode_dark" type="radio" name="theme_mode" value="dark" {% if (ui.theme_mode or 'dark') == 'dark' %}checked{% endif %}>
+                        <input id="theme_mode_dark" type="radio" name="theme_mode" value="dark" {% if ui.theme_mode == 'dark' %}checked{% endif %}>
                         <label class="settings-choice" for="theme_mode_dark">Dark</label>
                         <input id="theme_mode_system" type="radio" name="theme_mode" value="system" {% if ui.theme_mode == 'system' %}checked{% endif %}>
                         <label class="settings-choice" for="theme_mode_system">System</label>
@@ -359,6 +398,9 @@ document.addEventListener('DOMContentLoaded', function () {
     var logoUrlInput = document.querySelector('input[name="logo_url"]');
     var logoFileInput = document.querySelector('input[name="logo_file"]');
     var removeLogoInput = document.querySelector('input[name="remove_logo"]');
+    var sidebarLogoUrlInput = document.querySelector('input[name="sidebar_logo_url"]');
+    var sidebarLogoFileInput = document.querySelector('input[name="sidebar_logo_file"]');
+    var removeSidebarLogoInput = document.querySelector('input[name="remove_sidebar_logo"]');
     var faviconUrlInput = document.querySelector('input[name="favicon_url"]');
     var faviconFileInput = document.querySelector('input[name="favicon_file"]');
     var removeFaviconInput = document.querySelector('input[name="remove_favicon"]');
@@ -577,7 +619,17 @@ document.addEventListener('DOMContentLoaded', function () {
         ensureSidebarBrandText(brandName || 'HRM System');
 
         var logoSrc = '';
-        if (removeLogoInput && removeLogoInput.checked) {
+        if (removeSidebarLogoInput && removeSidebarLogoInput.checked) {
+            logoSrc = '';
+            cleanupObjectUrl('logo');
+        } else if (sidebarLogoFileInput && sidebarLogoFileInput.files && sidebarLogoFileInput.files[0]) {
+            cleanupObjectUrl('logo');
+            liveLogoObjectUrl = URL.createObjectURL(sidebarLogoFileInput.files[0]);
+            logoSrc = liveLogoObjectUrl;
+        } else if (sidebarLogoUrlInput && (sidebarLogoUrlInput.value || '').trim()) {
+            cleanupObjectUrl('logo');
+            logoSrc = sidebarLogoUrlInput.value.trim();
+        } else if (removeLogoInput && removeLogoInput.checked) {
             logoSrc = '';
             cleanupObjectUrl('logo');
         } else if (logoFileInput && logoFileInput.files && logoFileInput.files[0]) {
@@ -671,7 +723,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
-    [brandNameInput, logoUrlInput, logoFileInput, removeLogoInput, faviconUrlInput, faviconFileInput, removeFaviconInput].forEach(function (field) {
+    [brandNameInput, logoUrlInput, logoFileInput, removeLogoInput, sidebarLogoUrlInput, sidebarLogoFileInput, removeSidebarLogoInput, faviconUrlInput, faviconFileInput, removeFaviconInput].forEach(function (field) {
         if (!field) return;
         field.addEventListener('input', applyLiveBrandPreview);
         field.addEventListener('change', applyLiveBrandPreview);

@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}Import / Export - HRM System{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <span class="current">Import / Export</span>
+</div>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Import / Export</h1>
+        <p class="page-subtitle">Bulk import employees from CSV and export current employee data.</p>
+    </div>
+</div>
+
+{% if errors %}
+<ul class="error-list">
+    {% for err in errors %}<li>{{ err }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<div class="card" style="margin-bottom:20px;">
+    <h3 class="section-title">Import Employees (CSV)</h3>
+    <p class="section-subtitle">Required columns: {{ sample_headers|join(', ') }}.</p>
+    <form method="post" enctype="multipart/form-data" class="form-row">
+        {{ csrf_input }}
+        <input type="hidden" name="action" value="import_employees">
+        <div class="form-group">
+            <label>CSV File</label>
+            <input type="file" name="csv_file" accept=".csv" required>
+        </div>
+        <div class="form-actions" style="margin-top:28px;">
+            <button type="submit" class="btn btn-primary">Import Employees</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h3 class="section-title">Export Employees</h3>
+    <p class="section-subtitle">Download all current employees as CSV.</p>
+    <form method="post">
+        {{ csrf_input }}
+        <input type="hidden" name="action" value="export_employees">
+        <button type="submit" class="btn btn-secondary">Export CSV</button>
+    </form>
+</div>
+{% endblock %}

@@ -21,6 +21,13 @@
 {% endif %}
 
 <div class="card" style="margin-bottom:20px;">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button type="button" class="btn btn-secondary holiday-section-btn" data-target="holiday-section-create">Create Holiday</button>
+        <button type="button" class="btn btn-secondary holiday-section-btn" data-target="holiday-section-list">Holidays List</button>
+    </div>
+</div>
+
+<div id="holidays-search-card" class="card" style="margin-bottom:20px;">
     <form method="get" class="form-row">
         <div class="form-group">
             <label>Search</label>
@@ -41,63 +48,61 @@
     </form>
 </div>
 
-{% if role in ['superadmin', 'admin'] or 'holidays.create' in module_permissions or edit_item %}
+<div id="holiday-section-create" class="holiday-section">
+{% if role in ['superadmin', 'admin'] or 'holidays.create' in module_permissions %}
 <div class="form-card" style="max-width:980px;margin-bottom:20px;">
     <form method="post" action="{{ url('holiday_list') }}">
         {{ csrf_input }}
-        <input type="hidden" name="edit_id" value="{{ edit_item.id if edit_item else '' }}">
+        <input type="hidden" name="edit_id" value="">
         <div class="form-row">
             <div class="form-group">
                 <label>Name *</label>
-                <input type="text" name="name" value="{{ edit_item.name if edit_item else '' }}" placeholder="e.g. Diwali" required>
+                <input type="text" name="name" value="" placeholder="e.g. Diwali" required>
             </div>
             <div class="form-group">
                 <label>Holiday Type</label>
-                <input type="text" name="holiday_type" value="{{ edit_item.holiday_type if edit_item else '' }}" placeholder="e.g. Festival Holiday">
+                <input type="text" name="holiday_type" value="" placeholder="e.g. Festival Holiday">
             </div>
         </div>
         <div class="form-row">
             <div class="form-group">
                 <label>Start Date *</label>
-                <input type="date" name="start_date" value="{{ edit_item.start_date if edit_item else '' }}" required>
+                <input type="date" name="start_date" value="" required>
             </div>
             <div class="form-group">
                 <label>End Date *</label>
-                <input type="date" name="end_date" value="{{ edit_item.end_date if edit_item else '' }}" required>
+                <input type="date" name="end_date" value="" required>
             </div>
         </div>
         <div class="form-row">
             <div class="form-group">
                 <label>Paid Holiday</label>
-                {% set paid_value = edit_item.is_paid if edit_item else true %}
                 <select name="is_paid">
-                    <option value="true" {% if paid_value %}selected{% endif %}>Yes</option>
-                    <option value="false" {% if not paid_value %}selected{% endif %}>No</option>
+                    <option value="true" selected>Yes</option>
+                    <option value="false">No</option>
                 </select>
             </div>
             <div class="form-group">
                 <label>Active</label>
-                {% set active_value = edit_item.is_active if edit_item else true %}
                 <select name="is_active">
-                    <option value="true" {% if active_value %}selected{% endif %}>Yes</option>
-                    <option value="false" {% if not active_value %}selected{% endif %}>No</option>
+                    <option value="true" selected>Yes</option>
+                    <option value="false">No</option>
                 </select>
             </div>
         </div>
         <div class="form-group">
             <label>Description</label>
-            <textarea name="description" rows="3" placeholder="Optional notes">{{ edit_item.description if edit_item else '' }}</textarea>
+            <textarea name="description" rows="3" placeholder="Optional notes"></textarea>
         </div>
         <div class="form-actions">
-            <button type="submit" class="btn btn-primary">{{ 'Update Holiday' if edit_item else 'Create Holiday' }}</button>
-            {% if edit_item %}
-            <a href="{{ url('holiday_list') }}" class="btn btn-secondary">Cancel Edit</a>
-            {% endif %}
+            <button type="submit" class="btn btn-primary">Create Holiday</button>
         </div>
     </form>
 </div>
 {% endif %}
+</div>
 
+<div id="holiday-section-list" class="holiday-section">
 {% if holidays %}
 <div class="table-wrapper">
     <table>
@@ -135,7 +140,18 @@
                 </td>
                 <td>
                     {% if role in ['superadmin', 'admin'] or 'holidays.edit' in module_permissions %}
-                    <a href="{{ url('holiday_list') }}?edit={{ h.id }}" class="btn btn-secondary btn-sm">Edit</a>
+                    <button
+                        type="button"
+                        class="btn btn-secondary btn-sm holiday-edit-btn"
+                        data-id="{{ h.id }}"
+                        data-name="{{ h.name|e }}"
+                        data-holiday-type="{{ h.holiday_type|e }}"
+                        data-start-date="{{ h.start_date|e }}"
+                        data-end-date="{{ h.end_date|e }}"
+                        data-is-paid="{{ 'true' if h.is_paid else 'false' }}"
+                        data-is-active="{{ 'true' if h.is_active else 'false' }}"
+                        data-description="{{ h.description|e }}"
+                    >Edit</button>
                     {% endif %}
                     {% if role in ['superadmin', 'admin'] or 'holidays.delete' in module_permissions %}
                     <form method="post" action="{{ url('holiday_delete', args=[h.id]) }}" style="display:inline;">
@@ -152,4 +168,122 @@
 {% else %}
 <div class="card"><div class="empty-state"><p>No holidays found.</p></div></div>
 {% endif %}
+</div>
+
+{% if role in ['superadmin', 'admin'] or 'holidays.edit' in module_permissions %}
+<div id="holidayEditModal" style="display:none;position:fixed;inset:0;background:rgba(3,6,16,0.82);backdrop-filter:blur(2px);z-index:3000;padding:24px;overflow:auto;">
+    <div class="form-card" style="max-width:980px;margin:30px auto;background:#0f1326;border:1px solid var(--border);box-shadow:0 20px 55px rgba(0,0,0,0.55);position:relative;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+            <h3 class="section-title" style="margin:0;">Edit Holiday</h3>
+            <button type="button" id="holidayEditModalClose" class="btn btn-secondary btn-sm">Close</button>
+        </div>
+        <form method="post" action="{{ url('holiday_list') }}" style="margin-top:12px;">
+            {{ csrf_input }}
+            <input type="hidden" name="edit_id" id="holidayEditId">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Name *</label>
+                    <input type="text" name="name" id="holidayEditName" required>
+                </div>
+                <div class="form-group">
+                    <label>Holiday Type</label>
+                    <input type="text" name="holiday_type" id="holidayEditHolidayType">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Start Date *</label>
+                    <input type="date" name="start_date" id="holidayEditStartDate" required>
+                </div>
+                <div class="form-group">
+                    <label>End Date *</label>
+                    <input type="date" name="end_date" id="holidayEditEndDate" required>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Paid Holiday</label>
+                    <select name="is_paid" id="holidayEditIsPaid">
+                        <option value="true">Yes</option>
+                        <option value="false">No</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Active</label>
+                    <select name="is_active" id="holidayEditIsActive">
+                        <option value="true">Yes</option>
+                        <option value="false">No</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Description</label>
+                <textarea name="description" id="holidayEditDescription" rows="3"></textarea>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Update Holiday</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<script>
+(function () {
+    const sectionButtons = Array.from(document.querySelectorAll('.holiday-section-btn'));
+    const searchCard = document.getElementById('holidays-search-card');
+    const sections = {
+        'holiday-section-create': document.getElementById('holiday-section-create'),
+        'holiday-section-list': document.getElementById('holiday-section-list'),
+    };
+    if (!sectionButtons.length) return;
+    function showSection(targetId) {
+        Object.keys(sections).forEach(function (key) {
+            if (!sections[key]) return;
+            sections[key].style.display = key === targetId ? 'block' : 'none';
+        });
+        sectionButtons.forEach(function (btn) {
+            const active = btn.getAttribute('data-target') === targetId;
+            btn.classList.toggle('btn-primary', active);
+            btn.classList.toggle('btn-secondary', !active);
+        });
+        if (searchCard) {
+            searchCard.style.display = targetId === 'holiday-section-create' ? 'none' : 'block';
+        }
+    }
+    showSection('holiday-section-list');
+    sectionButtons.forEach(function (btn) {
+        btn.addEventListener('click', function () { showSection(btn.getAttribute('data-target')); });
+    });
+})();
+
+(function () {
+    const modal = document.getElementById('holidayEditModal');
+    const closeBtn = document.getElementById('holidayEditModalClose');
+    const openButtons = Array.from(document.querySelectorAll('.holiday-edit-btn'));
+    if (!modal || !closeBtn || !openButtons.length) return;
+    function openModal(btn) {
+        document.getElementById('holidayEditId').value = btn.getAttribute('data-id') || '';
+        document.getElementById('holidayEditName').value = btn.getAttribute('data-name') || '';
+        document.getElementById('holidayEditHolidayType').value = btn.getAttribute('data-holiday-type') || '';
+        document.getElementById('holidayEditStartDate').value = btn.getAttribute('data-start-date') || '';
+        document.getElementById('holidayEditEndDate').value = btn.getAttribute('data-end-date') || '';
+        document.getElementById('holidayEditIsPaid').value = btn.getAttribute('data-is-paid') || 'true';
+        document.getElementById('holidayEditIsActive').value = btn.getAttribute('data-is-active') || 'true';
+        document.getElementById('holidayEditDescription').value = btn.getAttribute('data-description') || '';
+        modal.style.display = 'block';
+        document.body.style.overflow = 'hidden';
+    }
+    function closeModal() {
+        modal.style.display = 'none';
+        document.body.style.overflow = '';
+    }
+    openButtons.forEach(function (btn) { btn.addEventListener('click', function () { openModal(btn); }); });
+    closeBtn.addEventListener('click', closeModal);
+    modal.addEventListener('click', function (event) { if (event.target === modal) closeModal(); });
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && modal.style.display === 'block') closeModal();
+    });
+})();
+</script>
 {% endblock %}

@@ -16,6 +16,7 @@ STATIC_PERMISSION_KEYS = {
     'bank.view', 'bank.create', 'bank.edit', 'bank.delete',
     'policy.view', 'policy.create', 'policy.edit', 'policy.delete',
     'documents.view', 'documents.create', 'documents.edit', 'documents.delete',
+    'import_export.view', 'import_export.import', 'import_export.export',
     'custom_fields.view', 'custom_fields.create', 'custom_fields.edit', 'custom_fields.delete',
     'dynamic_models.view', 'dynamic_models.create', 'dynamic_models.edit', 'dynamic_models.delete',
     'activity_logs.view',
@@ -30,6 +31,7 @@ LEGACY_PERMISSION_MAP = {
     'bank': ['bank.view', 'bank.create', 'bank.edit', 'bank.delete'],
     'policy': ['policy.view', 'policy.create', 'policy.edit', 'policy.delete'],
     'documents': ['documents.view', 'documents.create', 'documents.edit', 'documents.delete'],
+    'import_export': ['import_export.view', 'import_export.import', 'import_export.export'],
     'custom_fields': ['custom_fields.view', 'custom_fields.create', 'custom_fields.edit', 'custom_fields.delete'],
     'dynamic_models': ['dynamic_models.view', 'dynamic_models.create', 'dynamic_models.edit', 'dynamic_models.delete'],
 }
@@ -47,6 +49,7 @@ ALLOWED_ADDON_KEYS = {
     'settings',
     'policy',
     'documents',
+    'import_export',
     'role_management',
     'shift_management',
     'bank_management',

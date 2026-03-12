@@ -49,6 +49,9 @@
                     <label for="id_password">Password</label>
                     <input type="password" name="password" id="id_password" placeholder="Enter password" required>
                 </div>
+                <div style="margin:-4px 0 12px 0;text-align:right;">
+                    <a href="{{ url('forgot_password') }}" style="font-size:.92rem;">Forgot password?</a>
+                </div>
 
                 <button type="submit" class="btn btn-primary login-btn">Sign In as Super Admin</button>
             </form>
@@ -74,6 +77,9 @@
                 <div class="form-group">
                     <label for="id_password">Client Password</label>
                     <input type="password" name="password" id="id_password" placeholder="Enter password" required>
+                </div>
+                <div style="margin:-4px 0 12px 0;text-align:right;">
+                    <a href="{{ url('forgot_password') }}?client={{ selected_client.id }}" style="font-size:.92rem;">Forgot password?</a>
                 </div>
 
                 <button type="submit" class="btn btn-primary login-btn">Sign In</button>

@@ -12,9 +12,6 @@
         <h1 class="page-title">Manage Leave Applications</h1>
         <p class="page-subtitle">Track requests, status, approval stage, and payment type.</p>
     </div>
-    {% if role in ['superadmin', 'admin'] or 'leaves.create' in module_permissions %}
-    <a href="{{ url('leave_create') }}" class="btn btn-primary">+ New Application</a>
-    {% endif %}
 </div>
 
 <div class="permission-group-tabs" style="margin-bottom:20px;">
@@ -32,6 +29,15 @@
 {% endif %}
 
 <div class="card" style="margin-bottom:20px;">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        {% if can_create_leave %}
+        <button type="button" class="btn btn-secondary leave-section-btn" data-target="leave-section-create">+ New Application</button>
+        {% endif %}
+        <button type="button" class="btn btn-secondary leave-section-btn" data-target="leave-section-list">Applications List</button>
+    </div>
+</div>
+
+<div id="leaves-summary-card" class="card" style="margin-bottom:20px;">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
         <div>
             <div class="form-label" style="margin-bottom:4px;">Pending Requests</div>
@@ -40,7 +46,7 @@
     </div>
 </div>
 
-<div class="card" style="margin-bottom:20px;">
+<div id="leaves-search-card" class="card" style="margin-bottom:20px;">
     <form method="get" class="form-row">
         <div class="form-group">
             <label>Status</label>
@@ -72,6 +78,85 @@
     </form>
 </div>
 
+{% if can_create_leave %}
+<div id="leave-section-create" class="leave-section">
+    <div class="form-card" style="margin-bottom:20px;">
+        <h3 class="section-title">Create Leave Request</h3>
+        <form method="post" action="{{ url('leave_list') }}">
+            {{ csrf_input }}
+            <input type="hidden" name="action" value="create_leave">
+            {% if can_choose_employee %}
+            <div class="form-group">
+                <label>Employee *</label>
+                <select name="employee" id="employeeSelect" required>
+                    <option value="">Select employee</option>
+                    {% for e in employees %}
+                    <option
+                        value="{{ e.id }}"
+                        data-manager="{{ e.manager_name or '-' }}"
+                        data-hr="{{ e.hr_name or '-' }}"
+                        {% if create_form_values.employee == (e.id ~ '') %}selected{% endif %}
+                    >
+                        {{ e.first_name }} {{ e.last_name }}
+                    </option>
+                    {% endfor %}
+                </select>
+                <small id="assignmentPreview" style="display:block;margin-top:6px;color:var(--text-muted);">
+                    Manager: - | HR: -
+                </small>
+            </div>
+            {% else %}
+            <div class="form-group">
+                <label>Employee</label>
+                <input type="text" value="{% if employees %}{{ employees[0].first_name }} {{ employees[0].last_name }}{% else %}Your account{% endif %}" readonly>
+                <small style="display:block;margin-top:6px;color:var(--text-muted);">This leave request will be created only for your profile.</small>
+            </div>
+            {% endif %}
+            <div class="form-group">
+                <label>Leave Type *</label>
+                <select name="leave_type" required>
+                    <option value="">Select leave type</option>
+                    {% for t in leave_types %}
+                    <option value="{{ t.name }}" {% if create_form_values.leave_type == t.name %}selected{% endif %}>{{ t.name }} ({{ t.max_days_per_year }} days/year)</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Leave Unit *</label>
+                    <select name="leave_unit" id="leaveUnitSelect" required>
+                        <option value="day" {% if create_form_values.leave_unit != 'hour' %}selected{% endif %}>Day Leave</option>
+                        <option value="hour" {% if create_form_values.leave_unit == 'hour' %}selected{% endif %}>Hourly Leave</option>
+                    </select>
+                </div>
+                <div class="form-group" id="leaveHoursGroup" style="display:none;">
+                    <label>Leave Hours (Max 3) *</label>
+                    <input type="number" step="0.5" min="0.5" max="3" name="leave_hours" id="leaveHoursInput" placeholder="e.g. 2" value="{{ create_form_values.leave_hours or '' }}">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Start Date *</label>
+                    <input type="date" name="start_date" id="startDateInput" value="{{ create_form_values.start_date or '' }}" required>
+                </div>
+                <div class="form-group">
+                    <label>End Date *</label>
+                    <input type="date" name="end_date" id="endDateInput" value="{{ create_form_values.end_date or '' }}" required>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Reason</label>
+                <textarea name="reason" rows="3" placeholder="Reason for leave">{{ create_form_values.reason or '' }}</textarea>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Submit Leave</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<div id="leave-section-list" class="leave-section">
 {% if leaves %}
 <div class="table-wrapper">
     <table>
@@ -163,4 +248,90 @@
 {% else %}
 <div class="card"><div class="empty-state"><p>No leave applications found.</p></div></div>
 {% endif %}
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var sectionButtons = Array.prototype.slice.call(document.querySelectorAll('.leave-section-btn'));
+    var searchCard = document.getElementById('leaves-search-card');
+    var summaryCard = document.getElementById('leaves-summary-card');
+    var sections = {
+        'leave-section-create': document.getElementById('leave-section-create'),
+        'leave-section-list': document.getElementById('leave-section-list')
+    };
+
+    function showSection(targetId) {
+        Object.keys(sections).forEach(function (key) {
+            if (!sections[key]) return;
+            sections[key].style.display = key === targetId ? 'block' : 'none';
+        });
+        sectionButtons.forEach(function (btn) {
+            var active = btn.getAttribute('data-target') === targetId;
+            btn.classList.toggle('btn-primary', active);
+            btn.classList.toggle('btn-secondary', !active);
+        });
+        var showListFilters = targetId === 'leave-section-list';
+        if (searchCard) searchCard.style.display = showListFilters ? 'block' : 'none';
+        if (summaryCard) summaryCard.style.display = showListFilters ? 'block' : 'none';
+    }
+
+    if (sectionButtons.length) {
+        sectionButtons.forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                showSection(btn.getAttribute('data-target'));
+            });
+        });
+        {% if show_leave_section == 'create' and can_create_leave %}
+        showSection('leave-section-create');
+        {% else %}
+        showSection('leave-section-list');
+        {% endif %}
+    }
+
+    var employeeSelect = document.getElementById('employeeSelect');
+    var preview = document.getElementById('assignmentPreview');
+    var leaveUnitSelect = document.getElementById('leaveUnitSelect');
+    var leaveHoursGroup = document.getElementById('leaveHoursGroup');
+    var leaveHoursInput = document.getElementById('leaveHoursInput');
+    var startDateInput = document.getElementById('startDateInput');
+    var endDateInput = document.getElementById('endDateInput');
+
+    function renderAssignment() {
+        if (!employeeSelect || !preview) return;
+        var selected = employeeSelect.options[employeeSelect.selectedIndex];
+        if (!selected || !selected.value) {
+            preview.textContent = 'Manager: - | HR: -';
+            return;
+        }
+        var manager = selected.getAttribute('data-manager') || '-';
+        var hr = selected.getAttribute('data-hr') || '-';
+        preview.textContent = 'Manager: ' + manager + ' | HR: ' + hr;
+    }
+
+    function applyLeaveUnitBehavior() {
+        if (!leaveUnitSelect) return;
+        var isHourly = leaveUnitSelect.value === 'hour';
+        if (leaveHoursGroup) leaveHoursGroup.style.display = isHourly ? '' : 'none';
+        if (leaveHoursInput) {
+            leaveHoursInput.required = isHourly;
+            if (!isHourly) leaveHoursInput.value = '';
+        }
+        if (startDateInput && endDateInput && isHourly && startDateInput.value) {
+            endDateInput.value = startDateInput.value;
+        }
+    }
+
+    if (employeeSelect) employeeSelect.addEventListener('change', renderAssignment);
+    if (leaveUnitSelect) leaveUnitSelect.addEventListener('change', applyLeaveUnitBehavior);
+    if (startDateInput) {
+        startDateInput.addEventListener('change', function () {
+            if (leaveUnitSelect && leaveUnitSelect.value === 'hour' && endDateInput) {
+                endDateInput.value = startDateInput.value;
+            }
+        });
+    }
+    renderAssignment();
+    applyLeaveUnitBehavior();
+});
+</script>
 {% endblock %}

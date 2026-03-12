@@ -5,7 +5,9 @@ urlpatterns = [
     # Auth
     path('login/', views.login_view, name='login'),
     path('logout/', views.logout_view, name='logout'),
+    path('forgot-password/', views.forgot_password_view, name='forgot_password'),
     path('reset-password/', views.reset_password_view, name='reset_password'),
+    path('onboarding/setup-org/', views.org_setup_onboarding, name='org_setup_onboarding'),
 
     # Dashboard
     path('', views.dashboard, name='dashboard'),
@@ -16,6 +18,7 @@ urlpatterns = [
     path('documents/requests/<int:pk>/delete/', views.document_request_delete, name='document_request_delete'),
     path('document-upload/<uuid:token>/', views.document_upload_page, name='document_upload_page'),
     path('settings/', views.settings_page, name='settings_page'),
+    path('attendance-template-v2/', views.attendance_template_v2, name='attendance_template_v2'),
 
     # Clients
     path('clients/', views.client_list, name='client_list'),
@@ -43,6 +46,7 @@ urlpatterns = [
     path('leaves/<int:pk>/cancel/', views.leave_cancel, name='leave_cancel'),
     path('leaves/<int:pk>/delete/', views.leave_delete, name='leave_delete'),
     path('payroll/', views.payroll_list, name='payroll_list'),
+    path('import-export/', views.import_export_page, name='import_export_page'),
     path('activity-logs/', views.activity_log_list, name='activity_log_list'),
 
     # Holidays

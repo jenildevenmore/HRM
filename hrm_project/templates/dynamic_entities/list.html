@@ -27,6 +27,9 @@
             </select>
         </form>
         {% endif %}
+        {% if dynamic_model.slug == 'attendance' and can_manage_attendance_template %}
+        <a href="{{ url('attendance_template_v2') }}" class="btn btn-secondary">Attendance Template V2</a>
+        {% endif %}
         <!-- {% if dynamic_model.slug == 'attendance' %}
         <button type="button" class="btn btn-secondary" onclick="openPunchModal()">Punch In / Punch Out</button>
         {% endif %} -->

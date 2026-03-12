@@ -1,5 +1,6 @@
 import os
 import uuid
+import json
 
 from django.core.files.storage import default_storage
 from django.utils import timezone
@@ -176,6 +177,7 @@ class PublicDocumentUploadView(APIView):
             'title': req.title,
             'category': req.category,
             'notes': req.notes,
+            'requested_doc_types': req.requested_doc_types or [],
             'request_email': req.request_email,
             'expires_at': req.expires_at,
             'client_id': req.client_id,
@@ -194,29 +196,133 @@ class PublicDocumentUploadView(APIView):
         if not title:
             return Response({'title': 'This field is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        uploaded_file = request.FILES.get('file')
-        file_url = str(request.data.get('file_url') or '').strip()
-        if uploaded_file:
-            file_url = self._save_file(uploaded_file)
-        if not file_url:
-            return Response({'file': 'Please attach a document.'}, status=status.HTTP_400_BAD_REQUEST)
+        allowed_doc_types = [str(item or '').strip() for item in (req.requested_doc_types or []) if str(item or '').strip()]
+        file_urls = []
+        typed_documents = []
 
-        doc = Document.objects.create(
-            client_id=req.client_id,
-            title=title,
-            category=str(req.category or '').strip(),
-            effective_date=None,
-            status=Document.STATUS_PENDING,
-            file_url=file_url,
-            notes=str(req.notes or '').strip(),
-            uploader_name=str(request.data.get('uploader_name') or '').strip(),
-            uploader_email=str(req.request_email or '').strip(),
-            uploaded_by=None,
-            approved_by=None,
-        )
+        request_documents = request.data.get('documents')
+        parsed_documents = []
+        if isinstance(request_documents, list):
+            parsed_documents = request_documents
+        elif isinstance(request_documents, str):
+            raw_docs = request_documents.strip()
+            if raw_docs:
+                try:
+                    loaded = json.loads(raw_docs)
+                    if isinstance(loaded, list):
+                        parsed_documents = loaded
+                except Exception:
+                    parsed_documents = []
 
-        req.uploaded_document = doc
+        for item in parsed_documents:
+            if not isinstance(item, dict):
+                continue
+            doc_type = str(item.get('doc_type') or '').strip()
+            file_url = str(item.get('file_url') or '').strip()
+            if not file_url:
+                continue
+            if allowed_doc_types and doc_type not in allowed_doc_types:
+                return Response(
+                    {'documents': f'Invalid document type: {doc_type or "Unknown"}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            typed_documents.append({
+                'doc_type': doc_type,
+                'file_url': file_url,
+            })
+
+        uploaded_files = request.FILES.getlist('files')
+        if not uploaded_files:
+            single_uploaded_file = request.FILES.get('file')
+            if single_uploaded_file:
+                uploaded_files = [single_uploaded_file]
+
+        for uploaded_file in uploaded_files:
+            file_urls.append(self._save_file(uploaded_file))
+
+        request_data_file_urls = request.data.get('file_urls')
+        if isinstance(request_data_file_urls, (list, tuple)):
+            for item in request_data_file_urls:
+                value = str(item or '').strip()
+                if value:
+                    file_urls.append(value)
+        elif isinstance(request_data_file_urls, str):
+            raw = request_data_file_urls.strip()
+            if raw:
+                if raw.startswith('['):
+                    try:
+                        parsed = json.loads(raw)
+                        if isinstance(parsed, list):
+                            for item in parsed:
+                                value = str(item or '').strip()
+                                if value:
+                                    file_urls.append(value)
+                    except Exception:
+                        pass
+                elif ',' in raw:
+                    for item in raw.split(','):
+                        value = str(item or '').strip()
+                        if value:
+                            file_urls.append(value)
+                else:
+                    file_urls.append(raw)
+
+        single_file_url = str(request.data.get('file_url') or '').strip()
+        if single_file_url:
+            file_urls.append(single_file_url)
+
+        unique_file_urls = []
+        for url in file_urls:
+            if url not in unique_file_urls:
+                unique_file_urls.append(url)
+        file_urls = unique_file_urls
+
+        if allowed_doc_types and (file_urls or not typed_documents):
+            return Response(
+                {'documents': 'Please select a valid document type for each uploaded file.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not file_urls and not typed_documents:
+            return Response({'file': 'Please attach at least one document.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        created_documents = []
+        flat_documents = list(typed_documents)
+        for file_url in file_urls:
+            flat_documents.append({'doc_type': '', 'file_url': file_url})
+
+        for index, item in enumerate(flat_documents, start=1):
+            file_url = str(item.get('file_url') or '').strip()
+            doc_type = str(item.get('doc_type') or '').strip()
+            if doc_type:
+                doc_title = f'{title} - {doc_type}'
+            else:
+                doc_title = title if len(flat_documents) == 1 else f'{title} ({index})'
+            doc = Document.objects.create(
+                client_id=req.client_id,
+                title=doc_title,
+                category=str(req.category or '').strip(),
+                effective_date=None,
+                status=Document.STATUS_PENDING,
+                file_url=file_url,
+                notes=str(req.notes or '').strip(),
+                uploader_name=str(request.data.get('uploader_name') or '').strip(),
+                uploader_email=str(req.request_email or '').strip(),
+                uploaded_by=None,
+                approved_by=None,
+            )
+            created_documents.append(doc)
+
+        req.uploaded_document = created_documents[0]
         req.is_active = False
         req.save(update_fields=['uploaded_document', 'is_active', 'updated_at'])
 
-        return Response({'detail': 'Document uploaded successfully.', 'document_id': doc.id}, status=status.HTTP_201_CREATED)
+        return Response(
+            {
+                'detail': f'{len(created_documents)} document(s) uploaded successfully.',
+                'uploaded_count': len(created_documents),
+                'document_ids': [doc.id for doc in created_documents],
+                'document_id': created_documents[0].id,
+            },
+            status=status.HTTP_201_CREATED
+        )

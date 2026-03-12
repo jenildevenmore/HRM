@@ -64,13 +64,25 @@
             text-transform: uppercase;
             letter-spacing: .5px;
         }
-        input, textarea {
+        input, textarea, select {
             width: 100%;
             padding: 11px 12px;
             border-radius: 8px;
             border: 1px solid var(--border);
             background: rgba(0,0,0,0.2);
             color: var(--text);
+        }
+        select {
+            background-color: #121427;
+            color: var(--text);
+        }
+        select option {
+            background-color: #121427;
+            color: var(--text);
+        }
+        select option:checked {
+            background: #2a67b8 linear-gradient(0deg, #2a67b8 0%, #2a67b8 100%);
+            color: #ffffff;
         }
         textarea { min-height: 88px; resize: vertical; }
         .btn {
@@ -123,12 +135,21 @@
                     <input type="email" value="{{ info.request_email or '' }}" readonly>
                 </div>
             </div>
+            {% if info.requested_doc_types %}
+            <div class="group">
+                <label>Document Type + File *</label>
+                <div id="docRows" style="display:grid;gap:10px;"></div>
+                <button type="button" id="addDocRow" class="btn" style="margin-top:10px;">Add Another Document</button>
+                <small style="display:block;margin-top:6px;color:var(--muted);">Choose a document type first, then upload only that document file.</small>
+            </div>
+            {% else %}
             <div class="row">
                 <div class="group">
-                    <label>Document File *</label>
-                    <input type="file" name="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,image/*" required>
+                    <label>Document Files *</label>
+                    <input type="file" name="files" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,image/*" multiple required>
                 </div>
             </div>
+            {% endif %}
             <div class="group">
                 <label>Notes</label>
                 <textarea readonly>{{ info.notes or '' }}</textarea>
@@ -137,5 +158,85 @@
         </form>
         {% endif %}
     </div>
+    {% if info and info.requested_doc_types and not success_message %}
+    <script>
+        (function () {
+            const requestedTypes = {{ info.requested_doc_types|tojson }};
+            const container = document.getElementById('docRows');
+            const addBtn = document.getElementById('addDocRow');
+            if (!container || !addBtn || !Array.isArray(requestedTypes) || !requestedTypes.length) return;
+
+            function selectedTypes() {
+                return Array.from(container.querySelectorAll('select[name="doc_type"]'))
+                    .map(function (sel) { return String(sel.value || '').trim(); })
+                    .filter(function (val) { return !!val; });
+            }
+
+            function syncTypeOptions() {
+                const selects = Array.from(container.querySelectorAll('select[name="doc_type"]'));
+                const selected = selectedTypes();
+
+                selects.forEach(function (select) {
+                    const current = String(select.value || '').trim();
+                    select.innerHTML = '';
+
+                    const placeholder = document.createElement('option');
+                    placeholder.value = '';
+                    placeholder.textContent = 'Select type';
+                    select.appendChild(placeholder);
+
+                    requestedTypes.forEach(function (type) {
+                        const label = String(type || '').trim();
+                        if (!label) return;
+                        if (label !== current && selected.indexOf(label) !== -1) return;
+                        const opt = document.createElement('option');
+                        opt.value = label;
+                        opt.textContent = label;
+                        if (label === current) opt.selected = true;
+                        select.appendChild(opt);
+                    });
+                });
+
+                const canAddMore = selected.length < requestedTypes.length;
+                addBtn.disabled = !canAddMore;
+                addBtn.style.opacity = canAddMore ? '1' : '0.6';
+                addBtn.style.cursor = canAddMore ? 'pointer' : 'not-allowed';
+            }
+
+            function addRow() {
+                if (container.children.length >= requestedTypes.length) {
+                    syncTypeOptions();
+                    return;
+                }
+                const row = document.createElement('div');
+                row.style.display = 'grid';
+                row.style.gridTemplateColumns = '1fr 1fr auto';
+                row.style.gap = '8px';
+                row.innerHTML = ''
+                    + '<select name="doc_type" required>'
+                    + '<option value="">Select type</option>'
+                    + '</select>'
+                    + '<input type="file" name="doc_file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,image/*" required>'
+                    + '<button type="button" class="btn remove-doc" style="padding:10px 12px;">Remove</button>';
+                container.appendChild(row);
+
+                const select = row.querySelector('select[name="doc_type"]');
+                select.addEventListener('change', syncTypeOptions);
+
+                const removeBtn = row.querySelector('.remove-doc');
+                removeBtn.addEventListener('click', function () {
+                    if (container.children.length <= 1) return;
+                    row.remove();
+                    syncTypeOptions();
+                });
+
+                syncTypeOptions();
+            }
+
+            addBtn.addEventListener('click', addRow);
+            addRow();
+        })();
+    </script>
+    {% endif %}
 </body>
 </html>

@@ -2,12 +2,15 @@ import requests
 import json
 import datetime
 import calendar
+import csv
 import re
 import os
 import uuid
+import io
 from urllib.parse import urlparse
 from django.conf import settings
 from django.shortcuts import render, redirect
+from django.http import HttpResponse
 from django.views.decorators.http import require_POST
 from django.core.files.storage import default_storage
 from django.core.validators import validate_email
@@ -43,6 +46,7 @@ ADDON_KEYS = {
     'settings',
     'policy',
     'documents',
+    'import_export',
     'role_management',
     'shift_management',
     'bank_management',
@@ -60,6 +64,7 @@ ADDON_OPTIONS = [
     ('settings', 'Settings'),
     ('policy', 'Policy'),
     ('documents', 'Documents'),
+    ('import_export', 'Import / Export'),
     ('role_management', 'Role Management'),
     ('shift_management', 'Shift Management'),
     ('bank_management', 'Bank Management'),
@@ -74,6 +79,7 @@ STATIC_PERMISSION_KEYS = {
     'bank.view', 'bank.create', 'bank.edit', 'bank.delete',
     'policy.view', 'policy.create', 'policy.edit', 'policy.delete',
     'documents.view', 'documents.create', 'documents.edit', 'documents.delete',
+    'import_export.view', 'import_export.import', 'import_export.export',
     'custom_fields.view', 'custom_fields.create', 'custom_fields.edit', 'custom_fields.delete',
     'dynamic_models.view', 'dynamic_models.create', 'dynamic_models.edit', 'dynamic_models.delete',
     'activity_logs.view',
@@ -88,6 +94,7 @@ LEGACY_PERMISSION_MAP = {
     'bank': ['bank.view', 'bank.create', 'bank.edit', 'bank.delete'],
     'policy': ['policy.view', 'policy.create', 'policy.edit', 'policy.delete'],
     'documents': ['documents.view', 'documents.create', 'documents.edit', 'documents.delete'],
+    'import_export': ['import_export.view', 'import_export.import', 'import_export.export'],
     'custom_fields': ['custom_fields.view', 'custom_fields.create', 'custom_fields.edit', 'custom_fields.delete'],
     'dynamic_models': ['dynamic_models.view', 'dynamic_models.create', 'dynamic_models.edit', 'dynamic_models.delete'],
 }
@@ -103,7 +110,28 @@ ADDON_VIEW_PERMISSION_MAP = {
     'activity_logs': 'activity_logs.view',
     'policy': 'policy.view',
     'documents': 'documents.view',
+    'import_export': 'import_export.view',
 }
+
+SIDEBAR_LOGO_MODULES = [
+    {'key': 'dashboard', 'label': 'Dashboard'},
+    {'key': 'employees', 'label': 'Employees'},
+    {'key': 'attendance', 'label': 'Attendance'},
+    {'key': 'leaves', 'label': 'Leaves'},
+    {'key': 'payroll', 'label': 'Payroll'},
+    {'key': 'import_export', 'label': 'Import/Export'},
+    {'key': 'activity_logs', 'label': 'Activity Logs'},
+    {'key': 'holidays', 'label': 'Holidays'},
+    {'key': 'shifts', 'label': 'Shifts'},
+    {'key': 'bank', 'label': 'Bank'},
+    {'key': 'policy', 'label': 'Policy'},
+    {'key': 'documents', 'label': 'Documents'},
+    {'key': 'clients', 'label': 'Clients'},
+    {'key': 'custom_fields', 'label': 'Custom Fields'},
+    {'key': 'dynamic_models', 'label': 'Dynamic Models'},
+    {'key': 'roles', 'label': 'Roles'},
+    {'key': 'settings', 'label': 'Settings'},
+]
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -675,6 +703,29 @@ def _attendance_feature_flags(request):
     }
 
 
+def _get_sidebar_logo_modules(request):
+    modules = list(SIDEBAR_LOGO_MODULES)
+    try:
+        resp = _api_get(request, '/api/dynamic-models/')
+        if resp.status_code == 200:
+            payload = resp.json()
+            rows = payload.get('results', payload) if isinstance(payload, dict) else payload
+            for row in rows or []:
+                model_id = row.get('id')
+                if model_id is None:
+                    continue
+                slug = str(row.get('slug') or '').strip().lower()
+                if slug == 'attendance':
+                    continue
+                modules.append({
+                    'key': f'dynamic_model_{model_id}',
+                    'label': str(row.get('name') or f'Dynamic Model {model_id}').strip(),
+                })
+    except requests.exceptions.ConnectionError:
+        pass
+    return modules
+
+
 def _flash(request, message, level='success'):
     """Add a flash message to the session."""
     if '_messages' not in request.session:
@@ -696,6 +747,71 @@ def _handle_unauthorized(resp, request):
         request.session.flush()
         return redirect('login')
     return None
+
+
+def _is_org_setup_pending_from_settings(role, app_settings):
+    if role != 'admin':
+        return False
+    if not isinstance(app_settings, dict):
+        return True
+    onboarding = app_settings.get('onboarding')
+    if not isinstance(onboarding, dict):
+        return True
+    return not bool(onboarding.get('org_setup_completed'))
+
+
+def _derive_policy_from_onboarding(app_settings, year=None, month=None):
+    if not isinstance(app_settings, dict):
+        return None
+    onboarding = app_settings.get('onboarding')
+    if not isinstance(onboarding, dict):
+        return None
+    if not onboarding.get('org_setup_completed'):
+        return None
+
+    today = timezone.localdate()
+    target_year = int(year or today.year)
+    target_month = int(month or today.month)
+    month_days = calendar.monthrange(target_year, target_month)[1]
+
+    payable_mode = str(onboarding.get('payable_days_mode') or 'calendar_month').strip()
+
+    if payable_mode == 'every_30':
+        monthly_working_days = 30
+    elif payable_mode == 'every_28':
+        monthly_working_days = 28
+    elif payable_mode == 'every_26':
+        monthly_working_days = 26
+    elif payable_mode == 'exclude_weekly_offs':
+        sundays = sum(
+            1
+            for day in range(1, month_days + 1)
+            if datetime.date(target_year, target_month, day).weekday() == 6
+        )
+        monthly_working_days = max(month_days - sundays, 1)
+    else:
+        monthly_working_days = month_days
+
+    try:
+        default_shift_hours = int(onboarding.get('default_shift_hours') or 8)
+    except (TypeError, ValueError):
+        default_shift_hours = 8
+    try:
+        default_shift_minutes = int(onboarding.get('default_shift_minutes') or 0)
+    except (TypeError, ValueError):
+        default_shift_minutes = 0
+
+    default_shift_hours = max(0, min(24, default_shift_hours))
+    default_shift_minutes = max(0, min(59, default_shift_minutes))
+    standard_hours_per_day = round(default_shift_hours + (default_shift_minutes / 60.0), 2)
+
+    return {
+        'monthly_working_days': monthly_working_days,
+        'standard_hours_per_day': standard_hours_per_day,
+        'salary_basis': 'day',
+        'allow_extra_hours_payout': False,
+        'allow_extra_days_payout': False,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -786,6 +902,11 @@ def login_view(request):
                         access_token=data['access'],
                         client_id=data.get('client_id'),
                     )
+                    if _is_org_setup_pending_from_settings(
+                        request.session.get('role'),
+                        request.session.get('app_settings'),
+                    ):
+                        return redirect('org_setup_onboarding')
                     return redirect('dashboard')
                 else:
                     error = 'Invalid username or password.'
@@ -842,6 +963,61 @@ def reset_password_view(request):
     })
 
 
+def forgot_password_view(request):
+    if request.session.get('access_token'):
+        return redirect('dashboard')
+
+    error = None
+    success = None
+    debug_reset_link = ''
+    identifier = (request.POST.get('identifier') or '').strip()
+    selected_client_id = (request.GET.get('client') or request.POST.get('client_id') or '').strip()
+    clients = []
+    clients_load_failed = False
+
+    try:
+        clients_resp = _api_request('GET', '/api/clients/public/', host=request.get_host())
+        if clients_resp.status_code == 200:
+            clients = clients_resp.json()
+        else:
+            clients_load_failed = True
+    except requests.exceptions.RequestException:
+        clients_load_failed = True
+
+    if request.method == 'POST':
+        if not identifier:
+            error = 'Email or username is required.'
+        else:
+            payload = {'identifier': identifier}
+            if selected_client_id:
+                payload['client_id'] = selected_client_id
+            try:
+                resp = _api_request(
+                    'POST',
+                    '/api/accounts/password-reset-request/',
+                    data=payload,
+                    host=request.get_host(),
+                )
+                if resp.status_code == 200:
+                    data = resp.json() if hasattr(resp, 'json') else {}
+                    success = str((data or {}).get('detail') or 'Reset instructions sent if account exists.')
+                    debug_reset_link = str((data or {}).get('debug_reset_link') or '')
+                else:
+                    error = '; '.join(_error_list_from_response(resp, 'Failed to send reset link.'))
+            except requests.exceptions.ConnectionError:
+                error = 'Backend server unreachable.'
+
+    return render(request, 'forgot_password.html', {
+        'error': error,
+        'success': success,
+        'identifier': identifier,
+        'selected_client_id': selected_client_id,
+        'clients': clients,
+        'clients_load_failed': clients_load_failed,
+        'debug_reset_link': debug_reset_link,
+    })
+
+
 def logout_view(request):
     request.session.flush()
     return redirect('login')
@@ -851,50 +1027,478 @@ def logout_view(request):
 # Dashboard
 # ─────────────────────────────────────────────────────────────────
 
+def org_setup_onboarding(request):
+    if not request.session.get('access_token'):
+        return redirect('login')
+
+    role = request.session.get('role')
+    if role != 'admin':
+        return redirect('dashboard')
+
+    app_settings = request.session.get('app_settings')
+    if not isinstance(app_settings, dict):
+        app_settings = {}
+    if not _is_org_setup_pending_from_settings(role, app_settings):
+        return redirect('dashboard')
+
+    errors = []
+    selected_mode = ((app_settings.get('onboarding') or {}).get('payable_days_mode') or 'calendar_month').strip()
+    default_hours = int((app_settings.get('onboarding') or {}).get('default_shift_hours') or 8)
+    default_minutes = int((app_settings.get('onboarding') or {}).get('default_shift_minutes') or 0)
+
+    if request.method == 'POST':
+        selected_mode = (request.POST.get('payable_days_mode') or 'calendar_month').strip()
+        try:
+            default_hours = int((request.POST.get('default_shift_hours') or '8').strip())
+        except (TypeError, ValueError):
+            default_hours = 8
+        try:
+            default_minutes = int((request.POST.get('default_shift_minutes') or '0').strip())
+        except (TypeError, ValueError):
+            default_minutes = 0
+
+        allowed_modes = {'calendar_month', 'every_30', 'every_28', 'every_26', 'exclude_weekly_offs'}
+        if selected_mode not in allowed_modes:
+            errors.append('Invalid payable days option selected.')
+        if default_hours < 0 or default_hours > 24:
+            errors.append('Shift hours must be between 0 and 24.')
+        if default_minutes < 0 or default_minutes > 59:
+            errors.append('Shift minutes must be between 0 and 59.')
+
+        if not errors:
+            onboarding_settings = dict(app_settings.get('onboarding') or {})
+            onboarding_settings.update({
+                'org_setup_completed': True,
+                'payable_days_mode': selected_mode,
+                'default_shift_hours': default_hours,
+                'default_shift_minutes': default_minutes,
+                'completed_at': timezone.now().isoformat(),
+            })
+
+            payload_settings = dict(app_settings)
+            payload_settings['onboarding'] = onboarding_settings
+
+            try:
+                save_resp = _api_post(request, '/api/clients/settings/', {'app_settings': payload_settings})
+                redir = _handle_unauthorized(save_resp, request)
+                if redir:
+                    return redir
+                if save_resp.status_code == 200:
+                    saved_settings = save_resp.json() if isinstance(save_resp.json(), dict) else payload_settings
+                    request.session['app_settings'] = saved_settings
+                    request.session.modified = True
+
+                    # Optional payroll policy sync from onboarding selection.
+                    payroll_payload = _derive_policy_from_onboarding(saved_settings)
+                    try:
+                        existing_resp = _api_get(request, '/api/payroll-policy/')
+                        if payroll_payload and existing_resp.status_code == 200:
+                            existing_payload = existing_resp.json()
+                            existing_rows = (
+                                existing_payload.get('results', existing_payload)
+                                if isinstance(existing_payload, dict) else existing_payload
+                            )
+                            if existing_rows:
+                                _api_put(request, f"/api/payroll-policy/{existing_rows[0].get('id')}/", payroll_payload)
+                            else:
+                                _api_post(request, '/api/payroll-policy/', payroll_payload)
+                    except requests.exceptions.ConnectionError:
+                        pass
+
+                    _flash(request, 'Organization setup completed.', 'success')
+                    return redirect('dashboard')
+                errors = _error_list_from_response(save_resp, 'Failed to save organization setup.')
+            except requests.exceptions.ConnectionError:
+                errors = ['Backend server unreachable.']
+
+    return render(request, 'onboarding/org_setup.html', {
+        'errors': errors,
+        'selected_mode': selected_mode,
+        'default_hours': f'{default_hours:02d}',
+        'default_minutes': f'{default_minutes:02d}',
+        **_get_context(request),
+    })
+
+
+def attendance_template_v2(request):
+    if not request.session.get('access_token'):
+        return redirect('login')
+
+    if not _has_any_module_permission(
+        request,
+        ['attendance.view', 'attendance.create', 'attendance.edit', 'attendance.delete'],
+    ):
+        _flash(request, 'You do not have permission to access Attendance Template.', 'error')
+        return redirect('dashboard')
+
+    addon_redirect = _require_addon(request, 'attendance')
+    if addon_redirect:
+        return addon_redirect
+
+    messages = _pop_messages(request)
+    errors = []
+
+    app_settings = request.session.get('app_settings')
+    if not isinstance(app_settings, dict):
+        app_settings = _load_client_app_settings(request)
+        request.session['app_settings'] = app_settings
+        request.session.modified = True
+
+    defaults = {
+        'name': '',
+        'attendance_mode': 'manual_attendance',
+        'holiday_rule': 'no_paid_holiday_attendance',
+        'track_in_out_enabled': False,
+        'no_attendance_without_punch_out': False,
+        'allow_multiple_punches': False,
+        'auto_approval_enabled': False,
+        'auto_approve_after_days': 3,
+        'mark_absent_previous_days_enabled': False,
+        'mark_absent_after_days': 2,
+        'effective_working_hours_rule': 'do_not_show',
+    }
+    saved_template = app_settings.get('attendance_template_v2')
+    if isinstance(saved_template, dict):
+        defaults.update(saved_template)
+
+    if request.method == 'POST':
+        truthy = {'1', 'true', 'yes', 'on'}
+
+        defaults['name'] = (request.POST.get('name') or '').strip()
+        defaults['attendance_mode'] = (request.POST.get('attendance_mode') or '').strip()
+        defaults['holiday_rule'] = (request.POST.get('holiday_rule') or '').strip()
+        defaults['track_in_out_enabled'] = str(request.POST.get('track_in_out_enabled') or '').strip().lower() in truthy
+        defaults['no_attendance_without_punch_out'] = str(request.POST.get('no_attendance_without_punch_out') or '').strip().lower() in truthy
+        defaults['allow_multiple_punches'] = str(request.POST.get('allow_multiple_punches') or '').strip().lower() in truthy
+        defaults['auto_approval_enabled'] = str(request.POST.get('auto_approval_enabled') or '').strip().lower() in truthy
+        defaults['mark_absent_previous_days_enabled'] = str(request.POST.get('mark_absent_previous_days_enabled') or '').strip().lower() in truthy
+        defaults['effective_working_hours_rule'] = (request.POST.get('effective_working_hours_rule') or '').strip()
+
+        try:
+            defaults['auto_approve_after_days'] = int((request.POST.get('auto_approve_after_days') or '3').strip())
+        except (TypeError, ValueError):
+            defaults['auto_approve_after_days'] = 3
+
+        try:
+            defaults['mark_absent_after_days'] = int((request.POST.get('mark_absent_after_days') or '2').strip())
+        except (TypeError, ValueError):
+            defaults['mark_absent_after_days'] = 2
+
+        if not defaults['name']:
+            errors.append('Template name is required.')
+
+        if defaults['attendance_mode'] not in {
+            'mark_present_default',
+            'manual_attendance',
+            'location_based',
+            'selfie_location_based',
+        }:
+            errors.append('Select a valid attendance mode.')
+
+        if defaults['holiday_rule'] not in {
+            'no_paid_holiday_attendance',
+            'comp_off',
+            'allow_paid_holiday_attendance',
+        }:
+            errors.append('Select a valid attendance-on-holidays rule.')
+
+        if defaults['effective_working_hours_rule'] not in {
+            'do_not_show',
+            'full_day',
+            'half_day',
+            'custom',
+        }:
+            errors.append('Select a valid effective working-hours rule.')
+
+        if defaults['auto_approve_after_days'] < 1 or defaults['auto_approve_after_days'] > 365:
+            errors.append('Auto approve after days must be between 1 and 365.')
+        if defaults['mark_absent_after_days'] < 1 or defaults['mark_absent_after_days'] > 365:
+            errors.append('Mark absent after days must be between 1 and 365.')
+        if defaults['allow_multiple_punches'] and not defaults['track_in_out_enabled']:
+            errors.append('Enable Track In & Out Time before allowing multiple punches.')
+
+        if not errors:
+            payload_settings = dict(app_settings)
+            template_payload = dict(defaults)
+            template_payload['updated_at'] = timezone.now().isoformat()
+            if not template_payload.get('created_at'):
+                template_payload['created_at'] = timezone.now().isoformat()
+            payload_settings['attendance_template_v2'] = template_payload
+
+            try:
+                save_resp = _api_post(request, '/api/clients/settings/', {'app_settings': payload_settings})
+                redir = _handle_unauthorized(save_resp, request)
+                if redir:
+                    return redir
+                if save_resp.status_code == 200:
+                    saved_settings = save_resp.json() if isinstance(save_resp.json(), dict) else payload_settings
+                    request.session['app_settings'] = saved_settings
+                    request.session.modified = True
+                    _flash(request, 'Attendance Template V2 saved successfully.', 'success')
+                    return redirect('attendance_template_v2')
+                errors = _error_list_from_response(save_resp, 'Failed to save Attendance Template V2.')
+            except requests.exceptions.ConnectionError:
+                errors = ['Backend server unreachable.']
+
+    return render(request, 'attendance/template_v2.html', {
+        'template_data': defaults,
+        'errors': errors,
+        'messages': messages,
+        **_get_context(request),
+    })
+
+
 def dashboard(request):
     messages = _pop_messages(request)
     auto_clockout_alerts = []
+    today = timezone.localdate()
+    current_month_label = today.strftime('%B %Y')
+
+    emp_count = 0
+    cf_count = 0
+    present_today = 0
+    absent_today = 0
+    on_leave_today = 0
+    pending_leave_approvals = 0
+    total_branch_count = 0
+    total_department_count = 0
+    total_promotions = 0
+    terminations_this_month = 0
+
+    recent_employees = []
+    recent_leave_applications = []
+    employees_on_leave = []
+    missing_attendance_today = []
+    department_distribution = []
+    holiday_calendar_weeks = []
+    announcements = [
+        {
+            'title': 'Monthly Compliance Reminder',
+            'content': 'Please complete pending attendance regularization and leave approvals before month end.',
+            'date': today.isoformat(),
+        },
+        {
+            'title': 'Payroll Processing Window',
+            'content': 'Payroll review and lock window remains open for the final three business days of the month.',
+            'date': today.isoformat(),
+        },
+        {
+            'title': 'Document Verification Drive',
+            'content': 'Employees with pending KYC documents should upload through public links this week.',
+            'date': today.isoformat(),
+        },
+    ]
+
+    employees_rows = []
+    custom_fields_rows = []
+    leaves_rows = []
+    holidays_rows = []
+    present_employee_ids = set()
+    on_leave_employee_ids = set()
 
     try:
         emp_resp = _api_get(request, '/api/employees/')
-        cf_resp  = _api_get(request, '/api/custom-fields/')
+        cf_resp = _api_get(request, '/api/custom-fields/')
 
         redirect_resp = _handle_unauthorized(emp_resp, request)
         if redirect_resp:
             return redirect_resp
 
-        employees     = emp_resp.json() if emp_resp.status_code == 200 else []
-        custom_fields = cf_resp.json()  if cf_resp.status_code == 200 else []
+        if emp_resp.status_code == 200:
+            emp_payload = emp_resp.json()
+            employees_rows = emp_payload.get('results', emp_payload) if isinstance(emp_payload, dict) else emp_payload
+            emp_count = emp_payload.get('count', len(employees_rows)) if isinstance(emp_payload, dict) else len(employees_rows)
 
-        # Handle paginated and non-paginated responses
-        if isinstance(employees, dict):
-            emp_count = employees.get('count', len(employees.get('results', [])))
-        else:
-            emp_count = len(employees)
+        if cf_resp.status_code == 200:
+            cf_payload = cf_resp.json()
+            custom_fields_rows = cf_payload.get('results', cf_payload) if isinstance(cf_payload, dict) else cf_payload
+            cf_count = cf_payload.get('count', len(custom_fields_rows)) if isinstance(cf_payload, dict) else len(custom_fields_rows)
 
-        if isinstance(custom_fields, dict):
-            cf_count = custom_fields.get('count', len(custom_fields.get('results', [])))
-        else:
-            cf_count = len(custom_fields)
+        leave_resp = _api_get(request, '/api/leaves/')
+        if leave_resp.status_code == 200:
+            leave_payload = leave_resp.json()
+            leaves_rows = leave_payload.get('results', leave_payload) if isinstance(leave_payload, dict) else leave_payload
 
-        recent_employees = (
-            employees.get('results', employees)[:5]
-            if isinstance(employees, dict)
-            else employees[:5]
-        )
+        holiday_resp = _api_get(request, '/api/holidays/')
+        if holiday_resp.status_code == 200:
+            holiday_payload = holiday_resp.json()
+            holidays_rows = holiday_payload.get('results', holiday_payload) if isinstance(holiday_payload, dict) else holiday_payload
+
+        # Attendance (present today) from dynamic attendance model records.
+        dm_resp = _api_get(request, '/api/dynamic-models/')
+        if dm_resp.status_code == 200:
+            dm_payload = dm_resp.json()
+            dm_rows = dm_payload.get('results', dm_payload) if isinstance(dm_payload, dict) else dm_payload
+            attendance_model = next((m for m in dm_rows if str(m.get('slug', '')).lower() == 'attendance'), None)
+            if attendance_model:
+                rec_resp = _api_get(request, '/api/dynamic-records/', params={'dynamic_model': attendance_model.get('id')})
+                if rec_resp.status_code == 200:
+                    rec_payload = rec_resp.json()
+                    rec_rows = rec_payload.get('results', rec_payload) if isinstance(rec_payload, dict) else rec_payload
+                    for rec in rec_rows or []:
+                        data = rec.get('data') or {}
+                        att_date = str(data.get('attendance_date') or '')
+                        if att_date != today.isoformat():
+                            continue
+                        status = str(data.get('status') or '').strip().lower()
+                        if status == 'present' or data.get('check_in'):
+                            present_employee_ids.add(str(rec.get('employee')))
+
+        employee_by_id = {str(e.get('id')): e for e in employees_rows or []}
+
+        # Leave metrics and recent leave entries.
+        recent_leave_temp = []
+        for row in leaves_rows or []:
+            status = str(row.get('status') or '').strip().lower()
+            if status == 'pending':
+                pending_leave_approvals += 1
+
+            start_raw = str(row.get('start_date') or '')
+            end_raw = str(row.get('end_date') or '')
+            try:
+                start_dt = datetime.date.fromisoformat(start_raw)
+                end_dt = datetime.date.fromisoformat(end_raw)
+            except ValueError:
+                start_dt = None
+                end_dt = None
+
+            if start_dt and end_dt and start_dt <= today <= end_dt and status in ('approved', 'pending'):
+                emp_id = str(row.get('employee') or '')
+                if emp_id:
+                    on_leave_employee_ids.add(emp_id)
+
+            sort_key = str(row.get('created_at') or '') or start_raw
+            recent_leave_temp.append((sort_key, row))
+
+        recent_leave_temp.sort(key=lambda item: item[0], reverse=True)
+        recent_leave_applications = [row for _, row in recent_leave_temp[:8]]
+
+        employees_on_leave = []
+        for emp_id in list(on_leave_employee_ids)[:10]:
+            emp = employee_by_id.get(emp_id, {})
+            employees_on_leave.append({
+                'name': ((emp.get('first_name') or '') + ' ' + (emp.get('last_name') or '')).strip() or (emp.get('email') or f'Employee #{emp_id}'),
+                'email': emp.get('email') or '-',
+                'id': emp_id,
+            })
+
+        missing_attendance_today = []
+        for emp in employees_rows or []:
+            emp_id = str(emp.get('id'))
+            if emp_id in present_employee_ids or emp_id in on_leave_employee_ids:
+                continue
+            missing_attendance_today.append({
+                'id': emp_id,
+                'name': ((emp.get('first_name') or '') + ' ' + (emp.get('last_name') or '')).strip() or (emp.get('email') or f'Employee #{emp_id}'),
+                'email': emp.get('email') or '-',
+            })
+        missing_attendance_today = missing_attendance_today[:10]
+
+        present_today = len(present_employee_ids)
+        on_leave_today = len(on_leave_employee_ids)
+        absent_today = max(emp_count - present_today - on_leave_today, 0)
+
+        # Derived distributions.
+        dept_counter = {}
+        branch_set = set()
+        for emp in employees_rows or []:
+            dept_name = (
+                emp.get('department_name')
+                or emp.get('department')
+                or emp.get('client_role_name')
+                or 'General'
+            )
+            dept_counter[dept_name] = dept_counter.get(dept_name, 0) + 1
+            branch_name = emp.get('branch_name') or emp.get('branch') or ''
+            if branch_name:
+                branch_set.add(str(branch_name))
+
+        total_department_count = len(dept_counter)
+        total_branch_count = len(branch_set) if branch_set else (1 if emp_count else 0)
+        for name, count in sorted(dept_counter.items(), key=lambda item: item[1], reverse=True):
+            percent = (count * 100.0 / emp_count) if emp_count else 0
+            department_distribution.append({'name': name, 'count': count, 'percent': round(percent, 1)})
+        department_distribution = department_distribution[:10]
+
+        # Placeholder business KPIs until dedicated modules exist.
+        total_promotions = 0
+        terminations_this_month = 0
+
+        # Calendar matrix for current month with holiday tags.
+        holiday_map = {}
+        month_cal = calendar.Calendar(firstweekday=6)  # Sunday start
+        first_day = datetime.date(today.year, today.month, 1)
+        last_day = datetime.date(today.year, today.month, calendar.monthrange(today.year, today.month)[1])
+
+        for row in holidays_rows or []:
+            if str(row.get('is_active', True)).lower() == 'false':
+                continue
+            name = str(row.get('name') or 'Holiday').strip()
+            start_raw = str(row.get('start_date') or '')
+            end_raw = str(row.get('end_date') or '')
+            try:
+                start_dt = datetime.date.fromisoformat(start_raw)
+                end_dt = datetime.date.fromisoformat(end_raw)
+            except ValueError:
+                continue
+            cur = max(start_dt, first_day)
+            cap = min(end_dt, last_day)
+            while cur <= cap:
+                holiday_map.setdefault(cur.isoformat(), []).append(name)
+                cur += datetime.timedelta(days=1)
+
+        for week in month_cal.monthdatescalendar(today.year, today.month):
+            cells = []
+            for day in week:
+                day_key = day.isoformat()
+                cells.append({
+                    'day': day.day,
+                    'in_month': day.month == today.month,
+                    'is_today': day == today,
+                    'holidays': holiday_map.get(day_key, []),
+                })
+            holiday_calendar_weeks.append(cells)
+
+        recent_employees = sorted(
+            employees_rows or [],
+            key=lambda item: str(item.get('joining_date') or ''),
+            reverse=True
+        )[:5]
         auto_clockout_alerts = _load_auto_clockout_alerts(request, limit=6)
 
     except requests.exceptions.ConnectionError:
-        emp_count = 0
-        cf_count  = 0
-        recent_employees = []
         messages.append({'message': 'Backend server unreachable.', 'level': 'error'})
+
+    quick_actions = [
+        {'label': 'Add New Employee', 'url': 'employee_list'},
+        {'label': 'Mark Attendance', 'url': 'dashboard'},
+        {'label': 'Apply for Leave', 'url': 'leave_list'},
+        {'label': 'Process Payroll', 'url': 'payroll_list'},
+        {'label': 'Open Documents', 'url': 'document_list'},
+        {'label': 'Import / Export', 'url': 'import_export_page'},
+    ]
 
     return render(request, 'dashboard.html', {
         'emp_count': emp_count,
         'cf_count': cf_count,
+        'present_today': present_today,
+        'absent_today': absent_today,
+        'on_leave_today': on_leave_today,
+        'pending_leave_approvals': pending_leave_approvals,
+        'total_branch_count': total_branch_count,
+        'total_department_count': total_department_count,
+        'total_promotions': total_promotions,
+        'terminations_this_month': terminations_this_month,
         'recent_employees': recent_employees,
         'auto_clockout_alerts': auto_clockout_alerts,
+        'department_distribution': department_distribution,
+        'quick_actions': quick_actions,
+        'employees_on_leave': employees_on_leave,
+        'missing_attendance_today': missing_attendance_today,
+        'holiday_calendar_weeks': holiday_calendar_weeks,
+        'recent_leave_applications': recent_leave_applications,
+        'announcements': announcements,
+        'current_month_label': current_month_label,
         'messages': messages,
         **_get_context(request),
     })
@@ -1043,7 +1647,9 @@ def document_list(request):
     search_q = (request.GET.get('q') or '').strip()
     category_q = (request.GET.get('category') or '').strip()
     selected_status = (request.GET.get('status') or '').strip().lower()
+    selected_uploader = (request.GET.get('uploader') or '').strip()
     edit_id = (request.GET.get('edit') or '').strip()
+    uploader_options = []
 
     role = request.session.get('role', 'employee')
     client_id = request.session.get('client_id')
@@ -1066,6 +1672,23 @@ def document_list(request):
         if doc_resp.status_code == 200:
             payload = doc_resp.json()
             documents = payload.get('results', payload) if isinstance(payload, dict) else payload
+            uploader_seen = set()
+            for row in documents or []:
+                uploader_name = str(row.get('uploaded_by_username') or row.get('uploader_name') or '').strip()
+                if not uploader_name:
+                    continue
+                lowered = uploader_name.lower()
+                if lowered in uploader_seen:
+                    continue
+                uploader_seen.add(lowered)
+                uploader_options.append(uploader_name)
+            uploader_options = sorted(uploader_options, key=lambda v: v.lower())
+            if selected_uploader:
+                sel = selected_uploader.lower()
+                documents = [
+                    row for row in (documents or [])
+                    if str(row.get('uploaded_by_username') or row.get('uploader_name') or '').strip().lower() == sel
+                ]
         else:
             errors = _error_list_from_response(doc_resp, 'Failed to load documents.')
 
@@ -1191,6 +1814,8 @@ def document_list(request):
                     'search_q': search_q,
                     'category_q': category_q,
                     'selected_status': selected_status,
+                    'selected_uploader': selected_uploader,
+                    'uploader_options': uploader_options,
                     'errors': errors,
                     'messages': messages,
                     **_get_context(request),
@@ -1211,6 +1836,14 @@ def document_list(request):
                 'notes': (request.POST.get('request_notes') or '').strip(),
                 'is_active': True,
             }
+            selected_doc_types = [str(v).strip() for v in request.POST.getlist('request_doc_types') if str(v).strip()]
+            cleaned_doc_types = []
+            for doc_type in selected_doc_types:
+                if doc_type not in cleaned_doc_types:
+                    cleaned_doc_types.append(doc_type)
+            if cleaned_doc_types:
+                payload['requested_doc_types'] = cleaned_doc_types[:20]
+
             if expires_at:
                 payload['expires_at'] = expires_at
             if role == 'superadmin' and client_id:
@@ -1238,6 +1871,7 @@ def document_list(request):
                     title = single_payload.get('title') or 'Document Upload Request'
                     category = single_payload.get('category') or '-'
                     notes = single_payload.get('notes') or '-'
+                    requested_docs = single_payload.get('requested_doc_types') or []
                     expires_text = 'No expiry' if not expires_at else str(expires_at)
 
                     if upload_url:
@@ -1251,6 +1885,7 @@ def document_list(request):
                                     f'Title: {title}',
                                     f'Category: {category}',
                                     f'Notes: {notes}',
+                                    f'Requested Documents: {", ".join(requested_docs) if requested_docs else "-"}',
                                     f'Expires At: {expires_text}',
                                 ],
                                 cta_text='Upload Document',
@@ -1275,6 +1910,8 @@ def document_list(request):
                         'search_q': search_q,
                         'category_q': category_q,
                         'selected_status': selected_status,
+                        'selected_uploader': selected_uploader,
+                        'uploader_options': uploader_options,
                         'errors': errors,
                         'messages': messages,
                         **_get_context(request),
@@ -1301,6 +1938,8 @@ def document_list(request):
         'search_q': search_q,
         'category_q': category_q,
         'selected_status': selected_status,
+        'selected_uploader': selected_uploader,
+        'uploader_options': uploader_options,
         'errors': errors,
         'messages': messages,
         **_get_context(request),
@@ -1377,18 +2016,64 @@ def document_upload_page(request, token):
             'uploader_email': (request.POST.get('uploader_email') or '').strip(),
             'notes': (request.POST.get('notes') or '').strip() or info.get('notes', ''),
         }
-        upload_file = request.FILES.get('file')
-        if upload_file:
-            payload['file_url'] = _store_uploaded_dynamic_file(upload_file, folder='documents/public')
+        doc_types = request.POST.getlist('doc_type')
+        doc_files = request.FILES.getlist('doc_file')
+        requested_doc_types = [
+            str(item).strip()
+            for item in (info.get('requested_doc_types') or [])
+            if str(item).strip()
+        ]
 
-        try:
-            post_resp = _api_request('POST', f'/api/document-upload/{token}/', data=payload, host=request.get_host())
-            if post_resp.status_code in (200, 201):
-                success_message = 'Document uploaded successfully. You can close this page.'
+        documents_payload = []
+        max_len = max(len(doc_types), len(doc_files))
+        for idx in range(max_len):
+            current_type = str(doc_types[idx]).strip() if idx < len(doc_types) else ''
+            current_file = doc_files[idx] if idx < len(doc_files) else None
+            if not current_file:
+                continue
+            if requested_doc_types and current_type not in requested_doc_types:
+                errors = [f'Invalid document type selected: {current_type or "Unknown"}']
+                break
+            file_url = _store_uploaded_dynamic_file(current_file, folder='documents/public')
+            documents_payload.append({
+                'doc_type': current_type,
+                'file_url': file_url,
+            })
+
+        if not errors:
+            if documents_payload:
+                payload['documents'] = documents_payload
             else:
-                errors = _error_list_from_response(post_resp, 'Failed to upload document.')
-        except requests.exceptions.ConnectionError:
-            errors = ['Server unavailable. Please try again later.']
+                upload_files = request.FILES.getlist('files')
+                if not upload_files:
+                    single_file = request.FILES.get('file')
+                    if single_file:
+                        upload_files = [single_file]
+                if upload_files:
+                    payload['file_urls'] = [
+                        _store_uploaded_dynamic_file(upload_file, folder='documents/public')
+                        for upload_file in upload_files
+                    ]
+
+        if not errors:
+            try:
+                post_resp = _api_request('POST', f'/api/document-upload/{token}/', data=payload, host=request.get_host())
+                if post_resp.status_code in (200, 201):
+                    uploaded_count = 0
+                    try:
+                        response_data = post_resp.json()
+                        if isinstance(response_data, dict):
+                            uploaded_count = int(response_data.get('uploaded_count') or 0)
+                    except Exception:
+                        uploaded_count = 0
+                    if uploaded_count > 1:
+                        success_message = f'{uploaded_count} documents uploaded successfully. You can close this page.'
+                    else:
+                        success_message = 'Document uploaded successfully. You can close this page.'
+                else:
+                    errors = _error_list_from_response(post_resp, 'Failed to upload document.')
+            except requests.exceptions.ConnectionError:
+                errors = ['Server unavailable. Please try again later.']
 
     return render(request, 'documents/public_upload.html', {
         'info': info,
@@ -1434,6 +2119,9 @@ def settings_page(request):
         if isinstance(session_settings, dict):
             settings_data = session_settings
 
+    sidebar_logo_modules = _get_sidebar_logo_modules(request)
+    sidebar_module_icon_keys_csv = ','.join([str(item.get('key') or '').strip() for item in sidebar_logo_modules if str(item.get('key') or '').strip()])
+
     if request.method == 'POST':
         is_edit_mode = True
         def _bool_field(name):
@@ -1449,14 +2137,22 @@ def settings_page(request):
         existing_brand = settings_data.get('brand') if isinstance(settings_data, dict) else {}
         if not isinstance(existing_brand, dict):
             existing_brand = {}
+        existing_ui = settings_data.get('ui') if isinstance(settings_data, dict) else {}
+        if not isinstance(existing_ui, dict):
+            existing_ui = {}
 
         logo_url = (request.POST.get('logo_url') or '').strip() or existing_brand.get('logo_url', '')
         favicon_url = (request.POST.get('favicon_url') or '').strip() or existing_brand.get('favicon_url', '')
+        sidebar_logo_url = (request.POST.get('sidebar_logo_url') or '').strip() or existing_ui.get('sidebar_logo_url', '')
+        existing_module_icons = existing_ui.get('sidebar_module_icons') if isinstance(existing_ui.get('sidebar_module_icons'), dict) else {}
+        sidebar_module_icons = dict(existing_module_icons)
 
         if _bool_field('remove_logo'):
             logo_url = ''
         if _bool_field('remove_favicon'):
             favicon_url = ''
+        if _bool_field('remove_sidebar_logo'):
+            sidebar_logo_url = ''
 
         logo_file = request.FILES.get('logo_file')
         if logo_file:
@@ -1465,6 +2161,34 @@ def settings_page(request):
         favicon_file = request.FILES.get('favicon_file')
         if favicon_file:
             favicon_url = _store_uploaded_dynamic_file(favicon_file, folder='brand_assets/favicon')
+        sidebar_logo_file = request.FILES.get('sidebar_logo_file')
+        if sidebar_logo_file:
+            sidebar_logo_url = _store_uploaded_dynamic_file(sidebar_logo_file, folder='brand_assets/sidebar_logo')
+
+        posted_keys_raw = str(request.POST.get('sidebar_module_icon_keys') or '').strip()
+        module_icon_keys = [k.strip().lower() for k in posted_keys_raw.split(',') if k.strip()]
+        for module_key in module_icon_keys:
+            if not re.fullmatch(r'[a-z0-9_]+', module_key or ''):
+                continue
+            remove_name = f'remove_module_logo_{module_key}'
+            url_name = f'module_logo_{module_key}_url'
+            file_name = f'module_logo_{module_key}_file'
+
+            current_url = sidebar_module_icons.get(module_key, '')
+            submitted_url = (request.POST.get(url_name) or '').strip()
+            next_url = submitted_url if submitted_url else current_url
+
+            if _bool_field(remove_name):
+                next_url = ''
+
+            file_obj = request.FILES.get(file_name)
+            if file_obj:
+                next_url = _store_uploaded_dynamic_file(file_obj, folder=f'brand_assets/module_logo/{module_key}')
+
+            if next_url:
+                sidebar_module_icons[module_key] = next_url
+            elif module_key in sidebar_module_icons:
+                sidebar_module_icons.pop(module_key, None)
 
         payload_settings = {
             'brand': {
@@ -1482,10 +2206,12 @@ def settings_page(request):
                 'sidebar_variant': (request.POST.get('sidebar_variant') or 'inset').strip().lower(),
                 'sidebar_style': (request.POST.get('sidebar_style') or 'plain').strip().lower(),
                 'layout_direction': (request.POST.get('layout_direction') or 'ltr').strip().lower(),
-                'theme_mode': (request.POST.get('theme_mode') or 'dark').strip().lower(),
+                'theme_mode': (request.POST.get('theme_mode') or 'light').strip().lower(),
                 'font_family': (request.POST.get('font_family') or 'inter').strip().lower(),
                 'font_family_custom': (request.POST.get('font_family_custom') or '').strip(),
                 'font_size_base': _int_field('font_size_base', default=14, min_value=12, max_value=20),
+                'sidebar_logo_url': sidebar_logo_url,
+                'sidebar_module_icons': sidebar_module_icons,
             },
             'system': {
                 'timezone': (request.POST.get('timezone') or '').strip(),
@@ -1543,6 +2269,8 @@ def settings_page(request):
     return render(request, 'settings/list.html', {
         'settings_data': settings_data,
         'is_edit_mode': is_edit_mode,
+        'sidebar_logo_modules': sidebar_logo_modules,
+        'sidebar_module_icon_keys_csv': sidebar_module_icon_keys_csv,
         'messages': messages,
         'errors': errors,
         **_get_context(request),
@@ -2092,6 +2820,117 @@ def employee_list(request):
     search_q = request.GET.get('q', '')
     selected_role = (request.GET.get('role') or '').strip()
     client_roles = _load_client_roles(request)
+    can_create_employee = (
+        request.session.get('role') in ('superadmin', 'admin')
+        or 'employees.create' in (request.session.get('module_permissions') or [])
+    )
+
+    create_form = EmployeeForm()
+    create_errors = []
+    create_custom_fields = []
+    create_custom_field_values = {}
+    create_client_roles = []
+    create_hr_options = []
+    create_manager_options = []
+    create_dynamic_models = []
+    create_dynamic_fields_by_model = {}
+    show_employee_section = 'list'
+
+    if can_create_employee:
+        create_client_roles = _load_client_roles(request)
+        role_choices = [(item['id'], item['label']) for item in create_client_roles]
+        create_hr_options = _employee_assignment_options(request, 'hr')
+        create_manager_options = _employee_assignment_options(request, 'manager')
+        create_form.fields['role'].choices = role_choices
+        create_form.fields['hr'].choices = [('', 'Select HR (Optional)')] + [
+            (item['id'], item['label']) for item in create_hr_options
+        ]
+        create_form.fields['manager'].choices = [('', 'Select Manager (Optional)')] + [
+            (item['id'], item['label']) for item in create_manager_options
+        ]
+        create_dynamic_models, create_dynamic_fields_by_model = _get_dynamic_models_with_fields(request)
+        try:
+            cf_resp = _api_get(request, '/api/custom-fields/?model_name=Employee')
+            if cf_resp.status_code == 200:
+                cf_data = cf_resp.json()
+                create_custom_fields = (
+                    cf_data.get('results', cf_data) if isinstance(cf_data, dict) else cf_data
+                )
+        except requests.exceptions.ConnectionError:
+            pass
+
+    if request.method == 'POST' and request.POST.get('action') == 'create_employee':
+        show_employee_section = 'create'
+        if not can_create_employee:
+            create_errors = ['You do not have permission to create employees.']
+        elif not create_client_roles:
+            create_errors = ['No roles found. First create at least one role from Role Management, then create employees.']
+        else:
+            role_choices = [(item['id'], item['label']) for item in create_client_roles]
+            create_form = EmployeeForm(request.POST)
+            create_form.fields['role'].choices = role_choices
+            create_form.fields['hr'].choices = [('', 'Select HR (Optional)')] + [
+                (item['id'], item['label']) for item in create_hr_options
+            ]
+            create_form.fields['manager'].choices = [('', 'Select Manager (Optional)')] + [
+                (item['id'], item['label']) for item in create_manager_options
+            ]
+            if create_form.is_valid():
+                try:
+                    client_id = request.session.get('client_id')
+                    if not client_id:
+                        create_errors = ['You are not assigned to any client. Contact your administrator.']
+                    else:
+                        employee_data = create_form.cleaned_data.copy()
+                        selected_create_role = str(employee_data.pop('role', '')).strip()
+                        hr_value = employee_data.pop('hr', '')
+                        manager_value = employee_data.pop('manager', '')
+                        employee_data['client'] = client_id
+
+                        if not selected_create_role.isdigit():
+                            create_errors = ['Select a valid role.']
+                        else:
+                            selected_role_item = next(
+                                (item for item in create_client_roles if item['id'] == selected_create_role),
+                                None,
+                            )
+                            employee_data['client_role'] = int(selected_create_role)
+                            employee_data['role'] = (selected_role_item or {}).get('base_role', 'employee')
+                            employee_data['hr'] = int(hr_value) if hr_value else None
+                            employee_data['manager'] = int(manager_value) if manager_value else None
+                            employee_data = _serialize_data(employee_data)
+
+                            save_resp = _api_post(request, '/api/employees/', employee_data)
+                            redir = _handle_unauthorized(save_resp, request)
+                            if redir:
+                                return redir
+
+                            if save_resp.status_code == 201:
+                                employee = save_resp.json()
+                                employee_id = employee['id']
+
+                                for cf in create_custom_fields:
+                                    field_value = request.POST.get(f'custom_field_{cf["id"]}')
+                                    if field_value:
+                                        _api_post(request, '/api/custom-field-values/', {
+                                            'employee': employee_id,
+                                            'field': cf['id'],
+                                            'value': field_value,
+                                        })
+
+                                _save_employee_dynamic_records(
+                                    request,
+                                    employee_id,
+                                    create_dynamic_models,
+                                    create_dynamic_fields_by_model,
+                                )
+                                _flash(request, 'Employee created successfully!', 'success')
+                                return redirect('employee_list')
+                            create_errors = _employee_error_list(save_resp, 'Failed to create employee.')
+                except requests.exceptions.ConnectionError:
+                    create_errors = ['Backend server unreachable.']
+            else:
+                create_errors = ['Please fix the highlighted form fields and try again.']
     params = {}
     if search_q:
         params['search'] = search_q
@@ -2154,6 +2993,17 @@ def employee_list(request):
         'search_q': search_q,
         'selected_role': selected_role,
         'role_filter_options': client_roles,
+        'can_create_employee': can_create_employee,
+        'show_employee_section': show_employee_section,
+        'create_form': create_form,
+        'create_errors': create_errors,
+        'create_custom_fields': create_custom_fields,
+        'create_custom_field_values': create_custom_field_values,
+        'create_hr_options': create_hr_options,
+        'create_manager_options': create_manager_options,
+        'create_client_roles': create_client_roles,
+        'create_dynamic_models': create_dynamic_models,
+        'create_dynamic_fields_by_model': create_dynamic_fields_by_model,
         'messages': messages,
         **_get_context(request),
     })
@@ -2894,6 +3744,183 @@ def employee_delete(request, pk):
 # Custom Fields
 # ─────────────────────────────────────────────────────────────────
 
+def import_export_page(request):
+    permission_redirect = _require_module_permission(request, 'import_export.view')
+    if permission_redirect:
+        return permission_redirect
+    addon_redirect = _require_addon(request, 'import_export')
+    if addon_redirect:
+        return addon_redirect
+
+    messages = _pop_messages(request)
+    errors = []
+    created_count = 0
+    failed_rows = []
+    client_roles = _load_client_roles(request)
+
+    role_by_id = {str(item.get('id')): item for item in client_roles}
+    role_by_name = {
+        str(item.get('name') or '').strip().lower(): item
+        for item in client_roles
+        if str(item.get('name') or '').strip()
+    }
+
+    hr_manager_lookup = {}
+    try:
+        emp_resp = _api_get(request, '/api/employees/')
+        if emp_resp.status_code == 200:
+            emp_payload = emp_resp.json()
+            emp_rows = emp_payload.get('results', emp_payload) if isinstance(emp_payload, dict) else emp_payload
+            for emp in emp_rows or []:
+                email_key = str(emp.get('email') or '').strip().lower()
+                if email_key:
+                    hr_manager_lookup[email_key] = emp
+    except requests.exceptions.ConnectionError:
+        pass
+
+    if request.method == 'POST':
+        action = (request.POST.get('action') or '').strip()
+
+        if action == 'export_employees':
+            permission_redirect = _require_module_permission(request, 'import_export.export')
+            if permission_redirect:
+                return permission_redirect
+            try:
+                export_resp = _api_get(request, '/api/employees/')
+                redir = _handle_unauthorized(export_resp, request)
+                if redir:
+                    return redir
+                if export_resp.status_code != 200:
+                    errors = _error_list_from_response(export_resp, 'Failed to export employees.')
+                else:
+                    payload = export_resp.json()
+                    rows = payload.get('results', payload) if isinstance(payload, dict) else payload
+
+                    output = io.StringIO()
+                    writer = csv.writer(output)
+                    writer.writerow([
+                        'first_name', 'last_name', 'email', 'role', 'joining_date', 'hr_email', 'manager_email'
+                    ])
+                    for row in rows or []:
+                        writer.writerow([
+                            row.get('first_name') or '',
+                            row.get('last_name') or '',
+                            row.get('email') or '',
+                            row.get('client_role_name') or '',
+                            row.get('joining_date') or '',
+                            row.get('hr_email') or '',
+                            row.get('manager_email') or '',
+                        ])
+
+                    response = HttpResponse(output.getvalue(), content_type='text/csv')
+                    response['Content-Disposition'] = 'attachment; filename="employees_export.csv"'
+                    return response
+            except requests.exceptions.ConnectionError:
+                errors = ['Backend server unreachable.']
+
+        elif action == 'import_employees':
+            permission_redirect = _require_module_permission(request, 'import_export.import')
+            if permission_redirect:
+                return permission_redirect
+
+            upload = request.FILES.get('csv_file')
+            if not upload:
+                errors = ['Please select a CSV file to import.']
+            elif not client_roles:
+                errors = ['No roles available. Create at least one role before importing employees.']
+            else:
+                try:
+                    decoded = upload.read().decode('utf-8-sig')
+                    reader = csv.DictReader(io.StringIO(decoded))
+                    if not reader.fieldnames:
+                        errors = ['CSV file is empty or invalid.']
+                    else:
+                        required_columns = {'first_name', 'last_name', 'email', 'role', 'joining_date'}
+                        missing = sorted(list(required_columns - set([str(c).strip() for c in reader.fieldnames])))
+                        if missing:
+                            errors = [f'Missing required CSV columns: {", ".join(missing)}']
+                        else:
+                            client_id = request.session.get('client_id')
+                            if not client_id:
+                                errors = ['No client selected in session. Please login again.']
+                            else:
+                                for index, row in enumerate(reader, start=2):
+                                    first_name = str(row.get('first_name') or '').strip()
+                                    last_name = str(row.get('last_name') or '').strip()
+                                    email = str(row.get('email') or '').strip()
+                                    role_raw = str(row.get('role') or '').strip()
+                                    joining_date = str(row.get('joining_date') or '').strip()
+                                    hr_email = str(row.get('hr_email') or '').strip().lower()
+                                    manager_email = str(row.get('manager_email') or '').strip().lower()
+
+                                    if not first_name or not last_name or not email or not role_raw or not joining_date:
+                                        failed_rows.append(f'Row {index}: Required fields are missing.')
+                                        continue
+
+                                    selected_role = role_by_id.get(role_raw) or role_by_name.get(role_raw.lower())
+                                    if not selected_role:
+                                        failed_rows.append(
+                                            f'Row {index}: Role "{role_raw}" not found. Use role name or role id from your system.'
+                                        )
+                                        continue
+
+                                    try:
+                                        datetime.date.fromisoformat(joining_date)
+                                    except ValueError:
+                                        failed_rows.append(
+                                            f'Row {index}: joining_date "{joining_date}" must be YYYY-MM-DD.'
+                                        )
+                                        continue
+
+                                    hr_id = None
+                                    manager_id = None
+                                    if hr_email:
+                                        hr_row = hr_manager_lookup.get(hr_email)
+                                        hr_id = hr_row.get('id') if hr_row else None
+                                    if manager_email:
+                                        manager_row = hr_manager_lookup.get(manager_email)
+                                        manager_id = manager_row.get('id') if manager_row else None
+
+                                    payload = {
+                                        'first_name': first_name,
+                                        'last_name': last_name,
+                                        'email': email,
+                                        'client': client_id,
+                                        'client_role': int(selected_role.get('id')),
+                                        'role': selected_role.get('base_role', 'employee'),
+                                        'joining_date': joining_date,
+                                        'hr': hr_id,
+                                        'manager': manager_id,
+                                    }
+
+                                    try:
+                                        save_resp = _api_post(request, '/api/employees/', payload)
+                                        if save_resp.status_code == 201:
+                                            created_count += 1
+                                        else:
+                                            row_errors = _employee_error_list(save_resp, 'Failed to create employee.')
+                                            failed_rows.append(f'Row {index}: {"; ".join(row_errors)}')
+                                    except requests.exceptions.ConnectionError:
+                                        failed_rows.append(f'Row {index}: Backend server unreachable.')
+
+                                if created_count:
+                                    _flash(request, f'{created_count} employees imported successfully.', 'success')
+                                if failed_rows:
+                                    errors = failed_rows[:25]
+
+                except UnicodeDecodeError:
+                    errors = ['CSV must be UTF-8 encoded.']
+
+    return render(request, 'import_export/list.html', {
+        'messages': messages,
+        'errors': errors,
+        'created_count': created_count,
+        'client_roles': client_roles,
+        'sample_headers': ['first_name', 'last_name', 'email', 'role', 'joining_date', 'hr_email', 'manager_email'],
+        **_get_context(request),
+    })
+
+
 def leave_type_list(request):
     permission_redirect = _require_module_permission(request, 'leaves.view')
     if permission_redirect:
@@ -3014,6 +4041,21 @@ def leave_list(request):
         request.session.get('role') in ('superadmin', 'admin')
         or current_employee_role in ('hr', 'manager')
     )
+    can_create_leave = (
+        request.session.get('role') in ('superadmin', 'admin')
+        or 'leaves.create' in (request.session.get('module_permissions') or [])
+    )
+    can_choose_employee = can_view_all_leaves
+    show_leave_section = 'list'
+    create_form_values = {
+        'employee': '',
+        'leave_type': '',
+        'leave_unit': 'day',
+        'leave_hours': '',
+        'start_date': '',
+        'end_date': '',
+        'reason': '',
+    }
 
     params = {}
     if selected_status:
@@ -3059,6 +4101,48 @@ def leave_list(request):
         leave['leave_type_is_paid'] = leave_type.get('is_paid') if leave_type else leave.get('leave_type_is_paid')
     pending_count = len([row for row in leaves if str(row.get('status', '')).lower() == 'pending'])
 
+    if request.method == 'POST' and request.POST.get('action') == 'create_leave':
+        show_leave_section = 'create'
+        permission_redirect = _require_module_permission(request, 'leaves.create')
+        if permission_redirect:
+            return permission_redirect
+
+        create_form_values = {
+            'employee': (request.POST.get('employee') or '').strip(),
+            'leave_type': (request.POST.get('leave_type') or '').strip(),
+            'leave_unit': (request.POST.get('leave_unit') or 'day').strip(),
+            'leave_hours': (request.POST.get('leave_hours') or '').strip(),
+            'start_date': (request.POST.get('start_date') or '').strip(),
+            'end_date': (request.POST.get('end_date') or '').strip(),
+            'reason': (request.POST.get('reason') or '').strip(),
+        }
+
+        employee_id = (
+            str(current_employee_id)
+            if (not can_choose_employee and current_employee_id)
+            else create_form_values['employee']
+        )
+        payload = {
+            'employee': employee_id,
+            'leave_type': create_form_values['leave_type'],
+            'leave_unit': create_form_values['leave_unit'] or 'day',
+            'leave_hours': create_form_values['leave_hours'] or None,
+            'start_date': create_form_values['start_date'],
+            'end_date': create_form_values['end_date'],
+            'reason': create_form_values['reason'],
+        }
+        try:
+            resp = _api_post(request, '/api/leaves/', payload)
+            redir = _handle_unauthorized(resp, request)
+            if redir:
+                return redir
+            if resp.status_code == 201:
+                _flash(request, 'Leave request created successfully.', 'success')
+                return redirect('leave_list')
+            errors = _error_list_from_response(resp, 'Failed to create leave request.')
+        except requests.exceptions.ConnectionError:
+            errors = ['Backend server unreachable.']
+
     return render(request, 'leaves/list.html', {
         'leaves': leaves,
         'employees': employees,
@@ -3068,7 +4152,11 @@ def leave_list(request):
         'selected_status': selected_status,
         'selected_employee': selected_employee,
         'pending_count': pending_count,
+        'can_create_leave': can_create_leave,
         'can_view_all_leaves': can_view_all_leaves,
+        'can_choose_employee': can_choose_employee,
+        'show_leave_section': show_leave_section,
+        'create_form_values': create_form_values,
         **_get_context(request),
     })
 
@@ -3663,6 +4751,33 @@ def payroll_list(request):
             errors = ['Backend server unreachable.']
 
     try:
+        # Keep payroll policy aligned with onboarding setup so report uses selected
+        # payable-days mode and default shift hours for the chosen month.
+        if can_manage_payroll:
+            app_settings = request.session.get('app_settings')
+            derived_policy = _derive_policy_from_onboarding(app_settings, selected_year, selected_month)
+            if derived_policy:
+                sync_policy_resp = _api_get(request, '/api/payroll-policy/')
+                redir = _handle_unauthorized(sync_policy_resp, request)
+                if redir:
+                    return redir
+                if sync_policy_resp.status_code == 200:
+                    sync_payload = sync_policy_resp.json()
+                    sync_rows = (
+                        sync_payload.get('results', sync_payload)
+                        if isinstance(sync_payload, dict) else sync_payload
+                    )
+                    existing_policy = sync_rows[0] if sync_rows else None
+                    if existing_policy:
+                        needs_update = any(
+                            str(existing_policy.get(k)) != str(v)
+                            for k, v in derived_policy.items()
+                        )
+                        if needs_update:
+                            _api_put(request, f"/api/payroll-policy/{existing_policy.get('id')}/", derived_policy)
+                    else:
+                        _api_post(request, '/api/payroll-policy/', derived_policy)
+
         if can_manage_payroll:
             emp_resp = _api_get(request, '/api/employees/')
             redir = _handle_unauthorized(emp_resp, request)
@@ -3745,6 +4860,7 @@ def activity_log_list(request):
 
     action_filter = (request.GET.get('action') or '').strip().lower()
     module_filter = (request.GET.get('module') or '').strip()
+    user_filter = (request.GET.get('user') or '').strip()
     search_q = (request.GET.get('q') or '').strip()
 
     params = {}
@@ -3763,12 +4879,31 @@ def activity_log_list(request):
         if resp.status_code == 200:
             payload = resp.json()
             logs = payload.get('results', payload) if isinstance(payload, dict) else payload
+            for row in logs or []:
+                raw_created_at = str(row.get('created_at') or '').strip()
+                display_created_at = raw_created_at
+                if raw_created_at:
+                    try:
+                        parsed_dt = datetime.datetime.fromisoformat(raw_created_at.replace('Z', '+00:00'))
+                        if parsed_dt.tzinfo is not None:
+                            parsed_dt = timezone.localtime(parsed_dt)
+                        display_created_at = parsed_dt.strftime('%Y-%m-%d %H:%M:%S')
+                    except Exception:
+                        display_created_at = raw_created_at
+                row['created_at_display'] = display_created_at
         else:
             errors = _error_list_from_response(resp, 'Failed to load activity logs.')
     except requests.exceptions.ConnectionError:
         errors = ['Backend server unreachable.']
 
     module_options = sorted({str(row.get('module') or '') for row in logs if str(row.get('module') or '').strip()})
+    user_options = sorted({str(row.get('actor_username') or '') for row in logs if str(row.get('actor_username') or '').strip()}, key=lambda s: s.lower())
+    if user_filter:
+        user_filter_lower = user_filter.lower()
+        logs = [
+            row for row in logs
+            if str(row.get('actor_username') or '').strip().lower() == user_filter_lower
+        ]
 
     return render(request, 'activity_logs/list.html', {
         'messages': messages,
@@ -3777,6 +4912,8 @@ def activity_log_list(request):
         'action_filter': action_filter,
         'module_filter': module_filter,
         'module_options': module_options,
+        'user_filter': user_filter,
+        'user_options': user_options,
         'search_q': search_q,
         **_get_context(request),
     })
@@ -4780,6 +5917,7 @@ def dynamic_entity_list(request, model_id):
     attendance_employees = []
     selected_employee_id = (request.GET.get('employee') or '').strip()
     can_view_all_attendance = False
+    can_manage_attendance_template = False
     attendance_add_locked = False
     attendance_open_record_id = None
     current_employee_id = request.session.get('employee_id')
@@ -4794,6 +5932,10 @@ def dynamic_entity_list(request, model_id):
             addon_redirect = _require_addon(request, 'attendance')
             if addon_redirect:
                 return addon_redirect
+            can_manage_attendance_template = (
+                request.session.get('role') in ('superadmin', 'admin')
+                or _has_any_module_permission(request, ['attendance.create', 'attendance.edit'])
+            )
 
         records_params = {'dynamic_model': model_id}
         if is_attendance:
@@ -4882,6 +6024,7 @@ def dynamic_entity_list(request, model_id):
         'attendance_employees': attendance_employees,
         'selected_employee_id': selected_employee_id,
         'can_view_all_attendance': can_view_all_attendance,
+        'can_manage_attendance_template': can_manage_attendance_template,
         'attendance_add_locked': attendance_add_locked,
         'attendance_open_record_id': attendance_open_record_id,
         'messages': messages,

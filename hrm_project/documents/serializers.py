@@ -66,6 +66,7 @@ class DocumentUploadRequestSerializer(serializers.ModelSerializer):
             'category',
             'request_email',
             'notes',
+            'requested_doc_types',
             'token',
             'upload_url',
             'expires_at',
@@ -97,4 +98,16 @@ class DocumentUploadRequestSerializer(serializers.ModelSerializer):
         title = str(attrs.get('title') or '').strip()
         if not title:
             raise serializers.ValidationError({'title': 'This field is required.'})
+        requested_doc_types = attrs.get('requested_doc_types')
+        if requested_doc_types is not None:
+            if not isinstance(requested_doc_types, list):
+                raise serializers.ValidationError({'requested_doc_types': 'Provide a list of document types.'})
+            cleaned = []
+            for item in requested_doc_types:
+                value = str(item or '').strip()
+                if not value:
+                    continue
+                if value not in cleaned:
+                    cleaned.append(value)
+            attrs['requested_doc_types'] = cleaned[:20]
         return attrs

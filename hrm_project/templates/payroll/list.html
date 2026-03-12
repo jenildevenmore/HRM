@@ -7,6 +7,46 @@
     .payroll-header {
         margin-bottom: 16px;
     }
+    .payroll-filter-card {
+        border: 1px solid var(--border);
+        background: var(--bg-card);
+    }
+    .payroll-filter-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(220px, 1fr));
+        gap: 14px;
+    }
+    .payroll-filter-actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 16px;
+    }
+    .payroll-kpis {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(120px, 1fr));
+        gap: 10px;
+    }
+    .payroll-kpi {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: rgba(255,255,255,0.02);
+        padding: 10px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+    .payroll-kpi-label {
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: .5px;
+        font-size: 11px;
+        font-weight: 700;
+    }
+    .payroll-kpi-value {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--text);
+    }
     .policy-toggle-row {
         display: flex;
         align-items: center;
@@ -40,54 +80,24 @@
         pointer-events: auto;
         cursor: pointer;
     }
-    .payroll-accordion-toggle {
-        width: 100%;
-        text-align: left;
-        background: none;
-        border: none;
-        color: var(--text);
-        font-size: 20px;
+    .payroll-module-btn {
+        min-width: 170px;
+    }
+    .payroll-table table th,
+    .payroll-table table td {
+        white-space: nowrap;
+    }
+    .payroll-table table td:last-child,
+    .payroll-table table th:last-child {
         font-weight: 700;
-        cursor: pointer;
-        padding: 2px 0;
-        margin: 0;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        transition: color 0.2s ease;
     }
-    .payroll-accordion-toggle:hover {
-        color: var(--accent);
+    @media (max-width: 1200px) {
+        .payroll-filter-grid { grid-template-columns: repeat(2, minmax(220px, 1fr)); }
+        .payroll-kpis { grid-template-columns: repeat(3, minmax(120px, 1fr)); }
     }
-    .payroll-accordion-toggle::after {
-        content: '+';
-        width: 28px;
-        height: 28px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 999px;
-        border: 1px solid var(--border);
-        color: var(--text-muted);
-        font-size: 18px;
-        font-weight: 700;
-        line-height: 1;
-    }
-    .payroll-accordion-toggle.active::after {
-        content: '-';
-        color: var(--accent);
-        border-color: color-mix(in srgb, var(--accent) 45%, var(--border) 55%);
-        background: color-mix(in srgb, var(--accent) 12%, transparent 88%);
-    }
-    .payroll-accordion-body {
-        display: none;
-        margin-top: 16px;
-        padding-top: 14px;
-        border-top: 1px solid var(--border);
-    }
-    .payroll-accordion-toggle.active + .payroll-accordion-body {
-        display: block;
+    @media (max-width: 700px) {
+        .payroll-filter-grid { grid-template-columns: 1fr; }
+        .payroll-kpis { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
     }
 </style>
 <div class="page-header">
@@ -103,11 +113,11 @@
 </ul>
 {% endif %}
 
-<form method="get" class="card" style="margin-bottom:16px;">
-    <div class="form-row">
+<form method="get" id="payroll-filter-card" class="card payroll-filter-card" style="margin-bottom:16px;">
+    <div class="payroll-filter-grid">
         <div class="form-group">
             <label>Year</label>
-            <select name="year" onchange="this.form.submit()">
+            <select name="year">
                 {% for y in year_options %}
                 <option value="{{ y }}" {% if selected_year == y|string %}selected{% endif %}>{{ y }}</option>
                 {% endfor %}
@@ -115,7 +125,7 @@
         </div>
         <div class="form-group">
             <label>Month</label>
-            <select name="month" onchange="this.form.submit()">
+            <select name="month">
                 {% for m, m_name in month_options %}
                 <option value="{{ m }}" {% if selected_month == m|string %}selected{% endif %}>{{ m_name }}</option>
                 {% endfor %}
@@ -124,7 +134,7 @@
         {% if role in ['superadmin', 'admin'] %}
         <div class="form-group">
             <label>Employee</label>
-            <select name="employee" onchange="this.form.submit()">
+            <select name="employee">
                 <option value="">All Employees</option>
                 {% for emp in employees %}
                 <option value="{{ emp.id }}" {% if selected_employee == emp.id|string %}selected{% endif %}>
@@ -135,24 +145,53 @@
         </div>
         {% endif %}
     </div>
+    <div class="payroll-filter-actions">
+        <button type="submit" class="btn btn-secondary">Apply</button>
+        <a href="{{ url('payroll_list') }}" class="btn btn-secondary">Reset</a>
+    </div>
 </form>
 
 {% if policy_row %}
-<div class="card" style="margin-bottom:16px;">
-    <div style="display:flex;gap:10px;flex-wrap:wrap;">
-        <span class="badge badge-number">Working Days: {{ policy_row.monthly_working_days }}</span>
-        <span class="badge badge-number">Hours/Day: {{ policy_row.standard_hours_per_day }}</span>
-        <span class="badge badge-number">Basis: {{ policy_row.salary_basis|upper }}</span>
-        <span class="badge badge-number">Extra Hours: {{ 'Yes' if policy_row.allow_extra_hours_payout else 'No' }}</span>
-        <span class="badge badge-number">Extra Days: {{ 'Yes' if policy_row.allow_extra_days_payout else 'No' }}</span>
+<div id="payroll-policy-summary-card" class="card" style="margin-bottom:16px;">
+    <div class="payroll-kpis">
+        <div class="payroll-kpi">
+            <span class="payroll-kpi-label">Working Days</span>
+            <span class="payroll-kpi-value">{{ policy_row.monthly_working_days }}</span>
+        </div>
+        <div class="payroll-kpi">
+            <span class="payroll-kpi-label">Hours / Day</span>
+            <span class="payroll-kpi-value">{{ policy_row.standard_hours_per_day }}</span>
+        </div>
+        <div class="payroll-kpi">
+            <span class="payroll-kpi-label">Policy Basis</span>
+            <span class="payroll-kpi-value">{{ policy_row.salary_basis|upper }}</span>
+        </div>
+        <div class="payroll-kpi">
+            <span class="payroll-kpi-label">Extra Hours Payout</span>
+            <span class="payroll-kpi-value">{{ 'Yes' if policy_row.allow_extra_hours_payout else 'No' }}</span>
+        </div>
+        <div class="payroll-kpi">
+            <span class="payroll-kpi-label">Extra Days Payout</span>
+            <span class="payroll-kpi-value">{{ 'Yes' if policy_row.allow_extra_days_payout else 'No' }}</span>
+        </div>
     </div>
 </div>
 {% endif %}
 
-{% if can_manage_payroll %}
 <div class="card" style="margin-bottom:16px;">
-    <button type="button" class="payroll-accordion-toggle" data-payroll-target="policySetup">Payroll Policy Setup</button>
-    <div class="payroll-accordion-body" data-payroll-panel="policySetup">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        {% if can_manage_payroll %}
+        <button type="button" class="btn btn-secondary payroll-module-btn" data-payroll-section-target="payroll-policy-section">Payroll Policy Setup</button>
+        <button type="button" class="btn btn-secondary payroll-module-btn" data-payroll-section-target="payroll-compensation-section">Employee Salary Setup</button>
+        {% endif %}
+        <button type="button" class="btn btn-secondary payroll-module-btn" data-payroll-section-target="payroll-data-section">Payroll Data</button>
+    </div>
+</div>
+
+{% if can_manage_payroll %}
+<div id="payroll-policy-section" class="payroll-module-section">
+    <div class="card" style="margin-bottom:16px;">
+        <h3 class="section-title">Payroll Policy Setup</h3>
         <form method="post">
             {{ csrf_input }}
             <input type="hidden" name="form_action" value="save_policy">
@@ -189,9 +228,9 @@
     </div>
 </div>
 
-<div class="card" style="margin-bottom:16px;">
-    <button type="button" class="payroll-accordion-toggle" data-payroll-target="employeeCompSetup">Employee Salary Setup</button>
-    <div class="payroll-accordion-body" data-payroll-panel="employeeCompSetup">
+<div id="payroll-compensation-section" class="payroll-module-section">
+    <div class="card" style="margin-bottom:16px;">
+        <h3 class="section-title">Employee Salary Setup</h3>
         <form method="post" id="compensationForm">
             {{ csrf_input }}
             <input type="hidden" name="form_action" value="save_compensation">
@@ -239,10 +278,10 @@
 </div>
 {% endif %}
 
+<div id="payroll-data-section" class="payroll-module-section">
 <div class="card">
-    <button type="button" class="payroll-accordion-toggle" data-payroll-target="payrollTable">Payroll Data</button>
-    <div class="payroll-accordion-body" data-payroll-panel="payrollTable">
-        <div class="table-wrap">
+    <h3 class="section-title">Payroll Data</h3>
+        <div class="table-wrap payroll-table">
             <table>
             <thead>
                 <tr>
@@ -296,30 +335,44 @@
             </tbody>
             </table>
         </div>
-    </div>
+</div>
 </div>
 
 <script>
 (function () {
-    const payrollToggles = Array.prototype.slice.call(document.querySelectorAll('.payroll-accordion-toggle'));
-    const payrollPanels = Array.prototype.slice.call(document.querySelectorAll('.payroll-accordion-body'));
-    function closeAllPayrollPanels() {
-        payrollToggles.forEach(function (btn) { btn.classList.remove('active'); });
-        payrollPanels.forEach(function (panel) { panel.style.display = 'none'; });
+    const sectionButtons = Array.prototype.slice.call(document.querySelectorAll('[data-payroll-section-target]'));
+    const sectionIds = ['payroll-policy-section', 'payroll-compensation-section', 'payroll-data-section'];
+    const sections = {};
+    const filterCard = document.getElementById('payroll-filter-card');
+    const policySummaryCard = document.getElementById('payroll-policy-summary-card');
+    sectionIds.forEach(function (id) { sections[id] = document.getElementById(id); });
+
+    function showSection(targetId) {
+        sectionIds.forEach(function (id) {
+            if (!sections[id]) return;
+            sections[id].style.display = id === targetId ? 'block' : 'none';
+        });
+        sectionButtons.forEach(function (btn) {
+            const active = btn.getAttribute('data-payroll-section-target') === targetId;
+            btn.classList.toggle('btn-primary', active);
+            btn.classList.toggle('btn-secondary', !active);
+        });
+        const showListFilters = targetId === 'payroll-data-section';
+        if (filterCard) {
+            filterCard.style.display = showListFilters ? 'block' : 'none';
+        }
+        if (policySummaryCard) {
+            policySummaryCard.style.display = showListFilters ? 'block' : 'none';
+        }
     }
-    payrollToggles.forEach(function (btn) {
+
+    sectionButtons.forEach(function (btn) {
         btn.addEventListener('click', function () {
-            const target = btn.getAttribute('data-payroll-target');
-            const panel = document.querySelector('.payroll-accordion-body[data-payroll-panel="' + target + '"]');
-            const isOpen = btn.classList.contains('active');
-            closeAllPayrollPanels();
-            if (!isOpen && panel) {
-                btn.classList.add('active');
-                panel.style.display = 'block';
-            }
+            showSection(btn.getAttribute('data-payroll-section-target'));
         });
     });
-    closeAllPayrollPanels();
+
+    showSection('{% if can_manage_payroll %}payroll-data-section{% else %}payroll-data-section{% endif %}');
 {% if can_manage_payroll %}
     const compensationByEmployee = {{ compensation_by_employee_json|safe }};
     const employeeField = document.getElementById('compEmployeeField');

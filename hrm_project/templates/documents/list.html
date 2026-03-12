@@ -21,6 +21,14 @@
 {% endif %}
 
 <div class="card" style="margin-bottom:20px;">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button type="button" class="btn btn-secondary doc-section-btn" data-target="section-create">Create Document</button>
+        <button type="button" class="btn btn-secondary doc-section-btn" data-target="section-public">Public Upload Links</button>
+        <button type="button" class="btn btn-secondary doc-section-btn" data-target="section-list">Documents List</button>
+    </div>
+</div>
+
+<div id="documents-search-card" class="card" style="margin-bottom:20px;">
     <form method="get" class="form-row">
         <div class="form-group">
             <label>Search</label>
@@ -39,6 +47,15 @@
                 <option value="rejected" {% if selected_status == 'rejected' %}selected{% endif %}>Rejected</option>
             </select>
         </div>
+        <div class="form-group">
+            <label>Uploaded By</label>
+            <select name="uploader">
+                <option value="">All Users</option>
+                {% for uploader in uploader_options %}
+                <option value="{{ uploader }}" {% if selected_uploader == uploader %}selected{% endif %}>{{ uploader }}</option>
+                {% endfor %}
+            </select>
+        </div>
         <div class="form-actions" style="margin-top:28px;">
             <button type="submit" class="btn btn-secondary">Search</button>
             <a href="{{ url('document_list') }}" class="btn btn-secondary">Reset</a>
@@ -46,64 +63,60 @@
     </form>
 </div>
 
-{% if role in ['superadmin', 'admin'] or 'documents.create' in module_permissions or edit_item %}
+<div id="section-create" class="doc-section">
+{% if role in ['superadmin', 'admin'] or 'documents.create' in module_permissions %}
 <div class="form-card" style="max-width:1100px;margin-bottom:20px;">
-    <h3 class="section-title">{{ 'Edit Document' if edit_item else 'Create Document' }}</h3>
+    <h3 class="section-title">Create Document</h3>
     <form method="post" enctype="multipart/form-data">
         {{ csrf_input }}
         <input type="hidden" name="action" value="save_document">
-        <input type="hidden" name="edit_id" value="{{ edit_item.id if edit_item else '' }}">
-        <input type="hidden" name="existing_file_url" value="{{ edit_item.file_url if edit_item else '' }}">
+        <input type="hidden" name="edit_id" value="">
+        <input type="hidden" name="existing_file_url" value="">
 
         <div class="form-row">
             <div class="form-group">
                 <label>Title *</label>
-                <input type="text" name="title" value="{{ edit_item.title if edit_item else '' }}" placeholder="Document title" required>
+                <input type="text" name="title" value="" placeholder="Document title" required>
             </div>
             <div class="form-group">
                 <label>Category</label>
-                <input type="text" name="category" value="{{ edit_item.category if edit_item else '' }}" placeholder="Document category">
+                <input type="text" name="category" value="" placeholder="Document category">
             </div>
         </div>
         <div class="form-row">
             <div class="form-group">
                 <label>Effective Date</label>
-                <input type="date" name="effective_date" value="{{ edit_item.effective_date if edit_item else '' }}">
+                <input type="date" name="effective_date" value="">
             </div>
             <div class="form-group">
                 <label>Status</label>
-                {% set status_value = edit_item.status if edit_item else 'pending' %}
                 <select name="status">
-                    <option value="pending" {% if status_value == 'pending' %}selected{% endif %}>Pending</option>
-                    <option value="approved" {% if status_value == 'approved' %}selected{% endif %}>Approved</option>
-                    <option value="rejected" {% if status_value == 'rejected' %}selected{% endif %}>Rejected</option>
+                    <option value="pending" selected>Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="rejected">Rejected</option>
                 </select>
             </div>
         </div>
         <div class="form-group">
             <label>Notes</label>
-            <textarea name="notes" rows="3" placeholder="Optional notes">{{ edit_item.notes if edit_item else '' }}</textarea>
+            <textarea name="notes" rows="3" placeholder="Optional notes"></textarea>
         </div>
         <div class="form-group">
             <label>Document File</label>
             <input type="file" name="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,image/*">
-            {% if edit_item and edit_item.file_url %}
-            <p style="margin-top:8px;"><a href="{{ edit_item.file_url }}" target="_blank" rel="noopener">Open current file</a></p>
-            {% endif %}
         </div>
         <div class="form-actions">
-            <button type="submit" class="btn btn-primary">{{ 'Save Changes' if edit_item else 'Create Document' }}</button>
-            {% if edit_item %}
-            <a href="{{ url('document_list') }}" class="btn btn-secondary">Cancel Edit</a>
-            {% endif %}
+            <button type="submit" class="btn btn-primary">Create Document</button>
         </div>
     </form>
 </div>
 {% endif %}
+    </div>
 
+<div id="section-public" class="doc-section">
 <div class="card" style="margin-bottom:20px;">
     <h3 class="section-title">Public Upload Links</h3>
-    <p class="section-subtitle">Create a link and send it via email/chat. User can upload one document without login.</p>
+    <p class="section-subtitle">Create a link and send it via email/chat. User can upload one or more documents without login in a single submit.</p>
 
     {% if role in ['superadmin', 'admin'] or 'documents.create' in module_permissions %}
     <form method="post" class="form-row" style="margin-bottom:14px;">
@@ -116,6 +129,17 @@
         <div class="form-group">
             <label>Category</label>
             <input type="text" name="request_category" placeholder="Category">
+        </div>
+        <div class="form-group" style="grid-column:1 / -1;">
+            <label>Requested Document Types</label>
+            <div id="docTypeBuilder" style="border:1px solid var(--border);border-radius:10px;padding:10px;background:rgba(255,255,255,0.01);">
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                    <input type="text" id="docTypeInput" placeholder="Type document name and click Add (e.g. Aadhaar Card)" style="flex:1;min-width:240px;">
+                    <button type="button" id="docTypeAddBtn" class="btn btn-secondary">Add</button>
+                </div>
+                <div id="docTypeChips" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;"></div>
+                <div style="color:var(--text-muted);font-size:.9rem;margin-top:8px;">Only added types will appear in email and upload dropdown.</div>
+            </div>
         </div>
         <div class="form-group" style="grid-column:1 / -1;">
             <label>Recipient Emails</label>
@@ -178,6 +202,7 @@
                 <tr>
                     <th>Title</th>
                     <th>Email</th>
+                    <th>Requested Docs</th>
                     <th>Expires</th>
                     <th>Status</th>
                     <th>Link</th>
@@ -189,6 +214,7 @@
                 <tr>
                     <td>{{ r.title }}</td>
                     <td>{{ r.request_email or '-' }}</td>
+                    <td>{{ (r.requested_doc_types or [])|join(', ') if r.requested_doc_types else '-' }}</td>
                     <td>{{ r.expires_at or '-' }}</td>
                     <td>{{ 'Active' if r.is_active else 'Used/Closed' }}</td>
                     <td>
@@ -215,7 +241,9 @@
     <div class="empty-state"><p>No upload links created yet.</p></div>
     {% endif %}
 </div>
+</div>
 
+<div id="section-list" class="doc-section">
 {% if documents %}
 <div class="table-wrapper">
     <table>
@@ -236,7 +264,20 @@
                 <td>{{ d.title }}</td>
                 <td>{{ d.category or '-' }}</td>
                 <td>{{ d.effective_date or '-' }}</td>
-                <td>{{ d.uploaded_by_username or d.uploader_name or '-' }}</td>
+                <td>
+                    {% set uploader_name = d.uploaded_by_username or d.uploader_name or '' %}
+                    {% if uploader_name %}
+                    <button
+                        type="button"
+                        class="uploader-filter-btn"
+                        data-uploader="{{ uploader_name|e }}"
+                        style="background:none;border:none;padding:0;color:var(--text);text-decoration:underline;cursor:pointer;"
+                        title="Show only {{ uploader_name }} documents"
+                    >{{ uploader_name }}</button>
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
                 <td>
                     {% if d.status == 'approved' %}
                     <span class="badge badge-text">Approved</span>
@@ -248,14 +289,30 @@
                 </td>
                 <td>
                     {% if d.file_url %}
-                    <a href="{{ d.file_url }}" target="_blank" rel="noopener">Open</a>
+                    <a href="{{ d.file_url }}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:rgba(255,255,255,0.03);">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M1.5 12s3.8-6.5 10.5-6.5S22.5 12 22.5 12s-3.8 6.5-10.5 6.5S1.5 12 1.5 12Z" stroke="currentColor" stroke-width="1.8"/>
+                            <circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.8"/>
+                        </svg>
+                        <span>Open</span>
+                    </a>
                     {% else %}
                     -
                     {% endif %}
                 </td>
                 <td>
                     {% if role in ['superadmin', 'admin'] or 'documents.edit' in module_permissions %}
-                    <a href="{{ url('document_list') }}?edit={{ d.id }}" class="btn btn-secondary btn-sm">Edit</a>
+                    <button
+                        type="button"
+                        class="btn btn-secondary btn-sm doc-edit-btn"
+                        data-id="{{ d.id }}"
+                        data-title="{{ d.title|e }}"
+                        data-category="{{ d.category|e }}"
+                        data-effective-date="{{ d.effective_date|e }}"
+                        data-status="{{ d.status|e }}"
+                        data-notes="{{ d.notes|e }}"
+                        data-file-url="{{ d.file_url|e }}"
+                    >Edit</button>
                     {% endif %}
                     {% if role in ['superadmin', 'admin'] or 'documents.delete' in module_permissions %}
                     <form method="post" action="{{ url('document_delete', args=[d.id]) }}" style="display:inline;">
@@ -271,6 +328,61 @@
 </div>
 {% else %}
 <div class="card"><div class="empty-state"><p>No documents found.</p></div></div>
+{% endif %}
+</div>
+
+{% if role in ['superadmin', 'admin'] or 'documents.edit' in module_permissions %}
+<div id="docEditModal" style="display:none;position:fixed;inset:0;background:rgba(3,6,16,0.82);backdrop-filter:blur(2px);z-index:3000;padding:24px;overflow:auto;">
+    <div class="form-card" style="max-width:850px;margin:30px auto;background:#0f1326;border:1px solid var(--border);box-shadow:0 20px 55px rgba(0,0,0,0.55);position:relative;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+            <h3 class="section-title" style="margin:0;">Edit Document</h3>
+            <button type="button" id="docEditModalClose" class="btn btn-secondary btn-sm">Close</button>
+        </div>
+        <form method="post" enctype="multipart/form-data" style="margin-top:12px;">
+            {{ csrf_input }}
+            <input type="hidden" name="action" value="save_document">
+            <input type="hidden" name="edit_id" id="editDocId">
+            <input type="hidden" name="existing_file_url" id="editExistingFileUrl">
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Title *</label>
+                    <input type="text" name="title" id="editTitle" placeholder="Document title" required>
+                </div>
+                <div class="form-group">
+                    <label>Category</label>
+                    <input type="text" name="category" id="editCategory" placeholder="Document category">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Effective Date</label>
+                    <input type="date" name="effective_date" id="editEffectiveDate">
+                </div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select name="status" id="editStatus">
+                        <option value="pending">Pending</option>
+                        <option value="approved">Approved</option>
+                        <option value="rejected">Rejected</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Notes</label>
+                <textarea name="notes" rows="3" id="editNotes" placeholder="Optional notes"></textarea>
+            </div>
+            <div class="form-group">
+                <label>Replace Document File</label>
+                <input type="file" name="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,image/*">
+                <p style="margin-top:8px;"><a href="#" id="editCurrentFileLink" target="_blank" rel="noopener">Open current file</a></p>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
 {% endif %}
 
 <script>
@@ -321,6 +433,181 @@
     search.addEventListener('input', filterOptions);
     checkboxes.forEach(cb => cb.addEventListener('change', refreshToggleText));
     refreshToggleText();
+})();
+
+(function () {
+    const root = document.getElementById('docTypeBuilder');
+    if (!root) return;
+
+    const input = document.getElementById('docTypeInput');
+    const addBtn = document.getElementById('docTypeAddBtn');
+    const chips = document.getElementById('docTypeChips');
+    const form = root.closest('form');
+    if (!input || !addBtn || !chips || !form) return;
+
+    function currentValues() {
+        return Array.from(chips.querySelectorAll('[data-doc-type]')).map(function (el) {
+            return String(el.getAttribute('data-doc-type') || '').trim().toLowerCase();
+        });
+    }
+
+    function createHidden(value) {
+        const hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.name = 'request_doc_types';
+        hidden.value = value;
+        return hidden;
+    }
+
+    function addType(rawValue) {
+        const value = String(rawValue || '').trim();
+        if (!value) return;
+        if (currentValues().indexOf(value.toLowerCase()) !== -1) {
+            input.value = '';
+            return;
+        }
+
+        const chip = document.createElement('span');
+        chip.setAttribute('data-doc-type', value);
+        chip.style.display = 'inline-flex';
+        chip.style.alignItems = 'center';
+        chip.style.gap = '6px';
+        chip.style.padding = '6px 10px';
+        chip.style.border = '1px solid var(--border)';
+        chip.style.borderRadius = '999px';
+        chip.style.background = 'rgba(255,255,255,0.04)';
+        chip.textContent = value;
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.textContent = 'x';
+        removeBtn.className = 'btn btn-secondary btn-sm';
+        removeBtn.style.padding = '2px 8px';
+        removeBtn.addEventListener('click', function () {
+            chip.remove();
+        });
+
+        const hidden = createHidden(value);
+        chip.appendChild(removeBtn);
+        chip.appendChild(hidden);
+        chips.appendChild(chip);
+        input.value = '';
+    }
+
+    addBtn.addEventListener('click', function () {
+        addType(input.value);
+    });
+
+    input.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            addType(input.value);
+        }
+    });
+})();
+
+(function () {
+    const sectionButtons = Array.from(document.querySelectorAll('.doc-section-btn'));
+    const searchCard = document.getElementById('documents-search-card');
+    const sections = {
+        'section-create': document.getElementById('section-create'),
+        'section-public': document.getElementById('section-public'),
+        'section-list': document.getElementById('section-list'),
+    };
+    if (!sectionButtons.length) return;
+
+    function showSection(targetId) {
+        Object.keys(sections).forEach(function (key) {
+            if (!sections[key]) return;
+            sections[key].style.display = key === targetId ? 'block' : 'none';
+        });
+        sectionButtons.forEach(function (btn) {
+            const active = btn.getAttribute('data-target') === targetId;
+            btn.classList.toggle('btn-primary', active);
+            btn.classList.toggle('btn-secondary', !active);
+        });
+        if (searchCard) {
+            searchCard.style.display = targetId === 'section-list' ? 'block' : 'none';
+        }
+    }
+
+    const hasEditButtons = document.querySelector('.doc-edit-btn');
+    showSection(hasEditButtons ? 'section-list' : 'section-public');
+
+    sectionButtons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            showSection(btn.getAttribute('data-target'));
+        });
+    });
+})();
+
+(function () {
+    const buttons = Array.from(document.querySelectorAll('.uploader-filter-btn'));
+    if (!buttons.length) return;
+    buttons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            const uploader = btn.getAttribute('data-uploader') || '';
+            const params = new URLSearchParams(window.location.search || '');
+            if (uploader) {
+                params.set('uploader', uploader);
+            } else {
+                params.delete('uploader');
+            }
+            window.location.href = '{{ url("document_list") }}' + '?' + params.toString();
+        });
+    });
+})();
+
+(function () {
+    const modal = document.getElementById('docEditModal');
+    const closeBtn = document.getElementById('docEditModalClose');
+    const openButtons = Array.from(document.querySelectorAll('.doc-edit-btn'));
+    if (!modal || !closeBtn || !openButtons.length) return;
+
+    const editId = document.getElementById('editDocId');
+    const existingFile = document.getElementById('editExistingFileUrl');
+    const title = document.getElementById('editTitle');
+    const category = document.getElementById('editCategory');
+    const effectiveDate = document.getElementById('editEffectiveDate');
+    const status = document.getElementById('editStatus');
+    const notes = document.getElementById('editNotes');
+    const currentFileLink = document.getElementById('editCurrentFileLink');
+
+    function openModal(btn) {
+        editId.value = btn.getAttribute('data-id') || '';
+        title.value = btn.getAttribute('data-title') || '';
+        category.value = btn.getAttribute('data-category') || '';
+        effectiveDate.value = btn.getAttribute('data-effective-date') || '';
+        status.value = btn.getAttribute('data-status') || 'pending';
+        notes.value = btn.getAttribute('data-notes') || '';
+        const fileUrl = btn.getAttribute('data-file-url') || '';
+        existingFile.value = fileUrl;
+        currentFileLink.href = fileUrl || '#';
+        currentFileLink.style.display = fileUrl ? 'inline' : 'none';
+        modal.style.display = 'block';
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeModal() {
+        modal.style.display = 'none';
+        document.body.style.overflow = '';
+    }
+
+    openButtons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            openModal(btn);
+        });
+    });
+
+    closeBtn.addEventListener('click', closeModal);
+    modal.addEventListener('click', function (event) {
+        if (event.target === modal) closeModal();
+    });
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && modal.style.display === 'block') {
+            closeModal();
+        }
+    });
 })();
 </script>
 {% endblock %}

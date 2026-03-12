@@ -21,6 +21,13 @@
 {% endif %}
 
 <div class="card" style="margin-bottom:20px;">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button type="button" class="btn btn-secondary bank-section-btn" data-target="bank-section-create">Create Bank Account</button>
+        <button type="button" class="btn btn-secondary bank-section-btn" data-target="bank-section-list">Bank Accounts List</button>
+    </div>
+</div>
+
+<div id="banks-search-card" class="card" style="margin-bottom:20px;">
     <form method="get" class="form-row">
         <div class="form-group">
             <label>Search</label>
@@ -44,19 +51,19 @@
     </form>
 </div>
 
-{% if role in ['superadmin', 'admin'] or 'bank.create' in module_permissions or edit_item %}
+<div id="bank-section-create" class="bank-section">
+{% if role in ['superadmin', 'admin'] or 'bank.create' in module_permissions %}
 <div class="form-card" style="max-width:980px;margin-bottom:20px;">
     <form method="post" action="{{ url('bank_list') }}">
         {{ csrf_input }}
-        <input type="hidden" name="edit_id" value="{{ edit_item.id if edit_item else '' }}">
+        <input type="hidden" name="edit_id" value="">
         <div class="form-row">
             <div class="form-group">
                 <label>Employee *</label>
-                {% set selected_emp = edit_item.employee if edit_item else '' %}
                 <select name="employee" required>
                     <option value="">Select employee</option>
                     {% for emp in employees %}
-                    <option value="{{ emp.id }}" {% if selected_emp|string == emp.id|string %}selected{% endif %}>
+                    <option value="{{ emp.id }}">
                         {{ emp.first_name }} {{ emp.last_name }}
                     </option>
                     {% endfor %}
@@ -64,61 +71,58 @@
             </div>
             <div class="form-group">
                 <label>Bank Name *</label>
-                <input type="text" name="bank_name" value="{{ edit_item.bank_name if edit_item else '' }}" required>
+                <input type="text" name="bank_name" value="" required>
             </div>
         </div>
         <div class="form-row">
             <div class="form-group">
                 <label>Account Holder Name *</label>
-                <input type="text" name="account_holder_name" value="{{ edit_item.account_holder_name if edit_item else '' }}" required>
+                <input type="text" name="account_holder_name" value="" required>
             </div>
             <div class="form-group">
                 <label>Account Number *</label>
-                <input type="text" name="account_number" value="{{ edit_item.account_number if edit_item else '' }}" required>
+                <input type="text" name="account_number" value="" required>
             </div>
         </div>
         <div class="form-row">
             <div class="form-group">
                 <label>IFSC Code</label>
-                <input type="text" name="ifsc_code" value="{{ edit_item.ifsc_code if edit_item else '' }}">
+                <input type="text" name="ifsc_code" value="">
             </div>
             <div class="form-group">
                 <label>Branch Name</label>
-                <input type="text" name="branch_name" value="{{ edit_item.branch_name if edit_item else '' }}">
+                <input type="text" name="branch_name" value="">
             </div>
         </div>
         <div class="form-row">
             <div class="form-group">
                 <label>UPI ID</label>
-                <input type="text" name="upi_id" value="{{ edit_item.upi_id if edit_item else '' }}">
+                <input type="text" name="upi_id" value="">
             </div>
             <div class="form-group">
                 <label>Primary Account</label>
-                {% set primary_value = edit_item.is_primary if edit_item else false %}
                 <select name="is_primary">
-                    <option value="false" {% if not primary_value %}selected{% endif %}>No</option>
-                    <option value="true" {% if primary_value %}selected{% endif %}>Yes</option>
+                    <option value="false" selected>No</option>
+                    <option value="true">Yes</option>
                 </select>
             </div>
         </div>
         <div class="form-group">
             <label>Active</label>
-            {% set active_value = edit_item.is_active if edit_item else true %}
             <select name="is_active">
-                <option value="true" {% if active_value %}selected{% endif %}>Yes</option>
-                <option value="false" {% if not active_value %}selected{% endif %}>No</option>
+                <option value="true" selected>Yes</option>
+                <option value="false">No</option>
             </select>
         </div>
         <div class="form-actions">
-            <button type="submit" class="btn btn-primary">{{ 'Update Bank Account' if edit_item else 'Create Bank Account' }}</button>
-            {% if edit_item %}
-            <a href="{{ url('bank_list') }}" class="btn btn-secondary">Cancel Edit</a>
-            {% endif %}
+            <button type="submit" class="btn btn-primary">Create Bank Account</button>
         </div>
     </form>
 </div>
 {% endif %}
+</div>
 
+<div id="bank-section-list" class="bank-section">
 {% if bank_accounts %}
 <div class="table-wrapper">
     <table>
@@ -146,7 +150,20 @@
                 <td>{{ 'Active' if b.is_active else 'Inactive' }}</td>
                 <td>
                     {% if role in ['superadmin', 'admin'] or 'bank.edit' in module_permissions %}
-                    <a href="{{ url('bank_list') }}?edit={{ b.id }}" class="btn btn-secondary btn-sm">Edit</a>
+                    <button
+                        type="button"
+                        class="btn btn-secondary btn-sm bank-edit-btn"
+                        data-id="{{ b.id }}"
+                        data-employee="{{ b.employee }}"
+                        data-bank-name="{{ b.bank_name|e }}"
+                        data-account-holder-name="{{ b.account_holder_name|e }}"
+                        data-account-number="{{ b.account_number|e }}"
+                        data-ifsc-code="{{ b.ifsc_code|e }}"
+                        data-branch-name="{{ b.branch_name|e }}"
+                        data-upi-id="{{ b.upi_id|e }}"
+                        data-is-primary="{{ 'true' if b.is_primary else 'false' }}"
+                        data-is-active="{{ 'true' if b.is_active else 'false' }}"
+                    >Edit</button>
                     {% endif %}
                     {% if role in ['superadmin', 'admin'] or 'bank.delete' in module_permissions %}
                     <form method="post" action="{{ url('bank_delete', args=[b.id]) }}" style="display:inline;">
@@ -163,4 +180,142 @@
 {% else %}
 <div class="card"><div class="empty-state"><p>No bank accounts found.</p></div></div>
 {% endif %}
+</div>
+
+{% if role in ['superadmin', 'admin'] or 'bank.edit' in module_permissions %}
+<div id="bankEditModal" style="display:none;position:fixed;inset:0;background:rgba(3,6,16,0.82);backdrop-filter:blur(2px);z-index:3000;padding:24px;overflow:auto;">
+    <div class="form-card" style="max-width:980px;margin:30px auto;background:#0f1326;border:1px solid var(--border);box-shadow:0 20px 55px rgba(0,0,0,0.55);position:relative;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+            <h3 class="section-title" style="margin:0;">Edit Bank Account</h3>
+            <button type="button" id="bankEditModalClose" class="btn btn-secondary btn-sm">Close</button>
+        </div>
+        <form method="post" action="{{ url('bank_list') }}" style="margin-top:12px;">
+            {{ csrf_input }}
+            <input type="hidden" name="edit_id" id="bankEditId">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Employee *</label>
+                    <select name="employee" id="bankEditEmployee" required>
+                        <option value="">Select employee</option>
+                        {% for emp in employees %}
+                        <option value="{{ emp.id }}">{{ emp.first_name }} {{ emp.last_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Bank Name *</label>
+                    <input type="text" name="bank_name" id="bankEditBankName" required>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Account Holder Name *</label>
+                    <input type="text" name="account_holder_name" id="bankEditAccountHolderName" required>
+                </div>
+                <div class="form-group">
+                    <label>Account Number *</label>
+                    <input type="text" name="account_number" id="bankEditAccountNumber" required>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>IFSC Code</label>
+                    <input type="text" name="ifsc_code" id="bankEditIfscCode">
+                </div>
+                <div class="form-group">
+                    <label>Branch Name</label>
+                    <input type="text" name="branch_name" id="bankEditBranchName">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>UPI ID</label>
+                    <input type="text" name="upi_id" id="bankEditUpiId">
+                </div>
+                <div class="form-group">
+                    <label>Primary Account</label>
+                    <select name="is_primary" id="bankEditIsPrimary">
+                        <option value="false">No</option>
+                        <option value="true">Yes</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Active</label>
+                <select name="is_active" id="bankEditIsActive">
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                </select>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Update Bank Account</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<script>
+(function () {
+    const sectionButtons = Array.from(document.querySelectorAll('.bank-section-btn'));
+    const searchCard = document.getElementById('banks-search-card');
+    const sections = {
+        'bank-section-create': document.getElementById('bank-section-create'),
+        'bank-section-list': document.getElementById('bank-section-list'),
+    };
+    if (!sectionButtons.length) return;
+    function showSection(targetId) {
+        Object.keys(sections).forEach(function (key) {
+            if (!sections[key]) return;
+            sections[key].style.display = key === targetId ? 'block' : 'none';
+        });
+        sectionButtons.forEach(function (btn) {
+            const active = btn.getAttribute('data-target') === targetId;
+            btn.classList.toggle('btn-primary', active);
+            btn.classList.toggle('btn-secondary', !active);
+        });
+        if (searchCard) {
+            searchCard.style.display = targetId === 'bank-section-create' ? 'none' : 'block';
+        }
+    }
+    showSection('bank-section-list');
+    sectionButtons.forEach(function (btn) {
+        btn.addEventListener('click', function () { showSection(btn.getAttribute('data-target')); });
+    });
+})();
+
+(function () {
+    const modal = document.getElementById('bankEditModal');
+    const closeBtn = document.getElementById('bankEditModalClose');
+    const openButtons = Array.from(document.querySelectorAll('.bank-edit-btn'));
+    if (!modal || !closeBtn || !openButtons.length) return;
+
+    function openModal(btn) {
+        document.getElementById('bankEditId').value = btn.getAttribute('data-id') || '';
+        document.getElementById('bankEditEmployee').value = btn.getAttribute('data-employee') || '';
+        document.getElementById('bankEditBankName').value = btn.getAttribute('data-bank-name') || '';
+        document.getElementById('bankEditAccountHolderName').value = btn.getAttribute('data-account-holder-name') || '';
+        document.getElementById('bankEditAccountNumber').value = btn.getAttribute('data-account-number') || '';
+        document.getElementById('bankEditIfscCode').value = btn.getAttribute('data-ifsc-code') || '';
+        document.getElementById('bankEditBranchName').value = btn.getAttribute('data-branch-name') || '';
+        document.getElementById('bankEditUpiId').value = btn.getAttribute('data-upi-id') || '';
+        document.getElementById('bankEditIsPrimary').value = btn.getAttribute('data-is-primary') || 'false';
+        document.getElementById('bankEditIsActive').value = btn.getAttribute('data-is-active') || 'true';
+        modal.style.display = 'block';
+        document.body.style.overflow = 'hidden';
+    }
+    function closeModal() {
+        modal.style.display = 'none';
+        document.body.style.overflow = '';
+    }
+    openButtons.forEach(function (btn) {
+        btn.addEventListener('click', function () { openModal(btn); });
+    });
+    closeBtn.addEventListener('click', closeModal);
+    modal.addEventListener('click', function (event) { if (event.target === modal) closeModal(); });
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && modal.style.display === 'block') closeModal();
+    });
+})();
+</script>
 {% endblock %}

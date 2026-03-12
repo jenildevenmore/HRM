@@ -14,7 +14,14 @@ class ActivityLogViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['action', 'module', 'actor', 'actor_role', 'status_code']
-    search_fields = ['path', 'actor__username']
+    search_fields = [
+        'path',
+        'module',
+        'actor__username',
+        'actor__first_name',
+        'actor__last_name',
+        'actor__email',
+    ]
     ordering_fields = ['created_at', 'status_code']
 
     def _profile(self):

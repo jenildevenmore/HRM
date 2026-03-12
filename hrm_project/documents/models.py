@@ -56,6 +56,7 @@ class DocumentUploadRequest(models.Model):
     category = models.CharField(max_length=120, blank=True, default='')
     request_email = models.EmailField(blank=True, default='')
     notes = models.TextField(blank=True, default='')
+    requested_doc_types = models.JSONField(default=list, blank=True)
     token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     expires_at = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True)

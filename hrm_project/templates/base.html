@@ -6,10 +6,12 @@
   {% set brand_cfg = app_settings.brand or {} %}
   {% set theme_cfg = app_settings.theme or {} %}
   {% set ui_cfg = app_settings.ui or {} %}
+  {% set sidebar_logo_url = ui_cfg.sidebar_logo_url or brand_cfg.logo_url %}
+  {% set module_icons = ui_cfg.sidebar_module_icons or {} %}
   {% set layout_dir = ui_cfg.layout_direction or 'ltr' %}
   {% set sidebar_variant = ui_cfg.sidebar_variant or 'inset' %}
   {% set sidebar_style = ui_cfg.sidebar_style or 'plain' %}
-  {% set theme_mode = ui_cfg.theme_mode or 'dark' %}
+  {% set theme_mode = ui_cfg.theme_mode or 'light' %}
   {% set font_family = ui_cfg.font_family or 'inter' %}
   {% set font_family_custom = ui_cfg.font_family_custom or '' %}
   {% set font_size_base = ui_cfg.font_size_base or 14 %}
@@ -26,7 +28,10 @@
       --accent: {{ theme_cfg.primary_color or '#6c63ff' }};
       --accent-2: {{ theme_cfg.secondary_color or '#a78bfa' }};
       --accent-grad: linear-gradient(135deg, {{ theme_cfg.primary_color or '#6c63ff' }} 0%, {{ theme_cfg.secondary_color or '#a78bfa' }} 100%);
-      --bg: {{ theme_cfg.background_color or '#0d0d1a' }};
+      --bg: {{ theme_cfg.background_color or '#f4f5fb' }};
+      --sidebar-bg: rgba(255,255,255,0.92);
+      --sidebar-border: rgba(20,24,40,0.12);
+      --nav-active-text: #111827;
       --font-size-base: {{ font_size_base }}px;
       --font-main:
         {% if font_family_custom %}{{ font_family_custom }}, sans-serif
@@ -62,6 +67,9 @@
       --text: #111827;
       --text-muted: #5b647a;
       --text-dim: #7a8298;
+      --sidebar-bg: rgba(255,255,255,0.92);
+      --sidebar-border: rgba(20,24,40,0.12);
+      --nav-active-text: #111827;
     }
     {% elif theme_mode == 'system' %}
     @media (prefers-color-scheme: light) {
@@ -74,6 +82,9 @@
         --text: #111827;
         --text-muted: #5b647a;
         --text-dim: #7a8298;
+        --sidebar-bg: rgba(255,255,255,0.92);
+        --sidebar-border: rgba(20,24,40,0.12);
+        --nav-active-text: #111827;
       }
     }
     {% endif %}
@@ -89,16 +100,16 @@
     body.sidebar-variant-floating .main-content { margin-left: calc(var(--sidebar-w) + 18px); }
     body.layout-rtl.sidebar-variant-floating .main-content { margin-left: 0; margin-right: calc(var(--sidebar-w) + 18px); }
     body.sidebar-variant-minimal { --sidebar-w: 220px; }
-    body.sidebar-style-colored .sidebar { background: color-mix(in srgb, var(--accent) 22%, #0f1021 78%); }
-    body.sidebar-style-gradient .sidebar { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 18%, #0f1021 82%) 0%, #0d0d1a 100%); }
+    body.sidebar-style-colored .sidebar { background: color-mix(in srgb, var(--accent) 16%, var(--bg-2) 84%); }
+    body.sidebar-style-gradient .sidebar { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 14%, var(--bg-2) 86%) 0%, var(--bg-2) 100%); }
   </style>
 </head>
 <body class="layout-{{ layout_dir }} sidebar-variant-{{ sidebar_variant }} sidebar-style-{{ sidebar_style }} theme-mode-{{ theme_mode }}">
 <div class="layout">
   <aside class="sidebar">
     <div class="sidebar-logo">
-      {% if brand_cfg.logo_url %}
-      <img src="{{ brand_cfg.logo_url }}" alt="Logo" style="width:40px;height:40px;border-radius:10px;object-fit:cover;flex-shrink:0;">
+      {% if sidebar_logo_url %}
+      <img src="{{ sidebar_logo_url }}" alt="Logo" style="width:40px;height:40px;border-radius:10px;object-fit:cover;flex-shrink:0;">
       {% else %}
       <div class="logo-icon">H</div>
       {% endif %}
@@ -109,14 +120,22 @@
 
     <a href="{{ url('dashboard') }}"
        class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
-      <span class="nav-icon">DB</span>
+      <span class="nav-icon" data-module="dashboard">
+        {% if module_icons.dashboard %}
+        <img src="{{ module_icons.dashboard }}" alt="Dashboard" class="nav-icon-img">
+        {% else %}<span class="nav-icon-fallback"></span>{% endif %}
+      </span>
       <span class="nav-label">Dashboard</span>
     </a>
 
     {% if role in ['superadmin', 'admin'] or 'employees.view' in module_permissions %}
     <a href="{{ url('employee_list') }}"
        class="nav-link {% if 'employee' in request.resolver_match.url_name %}active{% endif %}">
-      <span class="nav-icon">EM</span>
+      <span class="nav-icon" data-module="employees">
+        {% if module_icons.employees %}
+        <img src="{{ module_icons.employees }}" alt="Employees" class="nav-icon-img">
+        {% else %}<span class="nav-icon-fallback"></span>{% endif %}
+      </span>
       <span class="nav-label">Employees</span>
     </a>
     {% endif %}
@@ -124,7 +143,11 @@
     {% if role == 'superadmin' or ('leave_management' in enabled_addons and (role == 'admin' or 'leaves.view' in module_permissions)) %}
     <a href="{{ url('leave_list') }}"
        class="nav-link {% if 'leave' in request.resolver_match.url_name %}active{% endif %}">
-      <span class="nav-icon">LV</span>
+      <span class="nav-icon" data-module="leaves">
+        {% if module_icons.leaves %}
+        <img src="{{ module_icons.leaves }}" alt="Leaves" class="nav-icon-img">
+        {% else %}<span class="nav-icon-fallback"></span>{% endif %}
+      </span>
       <span class="nav-label">Leaves</span>
     </a>
     {% endif %}
@@ -132,15 +155,35 @@
     {% if role == 'superadmin' or 'payroll' in enabled_addons %}
     <a href="{{ url('payroll_list') }}"
        class="nav-link {% if 'payroll' in request.resolver_match.url_name %}active{% endif %}">
-      <span class="nav-icon">PY</span>
+      <span class="nav-icon" data-module="payroll">
+        {% if module_icons.payroll %}
+        <img src="{{ module_icons.payroll }}" alt="Payroll" class="nav-icon-img">
+        {% else %}<span class="nav-icon-fallback"></span>{% endif %}
+      </span>
       <span class="nav-label">Payroll</span>
+    </a>
+    {% endif %}
+
+    {% if role == 'superadmin' or ('import_export' in enabled_addons and (role == 'admin' or 'import_export.view' in module_permissions)) %}
+    <a href="{{ url('import_export_page') }}"
+       class="nav-link {% if 'import_export' in request.resolver_match.url_name %}active{% endif %}">
+      <span class="nav-icon" data-module="import_export">
+        {% if module_icons.import_export %}
+        <img src="{{ module_icons.import_export }}" alt="Import/Export" class="nav-icon-img">
+        {% else %}<span class="nav-icon-fallback"></span>{% endif %}
+      </span>
+      <span class="nav-label">Import/Export</span>
     </a>
     {% endif %}
 
     {% if role == 'superadmin' or ('activity_logs' in enabled_addons and (role == 'admin' or 'activity_logs.view' in module_permissions)) %}
     <a href="{{ url('activity_log_list') }}"
        class="nav-link {% if 'activity_log' in request.resolver_match.url_name %}active{% endif %}">
-      <span class="nav-icon">LG</span>
+      <span class="nav-icon" data-module="activity_logs">
+        {% if module_icons.activity_logs %}
+        <img src="{{ module_icons.activity_logs }}" alt="Activity Logs" class="nav-icon-img">
+        {% else %}<span class="nav-icon-fallback"></span>{% endif %}
+      </span>
       <span class="nav-label">Activity Logs</span>
     </a>
     {% endif %}
@@ -148,7 +191,11 @@
     {% if role == 'superadmin' or ('holidays' in enabled_addons and (role == 'admin' or 'holidays.view' in module_permissions)) %}
     <a href="{{ url('holiday_list') }}"
        class="nav-link {% if 'holiday' in request.resolver_match.url_name %}active{% endif %}">
-      <span class="nav-icon">HD</span>
+      <span class="nav-icon" data-module="holidays">
+        {% if module_icons.holidays %}
+        <img src="{{ module_icons.holidays }}" alt="Holidays" class="nav-icon-img">
+        {% else %}<span class="nav-icon-fallback"></span>{% endif %}
+      </span>
       <span class="nav-label">Holidays</span>
     </a>
     {% endif %}
@@ -156,7 +203,11 @@
     {% if role == 'superadmin' or ('shift_management' in enabled_addons and (role == 'admin' or 'shifts.view' in module_permissions)) %}
     <a href="{{ url('shift_list') }}"
        class="nav-link {% if 'shift' in request.resolver_match.url_name %}active{% endif %}">
-      <span class="nav-icon">SH</span>
+      <span class="nav-icon" data-module="shifts">
+        {% if module_icons.shifts %}
+        <img src="{{ module_icons.shifts }}" alt="Shifts" class="nav-icon-img">
+        {% else %}<span class="nav-icon-fallback"></span>{% endif %}
+      </span>
       <span class="nav-label">Shifts</span>
     </a>
     {% endif %}
@@ -164,7 +215,11 @@
     {% if role == 'superadmin' or ('bank_management' in enabled_addons and (role == 'admin' or 'bank.view' in module_permissions)) %}
     <a href="{{ url('bank_list') }}"
        class="nav-link {% if 'bank' in request.resolver_match.url_name %}active{% endif %}">
-      <span class="nav-icon">BK</span>
+      <span class="nav-icon" data-module="bank">
+        {% if module_icons.bank %}
+        <img src="{{ module_icons.bank }}" alt="Bank" class="nav-icon-img">
+        {% else %}<span class="nav-icon-fallback"></span>{% endif %}
+      </span>
       <span class="nav-label">Bank</span>
     </a>
     {% endif %}
@@ -172,7 +227,11 @@
     {% if role == 'superadmin' or ('policy' in enabled_addons and (role == 'admin' or 'policy.view' in module_permissions)) %}
     <a href="{{ url('policy_page') }}"
        class="nav-link {% if 'policy' in request.resolver_match.url_name %}active{% endif %}">
-      <span class="nav-icon">PL</span>
+      <span class="nav-icon" data-module="policy">
+        {% if module_icons.policy %}
+        <img src="{{ module_icons.policy }}" alt="Policy" class="nav-icon-img">
+        {% else %}<span class="nav-icon-fallback"></span>{% endif %}
+      </span>
       <span class="nav-label">Policy</span>
     </a>
     {% endif %}
@@ -180,7 +239,11 @@
     {% if role == 'superadmin' or ('documents' in enabled_addons and (role == 'admin' or 'documents.view' in module_permissions)) %}
     <a href="{{ url('document_list') }}"
        class="nav-link {% if 'document_' in request.resolver_match.url_name %}active{% endif %}">
-      <span class="nav-icon">DC</span>
+      <span class="nav-icon" data-module="documents">
+        {% if module_icons.documents %}
+        <img src="{{ module_icons.documents }}" alt="Documents" class="nav-icon-img">
+        {% else %}<span class="nav-icon-fallback"></span>{% endif %}
+      </span>
       <span class="nav-label">Documents</span>
     </a>
     {% endif %}
@@ -188,7 +251,14 @@
     {% for dm in nav_dynamic_models %}
     <a href="{{ url('dynamic_entity_list', args=[dm.id]) }}"
        class="nav-link {% if request.resolver_match.url_name in ['dynamic_entity_list', 'dynamic_entity_create', 'dynamic_entity_edit'] and request.resolver_match.kwargs.get('model_id') == dm.id %}active{% endif %}">
-      <span class="nav-icon">MD</span>
+      {% set dm_slug = (dm.slug or '')|lower %}
+      {% set dm_key = 'dynamic_model_' ~ dm.id %}
+      {% set dm_icon = module_icons.attendance if dm_slug == 'attendance' else module_icons.get(dm_key) %}
+      <span class="nav-icon" data-module="{{ 'attendance' if dm_slug == 'attendance' else dm_key }}">
+        {% if dm_icon %}
+        <img src="{{ dm_icon }}" alt="{{ dm.name }}" class="nav-icon-img">
+        {% else %}<span class="nav-icon-fallback"></span>{% endif %}
+      </span>
       <span class="nav-label">{{ dm.name }}</span>
     </a>
     {% endfor %}
@@ -198,7 +268,11 @@
     {% if role == 'superadmin' %}
     <a href="{{ url('client_list') }}"
        class="nav-link {% if 'client' in request.resolver_match.url_name %}active{% endif %}">
-      <span class="nav-icon">CL</span>
+      <span class="nav-icon" data-module="clients">
+        {% if module_icons.clients %}
+        <img src="{{ module_icons.clients }}" alt="Clients" class="nav-icon-img">
+        {% else %}<span class="nav-icon-fallback"></span>{% endif %}
+      </span>
       <span class="nav-label">Clients</span>
     </a>
     {% endif %}
@@ -206,7 +280,11 @@
     {% if role == 'superadmin' or ('custom_fields' in enabled_addons and (role == 'admin' or 'custom_fields.view' in module_permissions)) %}
     <a href="{{ url('custom_field_list') }}"
        class="nav-link {% if 'custom_field' in request.resolver_match.url_name %}active{% endif %}">
-      <span class="nav-icon">CF</span>
+      <span class="nav-icon" data-module="custom_fields">
+        {% if module_icons.custom_fields %}
+        <img src="{{ module_icons.custom_fields }}" alt="Custom Fields" class="nav-icon-img">
+        {% else %}<span class="nav-icon-fallback"></span>{% endif %}
+      </span>
       <span class="nav-label">Custom Fields</span>
     </a>
     {% endif %}
@@ -214,7 +292,11 @@
     {% if role == 'superadmin' or ('dynamic_models' in enabled_addons and (role == 'admin' or 'dynamic_models.view' in module_permissions)) %}
     <a href="{{ url('dynamic_model_list') }}"
        class="nav-link {% if 'dynamic_' in request.resolver_match.url_name %}active{% endif %}">
-      <span class="nav-icon">DM</span>
+      <span class="nav-icon" data-module="dynamic_models">
+        {% if module_icons.dynamic_models %}
+        <img src="{{ module_icons.dynamic_models }}" alt="Dynamic Models" class="nav-icon-img">
+        {% else %}<span class="nav-icon-fallback"></span>{% endif %}
+      </span>
       <span class="nav-label">Dynamic Models</span>
     </a>
     {% endif %}
@@ -222,7 +304,11 @@
     {% if role == 'superadmin' or (role == 'admin' and 'role_management' in enabled_addons) %}
     <a href="{{ url('role_list') }}"
        class="nav-link {% if 'role_' in request.resolver_match.url_name %}active{% endif %}">
-      <span class="nav-icon">RL</span>
+      <span class="nav-icon" data-module="roles">
+        {% if module_icons.roles %}
+        <img src="{{ module_icons.roles }}" alt="Roles" class="nav-icon-img">
+        {% else %}<span class="nav-icon-fallback"></span>{% endif %}
+      </span>
       <span class="nav-label">Roles</span>
     </a>
     {% endif %}
@@ -230,7 +316,11 @@
     {% if role == 'superadmin' or (role == 'admin' and 'settings' in enabled_addons) %}
     <a href="{{ url('settings_page') }}"
        class="nav-link {% if 'settings' in request.resolver_match.url_name %}active{% endif %}">
-      <span class="nav-icon">ST</span>
+      <span class="nav-icon" data-module="settings">
+        {% if module_icons.settings %}
+        <img src="{{ module_icons.settings }}" alt="Settings" class="nav-icon-img">
+        {% else %}<span class="nav-icon-fallback"></span>{% endif %}
+      </span>
       <span class="nav-label">Settings</span>
     </a>
     {% endif %}

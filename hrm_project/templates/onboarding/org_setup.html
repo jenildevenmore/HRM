@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block title %}Setup Your Organisation - HRM System{% endblock %}
+
+{% block content %}
+<style>
+    .org-setup-shell {
+        max-width: 1080px;
+        margin: 0 auto;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: var(--bg-card);
+        padding: 22px;
+    }
+    .org-setup-head h1 {
+        margin: 0;
+        font-size: 2rem;
+        line-height: 1.1;
+    }
+    .org-setup-head p {
+        margin: 8px 0 0 0;
+        color: var(--text-muted);
+    }
+    .org-radio-list {
+        display: grid;
+        gap: 14px;
+        margin: 20px 0;
+    }
+    .org-radio-item {
+        display: grid;
+        grid-template-columns: 26px 1fr;
+        gap: 12px;
+        align-items: start;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px;
+        background: rgba(255,255,255,0.01);
+    }
+    .org-radio-item input[type="radio"] {
+        margin-top: 4px;
+        width: 18px;
+        height: 18px;
+    }
+    .org-radio-item strong { display: block; margin-bottom: 3px; }
+    .org-radio-item span { color: var(--text-muted); font-size: .92rem; }
+    .org-time-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+        max-width: 460px;
+    }
+    @media (max-width: 760px) {
+        .org-time-row { grid-template-columns: 1fr; }
+    }
+</style>
+
+<div class="org-setup-shell">
+    <div class="org-setup-head">
+        <h1 class="page-title">Setup Your Organisation</h1>
+        <p>Complete this one-time setup to configure payable days and standard shift work hours.</p>
+    </div>
+
+    {% if errors %}
+    <ul class="error-list" style="margin-top:14px;">
+        {% for err in errors %}<li>{{ err }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+
+    <form method="post" style="margin-top:18px;">
+        {{ csrf_input }}
+
+        <h3 class="section-title">Payable Days & Work Hours</h3>
+        <p class="section-subtitle">
+            Choose how payable days should be calculated for salary. Hourly wage rate is derived from daily wage and work hours.
+        </p>
+
+        <div class="org-radio-list">
+            <label class="org-radio-item">
+                <input type="radio" name="payable_days_mode" value="calendar_month" {% if selected_mode == 'calendar_month' %}checked{% endif %}>
+                <div><strong>Calendar Month</strong><span>Uses actual days in month (e.g. March 31, April 30).</span></div>
+            </label>
+            <label class="org-radio-item">
+                <input type="radio" name="payable_days_mode" value="every_30" {% if selected_mode == 'every_30' %}checked{% endif %}>
+                <div><strong>Every Month 30 Days</strong><span>Fixed 30 payable days for all months.</span></div>
+            </label>
+            <label class="org-radio-item">
+                <input type="radio" name="payable_days_mode" value="every_28" {% if selected_mode == 'every_28' %}checked{% endif %}>
+                <div><strong>Every Month 28 Days</strong><span>Fixed 28 payable days for all months.</span></div>
+            </label>
+            <label class="org-radio-item">
+                <input type="radio" name="payable_days_mode" value="every_26" {% if selected_mode == 'every_26' %}checked{% endif %}>
+                <div><strong>Every Month 26 Days</strong><span>Fixed 26 payable days for all months.</span></div>
+            </label>
+            <label class="org-radio-item">
+                <input type="radio" name="payable_days_mode" value="exclude_weekly_offs" {% if selected_mode == 'exclude_weekly_offs' %}checked{% endif %}>
+                <div><strong>Exclude Weekly Offs</strong><span>Approximates payable days by excluding weekly offs.</span></div>
+            </label>
+        </div>
+
+        <div class="form-group">
+            <label>Default Shift Work Hours</label>
+            <div class="org-time-row">
+                <input type="number" min="0" max="24" name="default_shift_hours" value="{{ default_hours or '08' }}" required>
+                <input type="number" min="0" max="59" name="default_shift_minutes" value="{{ default_minutes or '00' }}" required>
+            </div>
+            <small style="display:block;margin-top:8px;color:var(--text-muted);">First field is hours, second field is minutes.</small>
+        </div>
+
+        <div class="form-actions" style="margin-top:18px;">
+            <button type="submit" class="btn btn-primary">Save and Continue</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

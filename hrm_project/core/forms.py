@@ -25,6 +25,7 @@ class ClientForm(forms.Form):
         ('settings', 'Settings'),
         ('policy', 'Policy'),
         ('documents', 'Documents'),
+        ('import_export', 'Import / Export'),
         ('role_management', 'Role Management'),
         ('shift_management', 'Shift Management'),
         ('bank_management', 'Bank Management'),

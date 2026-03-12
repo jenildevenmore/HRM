@@ -3,11 +3,12 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.exceptions import PermissionDenied
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 import re
@@ -207,6 +208,81 @@ class UserProfileViewSet(viewsets.ModelViewSet):
         user.save(update_fields=['password'])
         return Response({'detail': 'Password set successfully.'}, status=status.HTTP_200_OK)
 
+    @action(detail=False, methods=['post'], permission_classes=[AllowAny], url_path='password-reset-request')
+    def password_reset_request(self, request):
+        identifier = str(
+            request.data.get('identifier')
+            or request.data.get('email')
+            or request.data.get('username')
+            or ''
+        ).strip()
+        client_id_raw = str(request.data.get('client_id') or '').strip()
+
+        if not identifier:
+            return Response(
+                {'detail': 'Email or username is required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        profile_qs = UserProfile.objects.select_related('user', 'client').filter(user__is_active=True)
+        if client_id_raw:
+            try:
+                profile_qs = profile_qs.filter(client_id=int(client_id_raw))
+            except (TypeError, ValueError):
+                return Response({'client_id': 'Invalid client id.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        profile = profile_qs.filter(
+            Q(user__email__iexact=identifier) | Q(user__username__iexact=identifier)
+        ).order_by('id').first()
+
+        # Do not reveal whether an account exists.
+        if not profile:
+            return Response(
+                {'detail': 'If an account exists for this user, a reset link has been sent.'},
+                status=status.HTTP_200_OK,
+            )
+
+        user = profile.user
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        token = default_token_generator.make_token(user)
+        frontend_base = request.build_absolute_uri('/').rstrip('/')
+        if not frontend_base:
+            frontend_base = str(getattr(settings, 'FRONTEND_BASE_URL', '') or '').rstrip('/')
+        if not frontend_base:
+            frontend_base = 'http://127.0.0.1:8000'
+        reset_link = f'{frontend_base}/reset-password/?uid={uid}&token={token}'
+
+        email_sent = False
+        email_error = ''
+        if user.email:
+            try:
+                send_branded_email(
+                    subject='Reset your HRM account password',
+                    recipient_list=[user.email],
+                    heading='Password reset request',
+                    greeting=f'Hello {user.username},',
+                    lines=[
+                        'We received a request to reset your HRM password.',
+                        'Use the button below to reset your password.',
+                    ],
+                    cta_text='Reset Password',
+                    cta_url=reset_link,
+                    closing='If you did not request this, you can ignore this email.',
+                    client=profile.client,
+                    fail_silently=False,
+                )
+                email_sent = True
+            except Exception as exc:
+                email_error = str(exc)
+
+        payload = {'detail': 'If an account exists for this user, a reset link has been sent.'}
+        if settings.DEBUG:
+            payload['debug_reset_link'] = reset_link
+            payload['email_sent'] = email_sent
+            if email_error:
+                payload['email_error'] = email_error
+        return Response(payload, status=status.HTTP_200_OK)
+
     @action(detail=False, methods=['get'], url_path='permission-options')
     def permission_options(self, request):
         if not (self._is_superadmin(request.user) or self._is_client_admin(request.user)):
@@ -294,6 +370,14 @@ class UserProfileViewSet(viewsets.ModelViewSet):
                     {'key': 'documents.create', 'label': 'Can create Documents'},
                     {'key': 'documents.edit', 'label': 'Can edit Documents'},
                     {'key': 'documents.delete', 'label': 'Can delete Documents'},
+                ],
+            },
+            {
+                'title': 'Import / Export',
+                'permissions': [
+                    {'key': 'import_export.view', 'label': 'Can view Import / Export'},
+                    {'key': 'import_export.import', 'label': 'Can import records'},
+                    {'key': 'import_export.export', 'label': 'Can export records'},
                 ],
             },
             {
