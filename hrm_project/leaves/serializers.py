@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from decimal import Decimal
 
+from django.utils import timezone
 from rest_framework import serializers
 
 from clients.models import Client
@@ -147,6 +148,12 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
         )
+        extra_kwargs = {
+            'half_day_slot': {'required': False, 'allow_blank': True, 'allow_null': True},
+            'leave_start_time': {'required': False, 'allow_null': True},
+            'leave_end_time': {'required': False, 'allow_null': True},
+            'leave_hours': {'required': False, 'allow_null': True},
+        }
 
     def get_employee_name(self, obj):
         if not obj.employee_id:
@@ -226,6 +233,8 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'leave_type': 'This field is required.'})
         if end_date < start_date:
             raise serializers.ValidationError({'end_date': 'End date must be same or after start date.'})
+        if start_date < timezone.localdate():
+            raise serializers.ValidationError({'start_date': 'Past dates are not allowed for leave request.'})
         if leave_unit not in (LeaveRequest.UNIT_DAY, LeaveRequest.UNIT_HALF_DAY, LeaveRequest.UNIT_HOUR):
             raise serializers.ValidationError({'leave_unit': 'Leave unit must be day, half_day, or hour.'})
 
@@ -253,20 +262,24 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
         if leave_unit == LeaveRequest.UNIT_HOUR:
             if start_date != end_date:
                 raise serializers.ValidationError({'end_date': 'Hourly leave must be for a single date.'})
+            if leave_hours is None:
+                raise serializers.ValidationError({'leave_hours': 'Leave hours are required for hourly leave.'})
+            leave_hours_decimal = Decimal(str(leave_hours))
+            if leave_hours_decimal <= 0:
+                raise serializers.ValidationError({'leave_hours': 'Leave hours must be greater than 0.'})
+            if leave_hours_decimal > 3:
+                raise serializers.ValidationError({'leave_hours': 'Maximum hourly leave is 3 hours in a day.'})
             if not leave_start_time:
                 raise serializers.ValidationError({'leave_start_time': 'Start time is required for hourly leave.'})
-            if not leave_end_time:
-                raise serializers.ValidationError({'leave_end_time': 'End time is required for hourly leave.'})
             start_dt = datetime.combine(start_date, leave_start_time)
-            end_dt = datetime.combine(end_date, leave_end_time)
-            if end_dt <= start_dt:
-                raise serializers.ValidationError({'leave_end_time': 'End time must be after start time.'})
-            duration_hours = Decimal((end_dt - start_dt).total_seconds()) / Decimal('3600')
-            if duration_hours <= 0:
-                raise serializers.ValidationError({'leave_end_time': 'Hourly leave duration must be greater than 0.'})
-            if duration_hours > 3:
-                raise serializers.ValidationError({'leave_end_time': 'Maximum hourly leave is 3 hours in a day.'})
-            attrs['leave_hours'] = duration_hours.quantize(Decimal('0.01'))
+            duration_minutes = int((leave_hours_decimal * Decimal('60')).to_integral_value())
+            end_dt = start_dt + timedelta(minutes=duration_minutes)
+            if end_dt.date() != start_date:
+                raise serializers.ValidationError(
+                    {'leave_start_time': 'Start time is too late for selected hours. Please choose an earlier time.'}
+                )
+            attrs['leave_hours'] = leave_hours_decimal.quantize(Decimal('0.01'))
+            attrs['leave_end_time'] = end_dt.time()
             attrs['half_day_slot'] = ''
             attrs['total_days'] = 0
         elif leave_unit == LeaveRequest.UNIT_HALF_DAY:

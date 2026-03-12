@@ -82,8 +82,8 @@
                 </select>
             </div>
             <div class="form-group" id="leaveHoursGroup" style="display:none;">
-                <label>Calculated Hours</label>
-                <input type="number" step="0.01" min="0" max="3" name="leave_hours" id="leaveHoursInput" readonly>
+                <label>Leave Hours (Max 3) *</label>
+                <input type="number" step="0.5" min="0.5" max="3" name="leave_hours" id="leaveHoursInput">
             </div>
         </div>
         <div class="form-row" id="hourlyTimeRow" style="display:none;">
@@ -92,8 +92,8 @@
                 <input type="time" name="leave_start_time" id="leaveStartTimeInput">
             </div>
             <div class="form-group">
-                <label>To Time *</label>
-                <input type="time" name="leave_end_time" id="leaveEndTimeInput">
+                <label>To Time (Auto)</label>
+                <input type="time" name="leave_end_time" id="leaveEndTimeInput" readonly>
             </div>
         </div>
         <div class="form-row">
@@ -131,6 +131,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var leaveHoursInput = document.getElementById('leaveHoursInput');
     var startDateInput = document.getElementById('startDateInput');
     var endDateInput = document.getElementById('endDateInput');
+    var todayIso = new Date().toISOString().slice(0, 10);
     if (!employeeSelect || !preview) {
         // Continue for leave-unit behavior even when employee selector is not shown.
     }
@@ -156,28 +157,47 @@ document.addEventListener('DOMContentLoaded', function () {
         endDateInput.style.opacity = isLocked ? '0.8' : '';
     }
 
-    function recalculateHourlyHours() {
+    function recalculateHourlyEndTime() {
         if (!leaveStartTimeInput || !leaveEndTimeInput || !leaveHoursInput) return;
         var start = leaveStartTimeInput.value;
-        var end = leaveEndTimeInput.value;
-        if (!start || !end) {
-            leaveHoursInput.value = '';
+        var hoursValue = parseFloat(leaveHoursInput.value || '');
+        if (!start || !hoursValue || hoursValue <= 0) {
+            leaveEndTimeInput.value = '';
             return;
+        }
+        if (hoursValue > 3) {
+            hoursValue = 3;
+            leaveHoursInput.value = '3';
         }
         var startParts = start.split(':');
-        var endParts = end.split(':');
-        if (startParts.length < 2 || endParts.length < 2) {
-            leaveHoursInput.value = '';
+        if (startParts.length < 2) {
+            leaveEndTimeInput.value = '';
             return;
         }
-        var startMinutes = (parseInt(startParts[0], 10) * 60) + parseInt(startParts[1], 10);
-        var endMinutes = (parseInt(endParts[0], 10) * 60) + parseInt(endParts[1], 10);
-        if (endMinutes <= startMinutes) {
-            leaveHoursInput.value = '';
+        var startHour = parseInt(startParts[0], 10);
+        var startMinute = parseInt(startParts[1], 10);
+        var totalStartMinutes = (startHour * 60) + startMinute;
+        var addMinutes = Math.round(hoursValue * 60);
+        var totalEndMinutes = totalStartMinutes + addMinutes;
+        if (totalEndMinutes > (24 * 60) - 1) {
+            leaveEndTimeInput.value = '';
             return;
         }
-        var diffHours = (endMinutes - startMinutes) / 60;
-        leaveHoursInput.value = diffHours.toFixed(2);
+        var endHour = Math.floor(totalEndMinutes / 60);
+        var endMinute = totalEndMinutes % 60;
+        var endHourText = (endHour < 10 ? '0' : '') + endHour;
+        var endMinuteText = (endMinute < 10 ? '0' : '') + endMinute;
+        leaveEndTimeInput.value = endHourText + ':' + endMinuteText;
+    }
+
+    function clampHourlyHoursInput() {
+        if (!leaveHoursInput) return;
+        if (leaveHoursInput.value === '') return;
+        var hoursValue = parseFloat(leaveHoursInput.value);
+        if (isNaN(hoursValue)) return;
+        if (hoursValue > 3) {
+            leaveHoursInput.value = '3';
+        }
     }
 
     function applyLeaveUnitBehavior() {
@@ -206,7 +226,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
         if (leaveEndTimeInput) {
-            leaveEndTimeInput.required = isHourly;
+            leaveEndTimeInput.required = false;
             if (!isHourly) {
                 leaveEndTimeInput.value = '';
             }
@@ -215,11 +235,11 @@ document.addEventListener('DOMContentLoaded', function () {
             leaveHoursGroup.style.display = isHourly ? '' : 'none';
         }
         if (leaveHoursInput) {
-            leaveHoursInput.required = false;
+            leaveHoursInput.required = isHourly;
             if (!isHourly) {
                 leaveHoursInput.value = '';
             } else {
-                recalculateHourlyHours();
+                recalculateHourlyEndTime();
             }
         }
         if (startDateInput && endDateInput && isSingleDate && startDateInput.value) {
@@ -235,17 +255,29 @@ document.addEventListener('DOMContentLoaded', function () {
         leaveUnitSelect.addEventListener('change', applyLeaveUnitBehavior);
     }
     if (startDateInput) {
+        startDateInput.min = todayIso;
+        if (startDateInput.value && startDateInput.value < todayIso) startDateInput.value = todayIso;
+    }
+    if (endDateInput) {
+        endDateInput.min = todayIso;
+        if (endDateInput.value && endDateInput.value < todayIso) endDateInput.value = todayIso;
+    }
+    if (startDateInput) {
         startDateInput.addEventListener('change', function () {
             if (leaveUnitSelect && (leaveUnitSelect.value === 'hour' || leaveUnitSelect.value === 'half_day') && endDateInput) {
                 endDateInput.value = startDateInput.value;
             }
+            if (endDateInput) endDateInput.min = startDateInput.value || todayIso;
         });
     }
     if (leaveStartTimeInput) {
-        leaveStartTimeInput.addEventListener('change', recalculateHourlyHours);
+        leaveStartTimeInput.addEventListener('change', recalculateHourlyEndTime);
     }
-    if (leaveEndTimeInput) {
-        leaveEndTimeInput.addEventListener('change', recalculateHourlyHours);
+    if (leaveHoursInput) {
+        leaveHoursInput.addEventListener('input', function () {
+            clampHourlyHoursInput();
+            recalculateHourlyEndTime();
+        });
     }
     renderAssignment();
     applyLeaveUnitBehavior();
