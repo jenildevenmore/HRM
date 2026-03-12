@@ -1254,3 +1254,17 @@ body.theme-mode-light .permission-group-tab-btn.active {
   .permission-card-head { flex-direction: column; align-items: flex-start; }
   .permission-group-actions { flex-direction: column; align-items: stretch; }
 }
+
+
+.permissions-grid1 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr); /* 1 row ma 3 cards */
+    gap: 20px;
+}
+
+.card1 {
+    background: #fff;
+    border-radius: 10px;
+    padding: 15px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
