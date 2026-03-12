@@ -1260,6 +1260,7 @@ def dashboard(request):
     absent_today = 0
     on_leave_today = 0
     pending_leave_approvals = 0
+    attendance_model_id = None
     total_branch_count = 0
     total_department_count = 0
     total_promotions = 0
@@ -1331,6 +1332,7 @@ def dashboard(request):
             dm_rows = dm_payload.get('results', dm_payload) if isinstance(dm_payload, dict) else dm_payload
             attendance_model = next((m for m in dm_rows if str(m.get('slug', '')).lower() == 'attendance'), None)
             if attendance_model:
+                attendance_model_id = attendance_model.get('id')
                 rec_resp = _api_get(request, '/api/dynamic-records/', params={'dynamic_model': attendance_model.get('id')})
                 if rec_resp.status_code == 200:
                     rec_payload = rec_resp.json()
@@ -1470,9 +1472,9 @@ def dashboard(request):
         messages.append({'message': 'Backend server unreachable.', 'level': 'error'})
 
     quick_actions = [
-        {'label': 'Add New Employee', 'url': 'employee_list'},
-        {'label': 'Mark Attendance', 'url': 'dashboard'},
-        {'label': 'Apply for Leave', 'url': 'leave_list'},
+        {'label': 'Add New Employee', 'url': 'employee_create'},
+        {'label': 'Mark Attendance', 'url': 'attendance_mark'},
+        {'label': 'Apply for Leave', 'url': 'leave_create'},
         {'label': 'Process Payroll', 'url': 'payroll_list'},
         {'label': 'Open Documents', 'url': 'document_list'},
         {'label': 'Import / Export', 'url': 'import_export_page'},
@@ -1485,6 +1487,7 @@ def dashboard(request):
         'absent_today': absent_today,
         'on_leave_today': on_leave_today,
         'pending_leave_approvals': pending_leave_approvals,
+        'attendance_model_id': attendance_model_id,
         'total_branch_count': total_branch_count,
         'total_department_count': total_department_count,
         'total_promotions': total_promotions,

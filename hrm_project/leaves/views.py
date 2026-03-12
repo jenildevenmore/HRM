@@ -117,6 +117,17 @@ class LeaveRequestViewSet(_LeaveAccessMixin, viewsets.ModelViewSet):
         )
         return profile.user if profile else None
 
+    def _resolve_client_admin_user(self, client_id, fallback_user=None):
+        profile = (
+            UserProfile.objects.select_related('user')
+            .filter(client_id=client_id, role='admin')
+            .order_by('id')
+            .first()
+        )
+        if profile and profile.user_id:
+            return profile.user
+        return fallback_user
+
     def get_queryset(self):
         qs = LeaveRequest.objects.select_related(
             'employee', 'client', 'applied_by', 'approved_by', 'manager', 'hr'
@@ -138,32 +149,70 @@ class LeaveRequestViewSet(_LeaveAccessMixin, viewsets.ModelViewSet):
             if employee.client_id != profile.client_id:
                 raise PermissionDenied('Employee must belong to your client.')
 
-        if not employee.manager_id:
-            raise PermissionDenied('Selected employee has no manager assigned.')
-        if not employee.hr_id:
-            raise PermissionDenied('Selected employee has no HR assigned.')
+        requester_profile = profile
+        applicant_role = str(getattr(employee, 'role', Employee.ROLE_EMPLOYEE) or Employee.ROLE_EMPLOYEE).lower()
+        if (
+            requester_profile
+            and requester_profile.role == 'admin'
+            and str(getattr(employee, 'email', '') or '').strip().lower() == str(getattr(self.request.user, 'email', '') or '').strip().lower()
+        ):
+            applicant_role = 'admin'
 
-        manager_user = self._resolve_approver_user(employee.manager)
-        hr_user = self._resolve_approver_user(employee.hr)
+        manager_user = None
+        hr_user = None
 
-        if not manager_user:
-            raise PermissionDenied(
-                f'No user profile found for assigned manager ({employee.manager.email}). '
-                'Create a user account with the same email.'
-            )
-        if not hr_user:
-            raise PermissionDenied(
-                f'No user profile found for assigned HR ({employee.hr.email}). '
-                'Create a user account with the same email.'
-            )
-        if manager_user.id == hr_user.id:
-            raise PermissionDenied('Assigned manager and HR must be different users.')
+        if applicant_role == Employee.ROLE_MANAGER:
+            if not employee.hr_id:
+                raise PermissionDenied('Selected manager has no HR assigned.')
+            hr_user = self._resolve_approver_user(employee.hr)
+            manager_user = self._resolve_client_admin_user(employee.client_id, fallback_user=self.request.user)
+            if not hr_user:
+                raise PermissionDenied(
+                    f'No user profile found for assigned HR ({employee.hr.email}). '
+                    'Create a user account with the same email.'
+                )
+            if not manager_user:
+                raise PermissionDenied('No client admin user found for approval.')
+            if manager_user.id == hr_user.id:
+                raise PermissionDenied('Client admin and HR approvers must be different users for manager leave.')
+        elif applicant_role in (Employee.ROLE_HR, 'admin'):
+            manager_user = self._resolve_client_admin_user(employee.client_id, fallback_user=self.request.user)
+            if not manager_user:
+                raise PermissionDenied('No client admin user found for approval.')
+            hr_user = None
+        else:
+            if not employee.manager_id:
+                raise PermissionDenied('Selected employee has no manager assigned.')
+            if not employee.hr_id:
+                raise PermissionDenied('Selected employee has no HR assigned.')
+            manager_user = self._resolve_approver_user(employee.manager)
+            hr_user = self._resolve_approver_user(employee.hr)
+            if not manager_user:
+                raise PermissionDenied(
+                    f'No user profile found for assigned manager ({employee.manager.email}). '
+                    'Create a user account with the same email.'
+                )
+            if not hr_user:
+                raise PermissionDenied(
+                    f'No user profile found for assigned HR ({employee.hr.email}). '
+                    'Create a user account with the same email.'
+                )
+            if manager_user.id == hr_user.id:
+                raise PermissionDenied('Assigned manager and HR must be different users.')
 
         serializer.save(
             client=employee.client,
             applied_by=self.request.user,
             manager=manager_user,
             hr=hr_user,
+            manager_status=(LeaveRequest.APPROVAL_PENDING if manager_user else LeaveRequest.APPROVAL_APPROVED),
+            hr_status=(LeaveRequest.APPROVAL_PENDING if hr_user else LeaveRequest.APPROVAL_APPROVED),
+            status=LeaveRequest.STATUS_PENDING,
+            manager_comment='',
+            hr_comment='',
+            reviewer_comment='',
+            approved_by=None,
+            approved_at=None,
         )
 
     def perform_update(self, serializer):
@@ -184,6 +233,18 @@ class LeaveRequestViewSet(_LeaveAccessMixin, viewsets.ModelViewSet):
 
         reviewer_comment = str(request.data.get('reviewer_comment', '')).strip()
 
+        def _finalize_status():
+            review_states = []
+            if instance.manager_id:
+                review_states.append(instance.manager_status)
+            if instance.hr_id:
+                review_states.append(instance.hr_status)
+            if any(state == LeaveRequest.APPROVAL_REJECTED for state in review_states):
+                return LeaveRequest.STATUS_REJECTED
+            if review_states and all(state == LeaveRequest.APPROVAL_APPROVED for state in review_states):
+                return LeaveRequest.STATUS_APPROVED
+            return LeaveRequest.STATUS_PENDING
+
         if instance.manager_id == request.user.id:
             if instance.manager_status != LeaveRequest.APPROVAL_PENDING:
                 return Response({'detail': 'Manager approval is already submitted.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -192,11 +253,7 @@ class LeaveRequestViewSet(_LeaveAccessMixin, viewsets.ModelViewSet):
                 if new_status == LeaveRequest.STATUS_APPROVED else LeaveRequest.APPROVAL_REJECTED
             )
             instance.manager_comment = reviewer_comment
-            instance.status = (
-                LeaveRequest.STATUS_APPROVED
-                if new_status == LeaveRequest.STATUS_APPROVED
-                else LeaveRequest.STATUS_REJECTED
-            )
+            instance.status = _finalize_status()
             instance.reviewer_comment = reviewer_comment
             instance.approved_by = request.user
             instance.approved_at = timezone.now()
@@ -214,10 +271,7 @@ class LeaveRequestViewSet(_LeaveAccessMixin, viewsets.ModelViewSet):
                 if new_status == LeaveRequest.STATUS_APPROVED else LeaveRequest.APPROVAL_REJECTED
             )
             instance.hr_comment = reviewer_comment
-            instance.status = (
-                LeaveRequest.STATUS_APPROVED if new_status == LeaveRequest.STATUS_APPROVED
-                else LeaveRequest.STATUS_REJECTED
-            )
+            instance.status = _finalize_status()
             instance.reviewer_comment = reviewer_comment
             instance.approved_by = request.user
             instance.approved_at = timezone.now()

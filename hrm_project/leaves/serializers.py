@@ -201,13 +201,24 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
         return cache[cache_key]
 
     def get_pending_with(self, obj):
+        def _label_for_user(user, default_label):
+            if not user:
+                return default_label
+            try:
+                role = str(getattr(user.profile, 'role', '') or '').strip().lower()
+                if role == 'admin':
+                    return 'Client Admin'
+            except Exception:
+                pass
+            return default_label
+
         if obj.status != LeaveRequest.STATUS_PENDING:
             return '-'
         pending_roles = []
         if obj.manager_status == LeaveRequest.APPROVAL_PENDING:
-            pending_roles.append('Manager')
+            pending_roles.append(_label_for_user(obj.manager, 'Manager'))
         if obj.hr_status == LeaveRequest.APPROVAL_PENDING:
-            pending_roles.append('HR')
+            pending_roles.append(_label_for_user(obj.hr, 'HR'))
         if pending_roles:
             return ' / '.join(pending_roles)
         return '-'

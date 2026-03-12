@@ -19,6 +19,16 @@
         padding: 14px;
         background: var(--bg-card);
     }
+    .db-kpi-link {
+        display: block;
+        text-decoration: none;
+        color: inherit;
+    }
+    .db-kpi-link .db-kpi { transition: transform .18s ease, box-shadow .18s ease; }
+    .db-kpi-link:hover .db-kpi {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+    }
     .db-kpi.t-blue   { background: rgba(59,130,246,0.14); border-color: rgba(59,130,246,0.3); }
     .db-kpi.t-green  { background: rgba(34,197,94,0.14); border-color: rgba(34,197,94,0.3); }
     .db-kpi.t-red    { background: rgba(239,68,68,0.14); border-color: rgba(239,68,68,0.3); }
@@ -113,14 +123,14 @@
     </header>
 
     <section class="db-kpis">
-        <article class="db-kpi t-blue"><h3>Total Employees</h3><div class="val">{{ emp_count }}</div><div class="sub">Active employees</div></article>
-        <article class="db-kpi t-green"><h3>Present Today</h3><div class="val">{{ present_today }}</div><div class="sub">{% if emp_count %}{{ ((present_today*100.0)/emp_count)|round(1) }}% attendance rate{% else %}0.0% attendance rate{% endif %}</div></article>
-        <article class="db-kpi t-red"><h3>Absent Today</h3><div class="val">{{ absent_today }}</div><div class="sub">Missing attendance (excluding leave)</div></article>
-        <article class="db-kpi t-purple"><h3>On Leave</h3><div class="val">{{ on_leave_today }}</div><div class="sub">{{ pending_leave_approvals }} pending approvals</div></article>
-        <article class="db-kpi t-cyan"><h3>Total Branch</h3><div class="val">{{ total_branch_count }}</div><div class="sub">Active branches</div></article>
-        <article class="db-kpi t-indigo"><h3>Total Department</h3><div class="val">{{ total_department_count }}</div><div class="sub">Department groups</div></article>
-        <article class="db-kpi t-green"><h3>Total Promotions</h3><div class="val">{{ total_promotions }}</div><div class="sub">This year</div></article>
-        <article class="db-kpi t-red"><h3>Terminations</h3><div class="val">{{ terminations_this_month }}</div><div class="sub">This month</div></article>
+        <a class="db-kpi-link" href="{{ url('employee_list') }}"><article class="db-kpi t-blue"><h3>Total Employees</h3><div class="val">{{ emp_count }}</div><div class="sub">Active employees</div></article></a>
+        <a class="db-kpi-link" href="{% if attendance_model_id %}{{ url('dynamic_entity_list', args=[attendance_model_id]) }}{% else %}{{ url('dashboard') }}{% endif %}"><article class="db-kpi t-green"><h3>Present Today</h3><div class="val">{{ present_today }}</div><div class="sub">{% if emp_count %}{{ ((present_today*100.0)/emp_count)|round(1) }}% attendance rate{% else %}0.0% attendance rate{% endif %}</div></article></a>
+        <a class="db-kpi-link" href="{% if attendance_model_id %}{{ url('dynamic_entity_list', args=[attendance_model_id]) }}{% else %}{{ url('dashboard') }}{% endif %}"><article class="db-kpi t-red"><h3>Absent Today</h3><div class="val">{{ absent_today }}</div><div class="sub">Missing attendance (excluding leave)</div></article></a>
+        <a class="db-kpi-link" href="{{ url('leave_list') }}"><article class="db-kpi t-purple"><h3>On Leave</h3><div class="val">{{ on_leave_today }}</div><div class="sub">{{ pending_leave_approvals }} pending approvals</div></article></a>
+        <a class="db-kpi-link" href="{{ url('employee_list') }}"><article class="db-kpi t-cyan"><h3>Total Branch</h3><div class="val">{{ total_branch_count }}</div><div class="sub">Active branches</div></article></a>
+        <a class="db-kpi-link" href="{{ url('employee_list') }}"><article class="db-kpi t-indigo"><h3>Total Department</h3><div class="val">{{ total_department_count }}</div><div class="sub">Department groups</div></article></a>
+        <a class="db-kpi-link" href="{{ url('employee_list') }}"><article class="db-kpi t-green"><h3>Total Promotions</h3><div class="val">{{ total_promotions }}</div><div class="sub">This year</div></article></a>
+        <a class="db-kpi-link" href="{{ url('employee_list') }}"><article class="db-kpi t-red"><h3>Terminations</h3><div class="val">{{ terminations_this_month }}</div><div class="sub">This month</div></article></a>
     </section>
 
     <section class="db-grid-2">
@@ -147,8 +157,14 @@
             <div class="db-list db-actions">
                 {% for item in quick_actions %}
                 <div class="db-row">
-                    {% if item.url == 'employee_list' %}
+                    {% if item.url == 'employee_create' %}
+                    <a href="{{ url('employee_create') }}"><span>{{ item.label }}</span><span>></span></a>
+                    {% elif item.url == 'attendance_mark' %}
+                    <a href="{% if attendance_model_id %}{{ url('dynamic_entity_create', args=[attendance_model_id]) }}{% else %}{{ url('dynamic_model_create_attendance') }}{% endif %}"><span>{{ item.label }}</span><span>></span></a>
+                    {% elif item.url == 'employee_list' %}
                     <a href="{{ url('employee_list') }}"><span>{{ item.label }}</span><span>></span></a>
+                    {% elif item.url == 'leave_create' %}
+                    <a href="{{ url('leave_create') }}"><span>{{ item.label }}</span><span>></span></a>
                     {% elif item.url == 'dashboard' %}
                     <a href="{{ url('dashboard') }}"><span>{{ item.label }}</span><span>></span></a>
                     {% elif item.url == 'leave_list' %}
