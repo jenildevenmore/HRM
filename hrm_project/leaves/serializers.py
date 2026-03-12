@@ -1,4 +1,5 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
+from decimal import Decimal
 
 from rest_framework import serializers
 
@@ -102,7 +103,10 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
             'leave_type',
             'leave_type_is_paid',
             'leave_unit',
+            'half_day_slot',
             'leave_hours',
+            'leave_start_time',
+            'leave_end_time',
             'start_date',
             'end_date',
             'total_days',
@@ -207,7 +211,10 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
         end_date = attrs.get('end_date') or getattr(self.instance, 'end_date', None)
         leave_type_name = str(attrs.get('leave_type') or getattr(self.instance, 'leave_type', '')).strip()
         leave_unit = str(attrs.get('leave_unit') or getattr(self.instance, 'leave_unit', LeaveRequest.UNIT_DAY)).strip().lower()
+        half_day_slot = str(attrs.get('half_day_slot') or getattr(self.instance, 'half_day_slot', '')).strip().lower()
         leave_hours = attrs.get('leave_hours', getattr(self.instance, 'leave_hours', None))
+        leave_start_time = attrs.get('leave_start_time', getattr(self.instance, 'leave_start_time', None))
+        leave_end_time = attrs.get('leave_end_time', getattr(self.instance, 'leave_end_time', None))
 
         if not employee:
             raise serializers.ValidationError({'employee': 'This field is required.'})
@@ -246,20 +253,37 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
         if leave_unit == LeaveRequest.UNIT_HOUR:
             if start_date != end_date:
                 raise serializers.ValidationError({'end_date': 'Hourly leave must be for a single date.'})
-            if leave_hours is None:
-                raise serializers.ValidationError({'leave_hours': 'Leave hours are required for hourly leave.'})
-            if leave_hours <= 0:
-                raise serializers.ValidationError({'leave_hours': 'Leave hours must be greater than 0.'})
-            if leave_hours > 3:
-                raise serializers.ValidationError({'leave_hours': 'Maximum hourly leave is 3 hours in a day.'})
+            if not leave_start_time:
+                raise serializers.ValidationError({'leave_start_time': 'Start time is required for hourly leave.'})
+            if not leave_end_time:
+                raise serializers.ValidationError({'leave_end_time': 'End time is required for hourly leave.'})
+            start_dt = datetime.combine(start_date, leave_start_time)
+            end_dt = datetime.combine(end_date, leave_end_time)
+            if end_dt <= start_dt:
+                raise serializers.ValidationError({'leave_end_time': 'End time must be after start time.'})
+            duration_hours = Decimal((end_dt - start_dt).total_seconds()) / Decimal('3600')
+            if duration_hours <= 0:
+                raise serializers.ValidationError({'leave_end_time': 'Hourly leave duration must be greater than 0.'})
+            if duration_hours > 3:
+                raise serializers.ValidationError({'leave_end_time': 'Maximum hourly leave is 3 hours in a day.'})
+            attrs['leave_hours'] = duration_hours.quantize(Decimal('0.01'))
+            attrs['half_day_slot'] = ''
             attrs['total_days'] = 0
         elif leave_unit == LeaveRequest.UNIT_HALF_DAY:
             if start_date != end_date:
                 raise serializers.ValidationError({'end_date': 'Half-day leave must be for a single date.'})
+            if half_day_slot not in (LeaveRequest.HALF_FIRST, LeaveRequest.HALF_SECOND):
+                raise serializers.ValidationError({'half_day_slot': 'Select first half or second half for half-day leave.'})
             attrs['leave_hours'] = None
+            attrs['half_day_slot'] = half_day_slot
+            attrs['leave_start_time'] = None
+            attrs['leave_end_time'] = None
             attrs['total_days'] = 1
         else:
             attrs['leave_hours'] = None
+            attrs['half_day_slot'] = ''
+            attrs['leave_start_time'] = None
+            attrs['leave_end_time'] = None
             attrs['total_days'] = (end_date - start_date + timedelta(days=1)).days
 
         return attrs

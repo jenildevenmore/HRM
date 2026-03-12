@@ -51,12 +51,21 @@ class LeaveRequest(models.Model):
         (UNIT_HALF_DAY, 'Half Day'),
         (UNIT_HOUR, 'Hour'),
     )
+    HALF_FIRST = 'first_half'
+    HALF_SECOND = 'second_half'
+    HALF_DAY_SLOT_CHOICES = (
+        (HALF_FIRST, 'First Half'),
+        (HALF_SECOND, 'Second Half'),
+    )
 
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='leave_requests')
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='leave_requests')
     leave_type = models.CharField(max_length=60, default='Casual')
     leave_unit = models.CharField(max_length=10, choices=LEAVE_UNIT_CHOICES, default=UNIT_DAY)
+    half_day_slot = models.CharField(max_length=20, choices=HALF_DAY_SLOT_CHOICES, blank=True, default='')
     leave_hours = models.DecimalField(max_digits=4, decimal_places=2, null=True, blank=True)
+    leave_start_time = models.TimeField(null=True, blank=True)
+    leave_end_time = models.TimeField(null=True, blank=True)
     start_date = models.DateField()
     end_date = models.DateField()
     total_days = models.PositiveIntegerField(default=1)

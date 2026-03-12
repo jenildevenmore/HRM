@@ -130,9 +130,27 @@
                         <option value="hour" {% if create_form_values.leave_unit == 'hour' %}selected{% endif %}>Hourly Leave</option>
                     </select>
                 </div>
+                <div class="form-group" id="halfDaySlotGroup" style="display:none;">
+                    <label>Half Day Slot *</label>
+                    <select name="half_day_slot" id="halfDaySlotSelect">
+                        <option value="">Select half</option>
+                        <option value="first_half" {% if create_form_values.half_day_slot == 'first_half' %}selected{% endif %}>First Half</option>
+                        <option value="second_half" {% if create_form_values.half_day_slot == 'second_half' %}selected{% endif %}>Second Half</option>
+                    </select>
+                </div>
                 <div class="form-group" id="leaveHoursGroup" style="display:none;">
-                    <label>Leave Hours (Max 3) *</label>
-                    <input type="number" step="0.5" min="0.5" max="3" name="leave_hours" id="leaveHoursInput" placeholder="e.g. 2" value="{{ create_form_values.leave_hours or '' }}">
+                    <label>Calculated Hours</label>
+                    <input type="number" step="0.01" min="0" max="3" name="leave_hours" id="leaveHoursInput" value="{{ create_form_values.leave_hours or '' }}" readonly>
+                </div>
+            </div>
+            <div class="form-row" id="hourlyTimeRow" style="display:none;">
+                <div class="form-group">
+                    <label>From Time *</label>
+                    <input type="time" name="leave_start_time" id="leaveStartTimeInput" value="{{ create_form_values.leave_start_time or '' }}">
+                </div>
+                <div class="form-group">
+                    <label>To Time *</label>
+                    <input type="time" name="leave_end_time" id="leaveEndTimeInput" value="{{ create_form_values.leave_end_time or '' }}">
                 </div>
             </div>
             <div class="form-row">
@@ -182,7 +200,13 @@
             <tr>
                 <td>{{ leave.employee_name }}</td>
                 <td>{{ leave.leave_type }}</td>
-                <td>{{ (leave.leave_unit or 'day')|upper }}</td>
+                <td>
+                    {% if leave.leave_unit == 'half_day' %}
+                        HALF DAY ({{ 'FIRST HALF' if leave.half_day_slot == 'first_half' else 'SECOND HALF' if leave.half_day_slot == 'second_half' else '-' }})
+                    {% else %}
+                        {{ (leave.leave_unit or 'day')|upper }}
+                    {% endif %}
+                </td>
                 <td>
                     {% if leave.leave_unit == 'hour' %}
                         {{ leave.leave_hours or 0 }}
@@ -298,6 +322,11 @@ document.addEventListener('DOMContentLoaded', function () {
     var employeeSelect = document.getElementById('employeeSelect');
     var preview = document.getElementById('assignmentPreview');
     var leaveUnitSelect = document.getElementById('leaveUnitSelect');
+    var halfDaySlotGroup = document.getElementById('halfDaySlotGroup');
+    var halfDaySlotSelect = document.getElementById('halfDaySlotSelect');
+    var hourlyTimeRow = document.getElementById('hourlyTimeRow');
+    var leaveStartTimeInput = document.getElementById('leaveStartTimeInput');
+    var leaveEndTimeInput = document.getElementById('leaveEndTimeInput');
     var leaveHoursGroup = document.getElementById('leaveHoursGroup');
     var leaveHoursInput = document.getElementById('leaveHoursInput');
     var startDateInput = document.getElementById('startDateInput');
@@ -315,18 +344,69 @@ document.addEventListener('DOMContentLoaded', function () {
         preview.textContent = 'Manager: ' + manager + ' | HR: ' + hr;
     }
 
+    function setReadonlyEndDate(isLocked) {
+        if (!endDateInput) return;
+        endDateInput.readOnly = !!isLocked;
+        endDateInput.style.pointerEvents = isLocked ? 'none' : '';
+        endDateInput.style.opacity = isLocked ? '0.8' : '';
+    }
+
+    function recalculateHourlyHours() {
+        if (!leaveStartTimeInput || !leaveEndTimeInput || !leaveHoursInput) return;
+        var start = leaveStartTimeInput.value;
+        var end = leaveEndTimeInput.value;
+        if (!start || !end) {
+            leaveHoursInput.value = '';
+            return;
+        }
+        var startParts = start.split(':');
+        var endParts = end.split(':');
+        if (startParts.length < 2 || endParts.length < 2) {
+            leaveHoursInput.value = '';
+            return;
+        }
+        var startMinutes = (parseInt(startParts[0], 10) * 60) + parseInt(startParts[1], 10);
+        var endMinutes = (parseInt(endParts[0], 10) * 60) + parseInt(endParts[1], 10);
+        if (endMinutes <= startMinutes) {
+            leaveHoursInput.value = '';
+            return;
+        }
+        var diffHours = (endMinutes - startMinutes) / 60;
+        leaveHoursInput.value = diffHours.toFixed(2);
+    }
+
     function applyLeaveUnitBehavior() {
         if (!leaveUnitSelect) return;
         var isHourly = leaveUnitSelect.value === 'hour';
-        var isSingleDate = isHourly || leaveUnitSelect.value === 'half_day';
+        var isHalfDay = leaveUnitSelect.value === 'half_day';
+        var isSingleDate = isHourly || isHalfDay;
+        if (halfDaySlotGroup) halfDaySlotGroup.style.display = isHalfDay ? '' : 'none';
+        if (halfDaySlotSelect) {
+            halfDaySlotSelect.required = isHalfDay;
+            if (!isHalfDay) halfDaySlotSelect.value = '';
+        }
+        if (hourlyTimeRow) hourlyTimeRow.style.display = isHourly ? '' : 'none';
+        if (leaveStartTimeInput) {
+            leaveStartTimeInput.required = isHourly;
+            if (!isHourly) leaveStartTimeInput.value = '';
+        }
+        if (leaveEndTimeInput) {
+            leaveEndTimeInput.required = isHourly;
+            if (!isHourly) leaveEndTimeInput.value = '';
+        }
         if (leaveHoursGroup) leaveHoursGroup.style.display = isHourly ? '' : 'none';
         if (leaveHoursInput) {
-            leaveHoursInput.required = isHourly;
-            if (!isHourly) leaveHoursInput.value = '';
+            leaveHoursInput.required = false;
+            if (!isHourly) {
+                leaveHoursInput.value = '';
+            } else {
+                recalculateHourlyHours();
+            }
         }
         if (startDateInput && endDateInput && isSingleDate && startDateInput.value) {
             endDateInput.value = startDateInput.value;
         }
+        setReadonlyEndDate(isSingleDate);
     }
 
     if (employeeSelect) employeeSelect.addEventListener('change', renderAssignment);
@@ -338,6 +418,8 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
     }
+    if (leaveStartTimeInput) leaveStartTimeInput.addEventListener('change', recalculateHourlyHours);
+    if (leaveEndTimeInput) leaveEndTimeInput.addEventListener('change', recalculateHourlyHours);
     renderAssignment();
     applyLeaveUnitBehavior();
 });
