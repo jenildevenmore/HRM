@@ -23,6 +23,9 @@ class DocumentSerializer(serializers.ModelSerializer):
             'effective_date',
             'status',
             'file_url',
+            'file_name',
+            'file_mime_type',
+            'file_base64',
             'notes',
             'uploader_name',
             'uploader_email',
@@ -41,11 +44,18 @@ class DocumentSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
         )
+        extra_kwargs = {
+            'file_base64': {'write_only': True},
+        }
 
     def validate(self, attrs):
         title = str(attrs.get('title') or '').strip()
         if not title:
             raise serializers.ValidationError({'title': 'This field is required.'})
+        raw_base64 = str(attrs.get('file_base64') or '').strip()
+        if raw_base64:
+            attrs['file_base64'] = raw_base64
+            attrs['file_url'] = ''
         return attrs
 
 

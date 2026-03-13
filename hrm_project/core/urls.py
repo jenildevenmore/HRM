@@ -14,6 +14,7 @@ urlpatterns = [
     path('policy/', views.policy_page, name='policy_page'),
     path('policy/<int:pk>/delete/', views.policy_delete, name='policy_delete'),
     path('documents/', views.document_list, name='document_list'),
+    path('documents/<int:pk>/file/', views.document_file_open, name='document_file_open'),
     path('documents/<int:pk>/delete/', views.document_delete, name='document_delete'),
     path('documents/requests/<int:pk>/delete/', views.document_request_delete, name='document_request_delete'),
     path('document-upload/<uuid:token>/', views.document_upload_page, name='document_upload_page'),

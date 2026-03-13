@@ -7,11 +7,14 @@ import re
 import os
 import uuid
 import io
+import base64
+import mimetypes
 from xml.sax.saxutils import escape as xml_escape
 from urllib.parse import urlparse
 from django.conf import settings
 from django.shortcuts import render, redirect
 from django.http import HttpResponse
+from django.urls import reverse
 from django.views.decorators.http import require_POST
 from django.core.files.storage import default_storage
 from django.core.validators import validate_email
@@ -149,6 +152,7 @@ class _InternalAPIResponse:
     def __init__(self, django_response):
         self.status_code = django_response.status_code
         self._content = django_response.content or b''
+        self.headers = dict(getattr(django_response, 'headers', {}) or {})
 
     @property
     def content(self):
@@ -283,6 +287,25 @@ def _store_uploaded_dynamic_file(uploaded_file, folder='dynamic_uploads'):
     rel_path = f'{folder}/{stamp}/{base_name}-{uuid.uuid4().hex[:10]}{ext}'
     saved_path = default_storage.save(rel_path, uploaded_file)
     return default_storage.url(saved_path)
+
+
+def _encode_uploaded_file_base64(uploaded_file):
+    if not uploaded_file:
+        return '', '', ''
+    file_name = str(getattr(uploaded_file, 'name', '') or '').strip() or 'document'
+    mime_type = str(getattr(uploaded_file, 'content_type', '') or '').strip()
+    if not mime_type:
+        guessed, _ = mimetypes.guess_type(file_name)
+        mime_type = guessed or 'application/octet-stream'
+    raw_bytes = uploaded_file.read()
+    if hasattr(uploaded_file, 'seek'):
+        try:
+            uploaded_file.seek(0)
+        except Exception:
+            pass
+    if not raw_bytes:
+        return '', file_name, mime_type
+    return base64.b64encode(raw_bytes).decode('ascii'), file_name, mime_type
 
 
 def _parse_time_to_datetime(value):
@@ -958,8 +981,7 @@ def _build_offer_letter_pdf_branded(
     body_paragraphs = _offer_letter_paragraphs(template_body, letter_context)
     normalized_layout = _offer_letter_layout_settings(layout_settings)
 
-    rows = [['Component', 'Percentage', 'Annual (INR)', 'Monthly (INR)']]
-    total_pct = 0.0
+    rows = [['Component', 'Annual (INR)', 'Monthly (INR)']]
     total_annual = 0.0
     for comp in components or []:
         name = str(comp.get('name') or '').strip()
@@ -971,15 +993,13 @@ def _build_offer_letter_pdf_branded(
             pct = 0.0
         annual_amt = (annual_income_num * pct) / 100.0
         monthly_amt = annual_amt / 12.0
-        total_pct += pct
         total_annual += annual_amt
         rows.append([
             name,
-            f'{pct:.2f}%',
             f'{annual_amt:,.2f}',
             f'{monthly_amt:,.2f}',
         ])
-    rows.append(['Total', f'{total_pct:.2f}%', f'{total_annual:,.2f}', f'{(total_annual / 12.0):,.2f}'])
+    rows.append(['Total', f'{total_annual:,.2f}', f'{(total_annual / 12.0):,.2f}'])
 
     try:
         from reportlab.lib import colors
@@ -1000,9 +1020,9 @@ def _build_offer_letter_pdf_branded(
         for para in body_paragraphs:
             lines.extend([re.sub(r'<br\s*/?>', ' | ', para), ''])
         if show_salary_table:
-            lines.extend(['-' * 65, 'Component                             %           Annual            Monthly', '-' * 65])
+            lines.extend(['-' * 65, 'Component                                         Annual            Monthly', '-' * 65])
             for row in rows[1:]:
-                lines.append(f'{row[0][:28]:<28} {row[1]:>8} {row[2]:>14} {row[3]:>14}')
+                lines.append(f'{row[0][:40]:<40} {row[1]:>14} {row[2]:>14}')
         lines.extend(['', 'This is a system-generated offer letter summary.'])
         return _build_simple_text_pdf(lines)
 
@@ -1056,7 +1076,7 @@ def _build_offer_letter_pdf_branded(
     story.append(Spacer(1, 10))
 
     if show_salary_table:
-        col_widths = [72 * mm, 28 * mm, 36 * mm, 36 * mm]
+        col_widths = [95 * mm, 38 * mm, 38 * mm]
         table = Table(rows, colWidths=col_widths, hAlign='LEFT')
         table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#eef2ff')),
@@ -2069,6 +2089,12 @@ def document_list(request):
                     row for row in (documents or [])
                     if str(row.get('uploaded_by_username') or row.get('uploader_name') or '').strip().lower() == sel
                 ]
+            for row in documents or []:
+                doc_id = row.get('id')
+                if doc_id:
+                    row['open_url'] = reverse('document_file_open', args=[doc_id])
+                else:
+                    row['open_url'] = str(row.get('file_url') or '').strip()
         else:
             errors = _error_list_from_response(doc_resp, 'Failed to load documents.')
 
@@ -2138,7 +2164,12 @@ def document_list(request):
 
             file_obj = request.FILES.get('file')
             if file_obj:
-                payload['file_url'] = _store_uploaded_dynamic_file(file_obj, folder='documents/files')
+                file_base64, file_name, file_mime_type = _encode_uploaded_file_base64(file_obj)
+                if file_base64:
+                    payload['file_base64'] = file_base64
+                    payload['file_name'] = file_name
+                    payload['file_mime_type'] = file_mime_type
+                    payload['file_url'] = ''
 
             try:
                 if edit_id:
@@ -2502,6 +2533,43 @@ def document_request_delete(request, pk):
     return redirect('document_list')
 
 
+def document_file_open(request, pk):
+    permission_redirect = _require_module_permission(request, 'documents.view')
+    if permission_redirect:
+        return permission_redirect
+    addon_redirect = _require_addon(request, 'documents')
+    if addon_redirect:
+        return addon_redirect
+
+    try:
+        resp = _api_get(request, f'/api/documents/{pk}/file/')
+        redir = _handle_unauthorized(resp, request)
+        if redir:
+            return redir
+        if resp.status_code != 200:
+            _flash(request, '; '.join(_error_list_from_response(resp, 'Failed to open document.')), 'error')
+            return redirect('document_list')
+
+        headers = getattr(resp, 'headers', {}) or {}
+        content_type = headers.get('Content-Type') or headers.get('content-type')
+        if content_type and content_type.startswith('application/json'):
+            data = resp.json() if hasattr(resp, 'json') else {}
+            file_url = str((data or {}).get('file_url') or '').strip()
+            if file_url:
+                return redirect(file_url)
+            _flash(request, 'Document file not found.', 'error')
+            return redirect('document_list')
+
+        response = HttpResponse(resp.content, content_type=content_type or 'application/octet-stream')
+        content_disposition = headers.get('Content-Disposition') or headers.get('content-disposition')
+        if content_disposition:
+            response['Content-Disposition'] = content_disposition
+        return response
+    except requests.exceptions.ConnectionError:
+        _flash(request, 'Backend server unreachable.', 'error')
+        return redirect('document_list')
+
+
 def document_upload_page(request, token):
     info = {}
     errors = []
@@ -2544,10 +2612,14 @@ def document_upload_page(request, token):
             if requested_doc_types and current_type not in requested_doc_types:
                 errors = [f'Invalid document type selected: {current_type or "Unknown"}']
                 break
-            file_url = _store_uploaded_dynamic_file(current_file, folder='documents/public')
+            file_base64, file_name, file_mime_type = _encode_uploaded_file_base64(current_file)
+            if not file_base64:
+                continue
             documents_payload.append({
                 'doc_type': current_type,
-                'file_url': file_url,
+                'file_base64': file_base64,
+                'file_name': file_name,
+                'file_mime_type': file_mime_type,
             })
 
         if not errors:
@@ -2560,10 +2632,17 @@ def document_upload_page(request, token):
                     if single_file:
                         upload_files = [single_file]
                 if upload_files:
-                    payload['file_urls'] = [
-                        _store_uploaded_dynamic_file(upload_file, folder='documents/public')
-                        for upload_file in upload_files
-                    ]
+                    payload['documents'] = []
+                    for upload_file in upload_files:
+                        file_base64, file_name, file_mime_type = _encode_uploaded_file_base64(upload_file)
+                        if not file_base64:
+                            continue
+                        payload['documents'].append({
+                            'doc_type': '',
+                            'file_base64': file_base64,
+                            'file_name': file_name,
+                            'file_mime_type': file_mime_type,
+                        })
 
         if not errors:
             try:

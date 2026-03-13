@@ -409,8 +409,8 @@
                     {% endif %}
                 </td>
                 <td>
-                    {% if d.file_url %}
-                    <a href="{{ d.file_url }}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:rgba(255,255,255,0.03);">
+                    {% if d.open_url or d.file_url %}
+                    <a href="{{ d.open_url or d.file_url }}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:rgba(255,255,255,0.03);">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                             <path d="M1.5 12s3.8-6.5 10.5-6.5S22.5 12 22.5 12s-3.8 6.5-10.5 6.5S1.5 12 1.5 12Z" stroke="currentColor" stroke-width="1.8"/>
                             <circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.8"/>
@@ -433,6 +433,7 @@
                         data-status="{{ d.status|e }}"
                         data-notes="{{ d.notes|e }}"
                         data-file-url="{{ d.file_url|e }}"
+                        data-open-url="{{ (d.open_url or d.file_url)|e }}"
                     >Edit</button>
                     {% endif %}
                     {% if role in ['superadmin', 'admin'] or 'documents.delete' in module_permissions %}
@@ -897,9 +898,10 @@
         status.value = btn.getAttribute('data-status') || 'pending';
         notes.value = btn.getAttribute('data-notes') || '';
         const fileUrl = btn.getAttribute('data-file-url') || '';
+        const openUrl = btn.getAttribute('data-open-url') || fileUrl;
         existingFile.value = fileUrl;
-        currentFileLink.href = fileUrl || '#';
-        currentFileLink.style.display = fileUrl ? 'inline' : 'none';
+        currentFileLink.href = openUrl || '#';
+        currentFileLink.style.display = openUrl ? 'inline' : 'none';
         modal.style.display = 'block';
         document.body.style.overflow = 'hidden';
     }

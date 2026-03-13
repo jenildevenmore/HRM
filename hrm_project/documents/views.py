@@ -1,12 +1,17 @@
 import os
 import uuid
 import json
+import base64
+import binascii
+import mimetypes
 
 from django.core.files.storage import default_storage
+from django.http import HttpResponse
 from django.utils import timezone
 from django.utils.text import slugify
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status, viewsets
+from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -92,6 +97,49 @@ class DocumentViewSet(_DocumentAccessMixin, viewsets.ModelViewSet):
         if not client_id or client_id != instance.client_id:
             raise PermissionDenied('Not allowed for this client.')
         instance.delete()
+
+    @staticmethod
+    def _file_from_base64(instance):
+        raw_value = str(instance.file_base64 or '').strip()
+        if not raw_value:
+            return None, '', ''
+
+        mime_type = str(instance.file_mime_type or '').strip()
+        payload = raw_value
+        if raw_value.startswith('data:') and ';base64,' in raw_value:
+            header, payload = raw_value.split(',', 1)
+            header_mime = header[5:].split(';', 1)[0].strip()
+            if header_mime:
+                mime_type = mime_type or header_mime
+
+        try:
+            file_bytes = base64.b64decode(payload, validate=True)
+        except (ValueError, binascii.Error):
+            return None, '', ''
+
+        if not file_bytes:
+            return None, '', ''
+
+        file_name = str(instance.file_name or '').strip() or f'document-{instance.id}'
+        if not mime_type:
+            guessed_type, _ = mimetypes.guess_type(file_name)
+            mime_type = guessed_type or 'application/octet-stream'
+        return file_bytes, file_name, mime_type
+
+    @action(detail=True, methods=['get'], url_path='file')
+    def file(self, request, pk=None):
+        instance = self.get_object()
+        file_bytes, file_name, mime_type = self._file_from_base64(instance)
+        if file_bytes:
+            response = HttpResponse(file_bytes, content_type=mime_type)
+            response['Content-Disposition'] = f'inline; filename="{file_name}"'
+            return response
+
+        if not str(instance.file_url or '').strip():
+            return Response({'detail': 'Document file not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Backward compatibility for legacy URL-based documents.
+        return Response({'file_url': instance.file_url}, status=status.HTTP_200_OK)
 
 
 class DocumentUploadRequestViewSet(_DocumentAccessMixin, viewsets.ModelViewSet):
@@ -197,7 +245,7 @@ class PublicDocumentUploadView(APIView):
             return Response({'title': 'This field is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         allowed_doc_types = [str(item or '').strip() for item in (req.requested_doc_types or []) if str(item or '').strip()]
-        file_urls = []
+        flat_documents = []
         typed_documents = []
 
         request_documents = request.data.get('documents')
@@ -219,7 +267,10 @@ class PublicDocumentUploadView(APIView):
                 continue
             doc_type = str(item.get('doc_type') or '').strip()
             file_url = str(item.get('file_url') or '').strip()
-            if not file_url:
+            file_base64 = str(item.get('file_base64') or '').strip()
+            file_name = str(item.get('file_name') or '').strip()
+            file_mime_type = str(item.get('file_mime_type') or '').strip()
+            if not file_url and not file_base64:
                 continue
             if allowed_doc_types and doc_type not in allowed_doc_types:
                 return Response(
@@ -229,6 +280,9 @@ class PublicDocumentUploadView(APIView):
             typed_documents.append({
                 'doc_type': doc_type,
                 'file_url': file_url,
+                'file_base64': file_base64,
+                'file_name': file_name,
+                'file_mime_type': file_mime_type,
             })
 
         uploaded_files = request.FILES.getlist('files')
@@ -238,8 +292,20 @@ class PublicDocumentUploadView(APIView):
                 uploaded_files = [single_uploaded_file]
 
         for uploaded_file in uploaded_files:
-            file_urls.append(self._save_file(uploaded_file))
+            file_name = str(uploaded_file.name or '').strip() or 'document'
+            file_mime_type = str(getattr(uploaded_file, 'content_type', '') or '').strip()
+            payload = base64.b64encode(uploaded_file.read()).decode('ascii')
+            if not payload:
+                continue
+            flat_documents.append({
+                'doc_type': '',
+                'file_url': '',
+                'file_base64': payload,
+                'file_name': file_name,
+                'file_mime_type': file_mime_type,
+            })
 
+        file_urls = []
         request_data_file_urls = request.data.get('file_urls')
         if isinstance(request_data_file_urls, (list, tuple)):
             for item in request_data_file_urls:
@@ -283,16 +349,19 @@ class PublicDocumentUploadView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        if not file_urls and not typed_documents:
+        if not file_urls and not typed_documents and not flat_documents:
             return Response({'file': 'Please attach at least one document.'}, status=status.HTTP_400_BAD_REQUEST)
 
         created_documents = []
-        flat_documents = list(typed_documents)
+        flat_documents = list(typed_documents) + flat_documents
         for file_url in file_urls:
-            flat_documents.append({'doc_type': '', 'file_url': file_url})
+            flat_documents.append({'doc_type': '', 'file_url': file_url, 'file_base64': '', 'file_name': '', 'file_mime_type': ''})
 
         for index, item in enumerate(flat_documents, start=1):
             file_url = str(item.get('file_url') or '').strip()
+            file_base64 = str(item.get('file_base64') or '').strip()
+            file_name = str(item.get('file_name') or '').strip()
+            file_mime_type = str(item.get('file_mime_type') or '').strip()
             doc_type = str(item.get('doc_type') or '').strip()
             if doc_type:
                 doc_title = f'{title} - {doc_type}'
@@ -305,6 +374,9 @@ class PublicDocumentUploadView(APIView):
                 effective_date=None,
                 status=Document.STATUS_PENDING,
                 file_url=file_url,
+                file_base64=file_base64,
+                file_name=file_name,
+                file_mime_type=file_mime_type,
                 notes=str(req.notes or '').strip(),
                 uploader_name=str(request.data.get('uploader_name') or '').strip(),
                 uploader_email=str(req.request_email or '').strip(),
