@@ -13,7 +13,7 @@ from xml.sax.saxutils import escape as xml_escape
 from urllib.parse import urlparse
 from django.conf import settings
 from django.shortcuts import render, redirect
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 from django.core.files.storage import default_storage
@@ -23,6 +23,7 @@ from django.utils.text import slugify
 from django.utils import timezone
 from django.test import Client as DjangoTestClient
 from core.mailers import send_branded_email
+from activity_logs.models import ActivityLog
 
 from core.forms import (
     LoginForm,
@@ -5551,6 +5552,66 @@ def activity_log_list(request):
         'search_q': search_q,
         **_get_context(request),
     })
+
+
+def _activity_log_module_from_path(path):
+    clean = str(path or '/').strip('/').split('/')
+    if not clean or not clean[0]:
+        return 'dashboard'
+    if clean[0] == 'api' and len(clean) > 1:
+        return clean[1]
+    return clean[0]
+
+
+@require_POST
+def activity_log_click(request):
+    user = getattr(request, 'user', None)
+    if not user or not user.is_authenticated:
+        return JsonResponse({'error': 'Authentication required.'}, status=401)
+
+    try:
+        payload = json.loads((request.body or b'{}').decode('utf-8'))
+    except Exception:
+        payload = {}
+
+    page_path = str(payload.get('page_path') or request.path or '/').strip() or '/'
+    element_label = str(payload.get('element_label') or '').strip()[:160]
+    element_tag = str(payload.get('element_tag') or '').strip()[:32]
+    target_path = str(payload.get('target_path') or '').strip()[:255]
+    element_id = str(payload.get('element_id') or '').strip()[:80]
+    element_class = str(payload.get('element_class') or '').strip()[:120]
+
+    profile = getattr(user, 'profile', None)
+    client_id = getattr(profile, 'client_id', None)
+    actor_role = str(getattr(profile, 'role', '') or '')
+    ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip() or request.META.get('REMOTE_ADDR', '')
+
+    metadata = {
+        'element_label': element_label,
+        'element_tag': element_tag,
+        'element_id': element_id,
+        'element_class': element_class,
+        'target_path': target_path,
+    }
+    metadata = {k: v for k, v in metadata.items() if v}
+
+    try:
+        ActivityLog.objects.create(
+            client_id=client_id,
+            actor=user,
+            actor_role=actor_role,
+            action=ActivityLog.ACTION_CLICK,
+            module=_activity_log_module_from_path(page_path),
+            path=page_path[:255],
+            method='CLICK',
+            status_code=200,
+            ip_address=ip,
+            metadata=metadata,
+        )
+    except Exception:
+        return JsonResponse({'ok': False}, status=500)
+
+    return JsonResponse({'ok': True})
 
 
 def custom_field_list(request):

@@ -49,6 +49,7 @@ urlpatterns = [
     path('payroll/', views.payroll_list, name='payroll_list'),
     path('import-export/', views.import_export_page, name='import_export_page'),
     path('activity-logs/', views.activity_log_list, name='activity_log_list'),
+    path('activity-logs/click/', views.activity_log_click, name='activity_log_click'),
 
     # Holidays
     path('holidays/', views.holiday_list, name='holiday_list'),

@@ -6,15 +6,19 @@ from clients.models import Client
 
 class ActivityLog(models.Model):
     ACTION_VIEW = 'view'
+    ACTION_GET = 'get'
     ACTION_CREATE = 'create'
     ACTION_UPDATE = 'update'
     ACTION_DELETE = 'delete'
+    ACTION_CLICK = 'click'
     ACTION_OTHER = 'other'
     ACTION_CHOICES = (
         (ACTION_VIEW, 'View'),
+        (ACTION_GET, 'Get'),
         (ACTION_CREATE, 'Create'),
         (ACTION_UPDATE, 'Update'),
         (ACTION_DELETE, 'Delete'),
+        (ACTION_CLICK, 'Click'),
         (ACTION_OTHER, 'Other'),
     )
 

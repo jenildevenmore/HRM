@@ -4,6 +4,9 @@
 
 {% block content %}
 <style>
+    .main-content {
+        overflow-x: hidden;
+    }
     .payroll-header {
         margin-bottom: 16px;
     }
@@ -86,6 +89,32 @@
     .payroll-table table th,
     .payroll-table table td {
         white-space: nowrap;
+    }
+    .payroll-table {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: scroll;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-gutter: stable both-edges;
+        padding-bottom: 4px;
+    }
+    .payroll-table table {
+        min-width: 1600px;
+    }
+    #payroll-data-section .card {
+        overflow: hidden;
+    }
+    .payroll-table::-webkit-scrollbar {
+        height: 10px;
+    }
+    .payroll-table::-webkit-scrollbar-thumb {
+        background: color-mix(in srgb, var(--accent) 45%, #9ca3af 55%);
+        border-radius: 999px;
+    }
+    .payroll-table::-webkit-scrollbar-track {
+        background: rgba(148, 163, 184, 0.2);
+        border-radius: 999px;
     }
     .payroll-table table td:last-child,
     .payroll-table table th:last-child {
