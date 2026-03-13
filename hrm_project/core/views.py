@@ -7,6 +7,7 @@ import re
 import os
 import uuid
 import io
+from xml.sax.saxutils import escape as xml_escape
 from urllib.parse import urlparse
 from django.conf import settings
 from django.shortcuts import render, redirect
@@ -780,19 +781,184 @@ def _build_simple_text_pdf(lines):
     return header + body + xref + trailer
 
 
-def _build_offer_letter_pdf(employee_name, state_name, annual_income, components):
+def _default_offer_letter_template():
+    return (
+        'OFFER LETTER\n'
+        '{{offer_date}}\n\n'
+        'Dear {{candidate_name}},\n\n'
+        'With reference to our recent discussions, we are pleased to offer you the position of '
+        '"{{designation}}" in {{company_name}}.\n\n'
+        'Joining Date: {{joining_date}}\n'
+        'Work Location: {{work_location}}\n'
+        'Reporting Manager: {{reporting_manager}}\n\n'
+        'Your annual CTC will be INR {{annual_income}} (monthly approx. INR {{monthly_income}}).\n\n'
+        'Terms and Conditions:\n'
+        '1. You will be on probation for {{probation_period}}.\n'
+        '2. Work timings and leave policy will be governed by prevailing company policy.\n'
+        '3. Confidentiality and non-solicitation obligations apply during and after employment.\n'
+        '4. Either party may terminate employment with notice period as per company policy.\n'
+        '5. This offer is valid for 7 days from the date of issue.\n\n'
+        'Please sign and return this letter as a token of acceptance.\n\n'
+        'Regards,\n'
+        '{{signatory_name}}\n'
+        '{{signatory_designation}}\n\n'
+        'Acceptance of Employment Offer\n'
+        'Candidate Name: {{candidate_name}}\n'
+        'Date:\n'
+        'Signature:'
+    )
+
+
+def _render_offer_letter_text(template_body, context):
+    rendered = str(template_body or '').strip() or _default_offer_letter_template()
+    for key, value in (context or {}).items():
+        key_txt = str(key or '').strip()
+        if not key_txt:
+            continue
+        value_txt = str(value or '')
+        rendered = rendered.replace(f'{{{{{key_txt}}}}}', value_txt)
+        rendered = rendered.replace(f'{{{{ {key_txt} }}}}', value_txt)
+        rendered = rendered.replace(f'{{{key_txt}}}', value_txt)
+    rendered = re.sub(r'\{\{\s*[a-zA-Z0-9_]+\s*\}\}', '', rendered)
+    return rendered
+
+
+def _offer_letter_paragraphs(template_body, context):
+    rendered = _render_offer_letter_text(template_body, context)
+    blocks = re.split(r'\n\s*\n', rendered)
+    paragraphs = []
+    for block in blocks:
+        lines = [line.strip() for line in str(block or '').splitlines() if line.strip()]
+        if not lines:
+            continue
+        paragraphs.append('<br/>'.join([xml_escape(line) for line in lines]))
+    return paragraphs
+
+
+def _offer_letter_layout_settings(config=None):
+    cfg = config if isinstance(config, dict) else {}
+
+    def _clamp(value, default, min_value, max_value):
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            parsed = float(default)
+        return max(float(min_value), min(float(max_value), parsed))
+
+    return {
+        'page_margin_top_mm': _clamp(cfg.get('page_margin_top_mm'), 48, 42, 90),
+        'page_margin_right_mm': _clamp(cfg.get('page_margin_right_mm'), 18, 8, 40),
+        'page_margin_bottom_mm': _clamp(cfg.get('page_margin_bottom_mm'), 16, 8, 50),
+        'page_margin_left_mm': _clamp(cfg.get('page_margin_left_mm'), 18, 8, 40),
+    }
+
+
+def _build_offer_letter_pdf(
+    employee_name,
+    state_name,
+    annual_income,
+    components,
+    company_name='Your Company',
+    logo_source='',
+    template_body='',
+    show_salary_table=True,
+    extra_context=None,
+    layout_settings=None,
+):
+    return _build_offer_letter_pdf_branded(
+        employee_name=employee_name,
+        state_name=state_name,
+        annual_income=annual_income,
+        components=components,
+        company_name=company_name,
+        logo_source=logo_source,
+        template_body=template_body,
+        show_salary_table=show_salary_table,
+        extra_context=extra_context,
+        layout_settings=layout_settings,
+    )
+
+
+def _load_logo_bytes(source):
+    src = str(source or '').strip()
+    if not src:
+        return b''
+
+    candidates = []
+    src_l = src.lower()
+    if src_l.startswith('http://') or src_l.startswith('https://'):
+        candidates.append(('url', src))
+    elif src_l.startswith('/media/'):
+        rel = src.split('/media/', 1)[1].lstrip('/\\')
+        candidates.append(('file', os.path.join(str(settings.MEDIA_ROOT), rel)))
+    elif str(getattr(settings, 'MEDIA_URL', '')).strip() and src.startswith(str(settings.MEDIA_URL)):
+        rel = src[len(str(settings.MEDIA_URL)):].lstrip('/\\')
+        candidates.append(('file', os.path.join(str(settings.MEDIA_ROOT), rel)))
+    else:
+        candidates.append(('file', src))
+        candidates.append(('file', os.path.join(str(settings.BASE_DIR), src.lstrip('/\\'))))
+
+    for kind, value in candidates:
+        try:
+            if kind == 'url':
+                resp = requests.get(value, timeout=6)
+                if resp.status_code == 200 and resp.content:
+                    return resp.content
+            else:
+                if os.path.exists(value):
+                    with open(value, 'rb') as fh:
+                        return fh.read()
+        except Exception:
+            continue
+    return b''
+
+
+def _build_offer_letter_pdf_branded(
+    employee_name,
+    state_name,
+    annual_income,
+    components,
+    company_name='Your Company',
+    logo_source='',
+    template_body='',
+    show_salary_table=True,
+    extra_context=None,
+    layout_settings=None,
+):
     safe_name = str(employee_name or 'Candidate').strip() or 'Candidate'
     safe_state = str(state_name or 'N/A').strip() or 'N/A'
+    safe_company = str(company_name or 'Your Company').strip() or 'Your Company'
     annual_income_num = float(annual_income or 0)
-    lines = [
-        'Offer Letter',
-        f'Employee: {safe_name}',
-        f'State: {safe_state}',
-        f'Annual Income (CTC): INR {annual_income_num:,.2f}',
-        '-' * 65,
-        'Component                             %           Annual            Monthly',
-        '-' * 65,
-    ]
+    monthly_income_num = annual_income_num / 12.0 if annual_income_num > 0 else 0
+    offer_date = timezone.localdate().strftime('%d-%m-%Y')
+    letter_context = {
+        'candidate_name': safe_name,
+        'employee_name': safe_name,
+        'state_name': safe_state,
+        'state': safe_state,
+        'company_name': safe_company,
+        'annual_income': f'{annual_income_num:,.2f}',
+        'monthly_income': f'{monthly_income_num:,.2f}',
+        'offer_date': offer_date,
+        'designation': '',
+        'joining_date': '',
+        'work_location': safe_state,
+        'reporting_manager': '',
+        'probation_period': '90 days',
+        'notice_period': '',
+        'signatory_name': '',
+        'signatory_designation': 'HR Team',
+    }
+    if isinstance(extra_context, dict):
+        for k, v in extra_context.items():
+            key = str(k or '').strip()
+            if not key:
+                continue
+            letter_context[key] = str(v or '').strip()
+    body_paragraphs = _offer_letter_paragraphs(template_body, letter_context)
+    normalized_layout = _offer_letter_layout_settings(layout_settings)
+
+    rows = [['Component', 'Percentage', 'Annual (INR)', 'Monthly (INR)']]
     total_pct = 0.0
     total_annual = 0.0
     for comp in components or []:
@@ -807,15 +973,142 @@ def _build_offer_letter_pdf(employee_name, state_name, annual_income, components
         monthly_amt = annual_amt / 12.0
         total_pct += pct
         total_annual += annual_amt
-        lines.append(f'{name[:28]:<28} {pct:>8.2f}% {annual_amt:>14,.2f} {monthly_amt:>14,.2f}')
+        rows.append([
+            name,
+            f'{pct:.2f}%',
+            f'{annual_amt:,.2f}',
+            f'{monthly_amt:,.2f}',
+        ])
+    rows.append(['Total', f'{total_pct:.2f}%', f'{total_annual:,.2f}', f'{(total_annual / 12.0):,.2f}'])
 
-    lines.extend([
-        '-' * 65,
-        f'Total                                {total_pct:>8.2f}% {total_annual:>14,.2f} {total_annual/12.0:>14,.2f}',
-        '',
-        'This is a system-generated offer letter summary.',
-    ])
-    return _build_simple_text_pdf(lines)
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import mm
+        from reportlab.lib.utils import ImageReader
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    except Exception:
+        # Fallback if reportlab is not installed.
+        lines = [
+            'Offer Letter',
+            f'Company: {safe_company}',
+            f'Employee: {safe_name}',
+            f'State: {safe_state}',
+            f'Annual Income (CTC): INR {annual_income_num:,.2f}',
+        ]
+        for para in body_paragraphs:
+            lines.extend([re.sub(r'<br\s*/?>', ' | ', para), ''])
+        if show_salary_table:
+            lines.extend(['-' * 65, 'Component                             %           Annual            Monthly', '-' * 65])
+            for row in rows[1:]:
+                lines.append(f'{row[0][:28]:<28} {row[1]:>8} {row[2]:>14} {row[3]:>14}')
+        lines.extend(['', 'This is a system-generated offer letter summary.'])
+        return _build_simple_text_pdf(lines)
+
+    logo_bytes = _load_logo_bytes(logo_source)
+    logo_reader = None
+    if logo_bytes:
+        try:
+            logo_reader = ImageReader(io.BytesIO(logo_bytes))
+        except Exception:
+            logo_reader = None
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=normalized_layout['page_margin_left_mm'] * mm,
+        rightMargin=normalized_layout['page_margin_right_mm'] * mm,
+        topMargin=normalized_layout['page_margin_top_mm'] * mm,
+        bottomMargin=normalized_layout['page_margin_bottom_mm'] * mm,
+        title=f'Offer Letter - {safe_name}',
+    )
+
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(
+        name='OfferBody',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=10.5,
+        leading=15,
+        textColor=colors.HexColor('#1f2937'),
+    ))
+    styles.add(ParagraphStyle(
+        name='OfferHeading',
+        parent=styles['Heading2'],
+        fontName='Helvetica-Bold',
+        fontSize=15,
+        leading=18,
+        textColor=colors.HexColor('#111827'),
+        spaceAfter=6,
+    ))
+
+    story = []
+    today = offer_date
+    story.append(Paragraph('Offer Letter', styles['OfferHeading']))
+    for para in body_paragraphs:
+        story.append(Paragraph(para, styles['OfferBody']))
+        story.append(Spacer(1, 8))
+    story.append(Spacer(1, 8))
+    story.append(Paragraph(f'<b>Offer Date:</b> {today}', styles['OfferBody']))
+    story.append(Paragraph(f'<b>Annual CTC:</b> INR {annual_income_num:,.2f}', styles['OfferBody']))
+    story.append(Spacer(1, 10))
+
+    if show_salary_table:
+        col_widths = [72 * mm, 28 * mm, 36 * mm, 36 * mm]
+        table = Table(rows, colWidths=col_widths, hAlign='LEFT')
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#eef2ff')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#3730a3')),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9.5),
+            ('GRID', (0, 0), (-1, -1), 0.4, colors.HexColor('#d1d5db')),
+            ('FONTNAME', (0, 1), (-1, -2), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 9.5),
+            ('ALIGN', (1, 1), (-1, -1), 'RIGHT'),
+            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#f8fafc')),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        story.append(table)
+        story.append(Spacer(1, 10))
+    story.append(Paragraph(
+        'This is a system-generated offer letter summary. '
+        'For complete policy terms, refer to your employment contract.',
+        styles['OfferBody'],
+    ))
+
+    def _draw_header(canvas_obj, _doc_obj):
+        page_w, page_h = A4
+        canvas_obj.saveState()
+        canvas_obj.setFillColor(colors.HexColor('#4f46e5'))
+        canvas_obj.rect(0, page_h - (34 * mm), page_w, 34 * mm, stroke=0, fill=1)
+
+        if logo_reader:
+            try:
+                canvas_obj.drawImage(
+                    logo_reader,
+                    18 * mm,
+                    page_h - (28 * mm),
+                    width=16 * mm,
+                    height=16 * mm,
+                    preserveAspectRatio=True,
+                    mask='auto',
+                )
+            except Exception:
+                pass
+
+        canvas_obj.setFillColor(colors.white)
+        canvas_obj.setFont('Helvetica-Bold', 14)
+        canvas_obj.drawString(38 * mm, page_h - (20 * mm), safe_company[:48])
+        canvas_obj.setFont('Helvetica', 9.5)
+        canvas_obj.drawString(38 * mm, page_h - (26 * mm), 'Compensation Offer Summary')
+        canvas_obj.restoreState()
+
+    doc.build(story, onFirstPage=_draw_header, onLaterPages=_draw_header)
+    return buffer.getvalue()
 
 
 def _pop_messages(request):
@@ -2027,6 +2320,13 @@ def document_list(request):
             state_name = (request.POST.get('offer_state') or '').strip() or 'Gujarat'
             annual_income_raw = (request.POST.get('offer_annual_income') or '').strip()
             components_raw = (request.POST.get('offer_components_json') or '').strip()
+            designation = (request.POST.get('offer_designation') or '').strip()
+            joining_date = (request.POST.get('offer_joining_date') or '').strip()
+            work_location = (request.POST.get('offer_work_location') or '').strip()
+            reporting_manager = (request.POST.get('offer_reporting_manager') or '').strip()
+            probation_period = (request.POST.get('offer_probation_period') or '').strip()
+            signatory_name = (request.POST.get('offer_signatory_name') or '').strip()
+            signatory_designation = (request.POST.get('offer_signatory_designation') or '').strip()
 
             if not candidate_name:
                 errors = ['Candidate name is required for offer letter.']
@@ -2070,7 +2370,53 @@ def document_list(request):
 
             if not errors:
                 try:
-                    pdf_bytes = _build_offer_letter_pdf(candidate_name, state_name, annual_income, components)
+                    app_settings = request.session.get('app_settings', {}) or {}
+                    brand_cfg = app_settings.get('brand', {}) if isinstance(app_settings, dict) else {}
+                    company_cfg = app_settings.get('company', {}) if isinstance(app_settings, dict) else {}
+                    ui_cfg = app_settings.get('ui', {}) if isinstance(app_settings, dict) else {}
+                    offer_cfg = app_settings.get('offer_letter', {}) if isinstance(app_settings, dict) else {}
+                    company_name = (
+                        str(company_cfg.get('company_name') or '').strip()
+                        or str(brand_cfg.get('brand_name') or '').strip()
+                        or str(request.session.get('client_name') or '').strip()
+                        or 'Your Company'
+                    )
+                    logo_source = (
+                        str(ui_cfg.get('sidebar_logo_url') or '').strip()
+                        or str(brand_cfg.get('logo_url') or '').strip()
+                    )
+                    offer_template_body = (
+                        str(offer_cfg.get('template_body') or '').strip()
+                        if isinstance(offer_cfg, dict)
+                        else ''
+                    )
+                    show_salary_table = True
+                    if isinstance(offer_cfg, dict) and 'show_salary_table' in offer_cfg:
+                        show_salary_table = bool(offer_cfg.get('show_salary_table'))
+                    layout_settings = _offer_letter_layout_settings(offer_cfg)
+                    if not work_location:
+                        work_location = state_name
+                    extra_context = {
+                        'designation': designation,
+                        'joining_date': joining_date,
+                        'work_location': work_location,
+                        'reporting_manager': reporting_manager,
+                        'probation_period': probation_period,
+                        'signatory_name': signatory_name,
+                        'signatory_designation': signatory_designation,
+                    }
+                    pdf_bytes = _build_offer_letter_pdf(
+                        candidate_name,
+                        state_name,
+                        annual_income,
+                        components,
+                        company_name=company_name,
+                        logo_source=logo_source,
+                        template_body=offer_template_body,
+                        show_salary_table=show_salary_table,
+                        extra_context=extra_context,
+                        layout_settings=layout_settings,
+                    )
                     file_name = f"offer_letter_{slugify(candidate_name) or 'candidate'}.pdf"
                     send_branded_email(
                         subject=f'Offer Letter - {candidate_name}',
@@ -2079,6 +2425,7 @@ def document_list(request):
                         greeting='Hello,',
                         lines=[
                             f'Please find attached your offer letter summary.',
+                            f'Company: {company_name}',
                             f'Candidate: {candidate_name}',
                             f'State: {state_name}',
                             f'Annual Income (CTC): INR {annual_income:,.2f}',
@@ -2408,6 +2755,14 @@ def settings_page(request):
                 'secret_key': (request.POST.get('paypal_secret_key') or '').strip(),
                 'enabled': _bool_field('paypal_enabled'),
             },
+            'offer_letter': {
+                'template_body': (request.POST.get('offer_letter_template_body') or '').strip(),
+                'show_salary_table': _bool_field('offer_letter_show_salary_table'),
+                'page_margin_top_mm': max(42, min(90, _int_field('offer_letter_page_margin_top_mm', default=48, min_value=42, max_value=90))),
+                'page_margin_right_mm': max(8, min(40, _int_field('offer_letter_page_margin_right_mm', default=18, min_value=8, max_value=40))),
+                'page_margin_bottom_mm': max(8, min(50, _int_field('offer_letter_page_margin_bottom_mm', default=16, min_value=8, max_value=50))),
+                'page_margin_left_mm': max(8, min(40, _int_field('offer_letter_page_margin_left_mm', default=18, min_value=8, max_value=40))),
+            },
         }
 
         payload = {'app_settings': payload_settings}
@@ -2431,6 +2786,7 @@ def settings_page(request):
 
     return render(request, 'settings/list.html', {
         'settings_data': settings_data,
+        'offer_letter_layout': _offer_letter_layout_settings(settings_data.get('offer_letter') if isinstance(settings_data, dict) else {}),
         'is_edit_mode': is_edit_mode,
         'sidebar_logo_modules': sidebar_logo_modules,
         'sidebar_module_icon_keys_csv': sidebar_module_icon_keys_csv,

@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.contrib.auth.tokens import default_token_generator
 from django.db import transaction
@@ -84,7 +85,13 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             return
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
-        frontend_base = self.request.build_absolute_uri('/').rstrip('/')
+        configured = list(getattr(settings, 'FRONTEND_BASE_URLS', []) or [])
+        if configured:
+            frontend_base = str(configured[0]).rstrip('/')
+        else:
+            frontend_base = self.request.build_absolute_uri('/').rstrip('/')
+        if not frontend_base:
+            frontend_base = str(getattr(settings, 'FRONTEND_BASE_URL', '') or '').strip().rstrip('/')
         if not frontend_base:
             frontend_base = 'http://127.0.0.1:8000'
         reset_link = f'{frontend_base}/reset-password/?uid={uid}&token={token}'

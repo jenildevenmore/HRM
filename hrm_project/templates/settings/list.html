@@ -27,6 +27,7 @@
         <button type="button" class="permission-group-tab-btn settings-tab active" data-settings-tab="brand" style="width:100%;text-align:left;">Brand Settings</button>
         <button type="button" class="permission-group-tab-btn settings-tab" data-settings-tab="system" style="width:100%;text-align:left;margin-top:8px;">System Settings</button>
         <button type="button" class="permission-group-tab-btn settings-tab" data-settings-tab="company" style="width:100%;text-align:left;margin-top:8px;">Company Settings</button>
+        <button type="button" class="permission-group-tab-btn settings-tab" data-settings-tab="offer_letter" style="width:100%;text-align:left;margin-top:8px;">Offer Letter Settings</button>
         <button type="button" class="permission-group-tab-btn settings-tab" data-settings-tab="currency" style="width:100%;text-align:left;margin-top:8px;">Currency Settings</button>
         <button type="button" class="permission-group-tab-btn settings-tab" data-settings-tab="email" style="width:100%;text-align:left;margin-top:8px;">Email Settings</button>
         <button type="button" class="permission-group-tab-btn settings-tab" data-settings-tab="email_notifications" style="width:100%;text-align:left;margin-top:8px;">Email Notification Settings</button>
@@ -34,7 +35,7 @@
         <button type="button" class="permission-group-tab-btn settings-tab" data-settings-tab="paypal" style="width:100%;text-align:left;margin-top:8px;">PayPal Settings</button>
     </div>
 
-    <form method="post" id="settingsForm" enctype="multipart/form-data" data-edit-mode="{{ '1' if is_edit_mode else '0' }}">
+    <form method="post" id="settingsForm" enctype="multipart/form-data" data-edit-mode="{{ '1' if is_edit_mode else '0' }}" novalidate>
         {{ csrf_input }}
         <div class="form-actions" style="justify-content:flex-end;margin-bottom:10px;">
             <button type="button" id="settingsEditBtn" class="btn btn-secondary">Edit</button>
@@ -296,6 +297,114 @@
             </div>
         </div>
 
+        <div class="settings-panel" data-settings-panel="offer_letter">
+            <h3 class="section-title">Offer Letter Settings</h3>
+            {% set offer_cfg = settings_data.offer_letter or {} %}
+            <div class="form-group">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+                    <label style="margin-bottom:0;">Offer Letter Template</label>
+                    <button type="button" id="offerTemplatePopupBtn" class="btn btn-secondary btn-sm offer-template-editor-trigger">Open Popup Editor</button>
+                </div>
+                <textarea
+                    id="offerLetterTemplateInput"
+                    name="offer_letter_template_body"
+                    rows="14"
+                    placeholder="Write your company-specific offer letter template here..."
+                >{{ offer_cfg.template_body or '' }}</textarea>
+                <small style="color:var(--text-muted);display:block;margin-top:6px;">
+                    Supported variables: {{ "{{candidate_name}}" }}, {{ "{{company_name}}" }}, {{ "{{state_name}}" }}, {{ "{{annual_income}}" }}, {{ "{{monthly_income}}" }}, {{ "{{offer_date}}" }}, {{ "{{designation}}" }}, {{ "{{joining_date}}" }}, {{ "{{work_location}}" }}, {{ "{{reporting_manager}}" }}, {{ "{{probation_period}}" }}, {{ "{{signatory_name}}" }}, {{ "{{signatory_designation}}" }}.
+                </small>
+            </div>
+            <div class="form-group">
+                <label class="addon-item" style="max-width:300px;">
+                    <input type="checkbox" name="offer_letter_show_salary_table" {% if offer_cfg.show_salary_table is not defined or offer_cfg.show_salary_table %}checked{% endif %}>
+                    <span>Include salary breakup table in PDF</span>
+                </label>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Top Margin / Header Space (mm)</label>
+                    <input type="number" name="offer_letter_page_margin_top_mm" min="42" max="90" step="1" value="{{ offer_letter_layout.page_margin_top_mm|int }}">
+                </div>
+                <div class="form-group">
+                    <label>Right Margin (mm)</label>
+                    <input type="number" name="offer_letter_page_margin_right_mm" min="8" max="40" step="1" value="{{ offer_letter_layout.page_margin_right_mm|int }}">
+                </div>
+                <div class="form-group">
+                    <label>Bottom Margin (mm)</label>
+                    <input type="number" name="offer_letter_page_margin_bottom_mm" min="8" max="50" step="1" value="{{ offer_letter_layout.page_margin_bottom_mm|int }}">
+                </div>
+                <div class="form-group">
+                    <label>Left Margin (mm)</label>
+                    <input type="number" name="offer_letter_page_margin_left_mm" min="8" max="40" step="1" value="{{ offer_letter_layout.page_margin_left_mm|int }}">
+                </div>
+            </div>
+            <small style="color:var(--text-muted);display:block;margin-top:-6px;">
+                These margins are used when the PDF is generated from Documents > Offer Letter Builder.
+            </small>
+
+            <div class="card offer-preview-card" style="margin-top:14px;">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
+                    <div>
+                        <div style="font-weight:700;">Live Offer Letter Preview</div>
+                        <div style="color:var(--text-muted);font-size:13px;">Preview uses sample candidate data and updates instantly while you edit the template and margins.</div>
+                    </div>
+                    <span class="badge badge-number">A4 Preview</span>
+                </div>
+                <div class="offer-preview-stage">
+                    <div class="offer-preview-sheet" id="offerLetterPreviewSheet">
+                        <div class="offer-preview-header">
+                            <div class="offer-preview-company" id="offerPreviewCompany">{{ (settings_data.company.company_name if settings_data.company else '') or (settings_data.brand.brand_name if settings_data.brand else '') or 'Your Company' }}</div>
+                            <div class="offer-preview-header-copy">Compensation Offer Summary</div>
+                        </div>
+                        <div class="offer-preview-body" id="offerLetterPreviewBody">
+                            <div class="offer-preview-title">Offer Letter</div>
+                            <div id="offerPreviewParagraphs"></div>
+                            <div class="offer-preview-meta">
+                                <div><strong>Offer Date:</strong> <span id="offerPreviewOfferDate">12-03-2026</span></div>
+                                <div><strong>Annual CTC:</strong> INR <span id="offerPreviewAnnualCtc">12,00,000.00</span></div>
+                            </div>
+                            <div id="offerPreviewTableWrap" style="margin-top:12px;">
+                                <table class="offer-preview-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Component</th>
+                                            <th>Percentage</th>
+                                            <th>Annual (INR)</th>
+                                            <th>Monthly (INR)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="offerPreviewTableBody"></tbody>
+                                </table>
+                            </div>
+                            <div class="offer-preview-footer-note">This is a system-generated offer letter summary preview.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="offerTemplateEditorModal" class="offer-editor-modal" style="display:none;">
+            <div class="offer-editor-dialog">
+                <div class="offer-editor-header">
+                    <div>
+                        <h3>Offer Letter Popup Editor</h3>
+                        <p>Write the full offer letter here, then apply it back to settings.</p>
+                    </div>
+                    <button type="button" id="offerTemplateEditorClose" class="btn btn-secondary btn-sm offer-template-editor-trigger">Close</button>
+                </div>
+                <div class="offer-editor-toolbar">
+                    <span class="badge badge-number">Large Writing Space</span>
+                    <span style="color:var(--text-muted);font-size:13px;">Supported variables stay the same as the main template field.</span>
+                </div>
+                <textarea id="offerTemplateEditorTextarea" class="offer-editor-textarea" placeholder="Write your company-specific offer letter here..."></textarea>
+                <div class="offer-editor-actions">
+                    <button type="button" id="offerTemplateEditorApply" class="btn btn-primary offer-template-editor-trigger">Apply To Settings</button>
+                    <button type="button" id="offerTemplateEditorCancel" class="btn btn-secondary offer-template-editor-trigger">Cancel</button>
+                </div>
+            </div>
+        </div>
+
         <div class="settings-panel" data-settings-panel="currency">
             <h3 class="section-title">Currency Settings</h3>
             <div class="form-row">
@@ -412,12 +521,69 @@ document.addEventListener('DOMContentLoaded', function () {
     var customFontInput = document.querySelector('input[name="font_family_custom"]');
     var fontSizeRange = document.getElementById('fontSizeRange');
     var fontSizeNumber = document.getElementById('fontSizeNumber');
+    var companyNameInput = document.querySelector('input[name="company_name"]');
+    var offerTemplateInput = document.getElementById('offerLetterTemplateInput');
+    var offerSalaryTableInput = document.querySelector('input[name="offer_letter_show_salary_table"]');
+    var offerMarginTopInput = document.querySelector('input[name="offer_letter_page_margin_top_mm"]');
+    var offerMarginRightInput = document.querySelector('input[name="offer_letter_page_margin_right_mm"]');
+    var offerMarginBottomInput = document.querySelector('input[name="offer_letter_page_margin_bottom_mm"]');
+    var offerMarginLeftInput = document.querySelector('input[name="offer_letter_page_margin_left_mm"]');
+    var offerPreviewCompany = document.getElementById('offerPreviewCompany');
+    var offerPreviewBody = document.getElementById('offerLetterPreviewBody');
+    var offerPreviewParagraphs = document.getElementById('offerPreviewParagraphs');
+    var offerPreviewTableWrap = document.getElementById('offerPreviewTableWrap');
+    var offerPreviewTableBody = document.getElementById('offerPreviewTableBody');
+    var offerPreviewAnnualCtc = document.getElementById('offerPreviewAnnualCtc');
+    var offerTemplatePopupBtn = document.getElementById('offerTemplatePopupBtn');
+    var offerTemplateEditorModal = document.getElementById('offerTemplateEditorModal');
+    var offerTemplateEditorTextarea = document.getElementById('offerTemplateEditorTextarea');
+    var offerTemplateEditorApply = document.getElementById('offerTemplateEditorApply');
+    var offerTemplateEditorCancel = document.getElementById('offerTemplateEditorCancel');
+    var offerTemplateEditorClose = document.getElementById('offerTemplateEditorClose');
     var liveCustomFontLink = null;
     var initialLogoImg = sidebarLogo ? sidebarLogo.querySelector('img') : null;
     var initialLogoSrc = initialLogoImg ? initialLogoImg.getAttribute('src') : '';
     var initialFaviconSrc = faviconLink ? (faviconLink.getAttribute('href') || '') : '';
     var liveLogoObjectUrl = null;
     var liveFaviconObjectUrl = null;
+    var defaultOfferTemplate = [
+        'OFFER LETTER',
+        '{{offer_date}}',
+        '',
+        'Dear {{candidate_name}},',
+        '',
+        'With reference to our recent discussions, we are pleased to offer you the position of "{{designation}}" in {{company_name}}.',
+        '',
+        'Joining Date: {{joining_date}}',
+        'Work Location: {{work_location}}',
+        'Reporting Manager: {{reporting_manager}}',
+        '',
+        'Your annual CTC will be INR {{annual_income}} (monthly approx. INR {{monthly_income}}).',
+        '',
+        'Terms and Conditions:',
+        '1. You will be on probation for {{probation_period}}.',
+        '2. Work timings and leave policy will be governed by prevailing company policy.',
+        '3. Confidentiality and non-solicitation obligations apply during and after employment.',
+        '4. Either party may terminate employment with notice period as per company policy.',
+        '5. This offer is valid for 7 days from the date of issue.',
+        '',
+        'Please sign and return this letter as a token of acceptance.',
+        '',
+        'Regards,',
+        '{{signatory_name}}',
+        '{{signatory_designation}}',
+        '',
+        'Acceptance of Employment Offer',
+        'Candidate Name: {{candidate_name}}',
+        'Date:',
+        'Signature:'
+    ].join('\n');
+    var offerPreviewComponents = [
+        { name: 'Basic', pct: 40 },
+        { name: 'HRA', pct: 20 },
+        { name: 'Special Allowance', pct: 25 },
+        { name: 'Performance Bonus', pct: 15 }
+    ];
 
     if (!faviconLink) {
         faviconLink = document.createElement('link');
@@ -437,6 +603,169 @@ document.addEventListener('DOMContentLoaded', function () {
         root.style.setProperty('--accent-2', secondaryInput.value);
         root.style.setProperty('--accent-grad', 'linear-gradient(135deg, ' + primaryInput.value + ' 0%, ' + secondaryInput.value + ' 100%)');
         root.style.setProperty('--bg', bgInput.value);
+    }
+
+    function clampNumber(value, fallback, minValue, maxValue) {
+        var parsed = parseFloat(value);
+        if (isNaN(parsed)) parsed = fallback;
+        if (typeof minValue === 'number') parsed = Math.max(minValue, parsed);
+        if (typeof maxValue === 'number') parsed = Math.min(maxValue, parsed);
+        return parsed;
+    }
+
+    function escapeHtml(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function formatMoney(value) {
+        var amount = Number(value || 0);
+        return amount.toLocaleString('en-IN', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
+    }
+
+    function renderOfferLetterText(template, context) {
+        var rendered = String(template || '').trim() || defaultOfferTemplate;
+        Object.keys(context || {}).forEach(function (key) {
+            var value = String(context[key] || '');
+            var pattern = new RegExp('\\{\\{\\s*' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\}\\}|\\{' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\}', 'g');
+            rendered = rendered.replace(pattern, value);
+        });
+        return rendered.replace(/\{\{\s*[a-zA-Z0-9_]+\s*\}\}/g, '');
+    }
+
+    function renderOfferLetterPreview() {
+        if (!offerPreviewBody || !offerPreviewParagraphs || !offerPreviewTableBody) return;
+
+        var companyName = '';
+        if (companyNameInput && (companyNameInput.value || '').trim()) {
+            companyName = companyNameInput.value.trim();
+        } else if (brandNameInput && (brandNameInput.value || '').trim()) {
+            companyName = brandNameInput.value.trim();
+        } else {
+            companyName = 'Your Company';
+        }
+        var annualIncome = 1200000;
+        var context = {
+            candidate_name: 'Miral G.',
+            employee_name: 'Miral G.',
+            company_name: companyName,
+            state_name: 'Gujarat',
+            annual_income: formatMoney(annualIncome),
+            monthly_income: formatMoney(annualIncome / 12),
+            offer_date: '12-03-2026',
+            designation: 'Senior Executive',
+            joining_date: '25-03-2026',
+            work_location: 'Ahmedabad',
+            reporting_manager: 'Kumar Gaurav',
+            probation_period: '90 days',
+            signatory_name: 'HR Department',
+            signatory_designation: 'People Operations'
+        };
+
+        if (offerPreviewCompany) {
+            offerPreviewCompany.textContent = companyName;
+        }
+        if (offerPreviewAnnualCtc) {
+            offerPreviewAnnualCtc.textContent = formatMoney(annualIncome);
+        }
+
+        var topMargin = clampNumber(offerMarginTopInput ? offerMarginTopInput.value : 48, 48, 42, 90);
+        var rightMargin = clampNumber(offerMarginRightInput ? offerMarginRightInput.value : 18, 18, 8, 40);
+        var bottomMargin = clampNumber(offerMarginBottomInput ? offerMarginBottomInput.value : 16, 16, 8, 50);
+        var leftMargin = clampNumber(offerMarginLeftInput ? offerMarginLeftInput.value : 18, 18, 8, 40);
+
+        if (offerMarginTopInput) offerMarginTopInput.value = String(Math.round(topMargin));
+        if (offerMarginRightInput) offerMarginRightInput.value = String(Math.round(rightMargin));
+        if (offerMarginBottomInput) offerMarginBottomInput.value = String(Math.round(bottomMargin));
+        if (offerMarginLeftInput) offerMarginLeftInput.value = String(Math.round(leftMargin));
+
+        offerPreviewBody.style.top = topMargin + 'mm';
+        offerPreviewBody.style.right = rightMargin + 'mm';
+        offerPreviewBody.style.bottom = bottomMargin + 'mm';
+        offerPreviewBody.style.left = leftMargin + 'mm';
+
+        var templateValue = offerTemplateInput ? offerTemplateInput.value : '';
+        if (offerTemplateEditorModal && offerTemplateEditorModal.style.display === 'flex' && offerTemplateEditorTextarea) {
+            templateValue = offerTemplateEditorTextarea.value || '';
+        }
+        var rendered = renderOfferLetterText(templateValue, context);
+        var blocks = rendered.split(/\n\s*\n/).map(function (block) {
+            return String(block || '').trim();
+        }).filter(function (block) {
+            return block;
+        });
+
+        offerPreviewParagraphs.innerHTML = blocks.map(function (block) {
+            var lines = block.split('\n').map(function (line) {
+                return escapeHtml(String(line || '').trim());
+            }).filter(function (line) {
+                return line;
+            });
+            return '<p class="offer-preview-paragraph">' + lines.join('<br>') + '</p>';
+        }).join('');
+
+        var totalAnnual = 0;
+        offerPreviewTableBody.innerHTML = offerPreviewComponents.map(function (component) {
+            var annualValue = annualIncome * (component.pct / 100);
+            var monthlyValue = annualValue / 12;
+            totalAnnual += annualValue;
+            return '<tr>' +
+                '<td>' + escapeHtml(component.name) + '</td>' +
+                '<td>' + component.pct.toFixed(2) + '%</td>' +
+                '<td>' + formatMoney(annualValue) + '</td>' +
+                '<td>' + formatMoney(monthlyValue) + '</td>' +
+            '</tr>';
+        }).join('') + '<tr class="offer-preview-total">' +
+            '<td>Total</td>' +
+            '<td>100.00%</td>' +
+            '<td>' + formatMoney(totalAnnual) + '</td>' +
+            '<td>' + formatMoney(totalAnnual / 12) + '</td>' +
+        '</tr>';
+
+        if (offerPreviewTableWrap) {
+            offerPreviewTableWrap.style.display = (offerSalaryTableInput && !offerSalaryTableInput.checked) ? 'none' : 'block';
+        }
+    }
+
+    function isSettingsEditing() {
+        return !!(settingsForm && settingsForm.getAttribute('data-edit-mode') === '1');
+    }
+
+    function syncOfferEditorValueFromField() {
+        if (offerTemplateEditorTextarea && offerTemplateInput) {
+            offerTemplateEditorTextarea.value = offerTemplateInput.value || '';
+        }
+    }
+
+    function openOfferTemplateEditor() {
+        if (!offerTemplateEditorModal || !offerTemplateEditorTextarea) return;
+        syncOfferEditorValueFromField();
+        offerTemplateEditorTextarea.disabled = !isSettingsEditing();
+        if (offerTemplateEditorApply) {
+            offerTemplateEditorApply.style.display = isSettingsEditing() ? 'inline-flex' : 'none';
+        }
+        offerTemplateEditorModal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+        window.setTimeout(function () {
+            offerTemplateEditorTextarea.focus();
+            offerTemplateEditorTextarea.setSelectionRange(
+                offerTemplateEditorTextarea.value.length,
+                offerTemplateEditorTextarea.value.length
+            );
+        }, 10);
+    }
+
+    function closeOfferTemplateEditor() {
+        if (!offerTemplateEditorModal) return;
+        offerTemplateEditorModal.style.display = 'none';
+        document.body.style.overflow = '';
     }
 
     function cleanupObjectUrl(type) {
@@ -672,7 +1001,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function setEditMode(isEditing) {
         if (!settingsForm) return;
         var editableFields = Array.prototype.slice.call(
-            settingsForm.querySelectorAll('input, select, textarea, button.settings-color-preset')
+            settingsForm.querySelectorAll('input, select, textarea, button.settings-color-preset, button.offer-template-editor-trigger')
         );
         editableFields.forEach(function (field) {
             var fieldType = (field.getAttribute('type') || '').toLowerCase();
@@ -681,6 +1010,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             field.disabled = !isEditing;
         });
+        settingsForm.setAttribute('data-edit-mode', isEditing ? '1' : '0');
         if (editBtn) {
             editBtn.textContent = isEditing ? 'Save Settings' : 'Edit';
             editBtn.classList.toggle('btn-secondary', !isEditing);
@@ -728,6 +1058,11 @@ document.addEventListener('DOMContentLoaded', function () {
         field.addEventListener('input', applyLiveBrandPreview);
         field.addEventListener('change', applyLiveBrandPreview);
     });
+    [brandNameInput, companyNameInput, offerTemplateInput, offerSalaryTableInput, offerMarginTopInput, offerMarginRightInput, offerMarginBottomInput, offerMarginLeftInput].forEach(function (field) {
+        if (!field) return;
+        field.addEventListener('input', renderOfferLetterPreview);
+        field.addEventListener('change', renderOfferLetterPreview);
+    });
 
     Array.prototype.slice.call(document.querySelectorAll('input[name="sidebar_variant"], input[name="sidebar_style"], input[name="layout_direction"], input[name="theme_mode"]')).forEach(function (field) {
         field.addEventListener('change', applyUiLayoutPreview);
@@ -747,6 +1082,41 @@ document.addEventListener('DOMContentLoaded', function () {
         fontSizeNumber.addEventListener('input', applyFontSizePreview);
         fontSizeNumber.addEventListener('change', applyFontSizePreview);
     }
+    if (offerTemplatePopupBtn) {
+        offerTemplatePopupBtn.addEventListener('click', openOfferTemplateEditor);
+    }
+    if (offerTemplateEditorClose) {
+        offerTemplateEditorClose.addEventListener('click', closeOfferTemplateEditor);
+    }
+    if (offerTemplateEditorCancel) {
+        offerTemplateEditorCancel.addEventListener('click', function () {
+            syncOfferEditorValueFromField();
+            closeOfferTemplateEditor();
+        });
+    }
+    if (offerTemplateEditorApply) {
+        offerTemplateEditorApply.addEventListener('click', function () {
+            if (!offerTemplateInput || !offerTemplateEditorTextarea) return;
+            offerTemplateInput.value = offerTemplateEditorTextarea.value || '';
+            renderOfferLetterPreview();
+            closeOfferTemplateEditor();
+        });
+    }
+    if (offerTemplateEditorTextarea) {
+        offerTemplateEditorTextarea.addEventListener('input', renderOfferLetterPreview);
+    }
+    if (offerTemplateEditorModal) {
+        offerTemplateEditorModal.addEventListener('click', function (event) {
+            if (event.target === offerTemplateEditorModal) {
+                closeOfferTemplateEditor();
+            }
+        });
+    }
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && offerTemplateEditorModal && offerTemplateEditorModal.style.display === 'flex') {
+            closeOfferTemplateEditor();
+        }
+    });
 
     syncColorDots();
     applyThemePreview();
@@ -754,6 +1124,8 @@ document.addEventListener('DOMContentLoaded', function () {
     applyFontSizePreview();
     applyUiLayoutPreview();
     applyLiveBrandPreview();
+    syncOfferEditorValueFromField();
+    renderOfferLetterPreview();
 
     if (editBtn) {
         editBtn.addEventListener('click', function () {
@@ -763,11 +1135,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 setEditMode(true);
                 return;
             }
-            if (typeof settingsForm.requestSubmit === 'function') {
-                settingsForm.requestSubmit();
-            } else {
-                settingsForm.submit();
-            }
+            settingsForm.submit();
         });
     }
     if (cancelBtn && settingsForm) {
@@ -779,6 +1147,9 @@ document.addEventListener('DOMContentLoaded', function () {
             applyFontSizePreview();
             applyUiLayoutPreview();
             applyLiveBrandPreview();
+            syncOfferEditorValueFromField();
+            renderOfferLetterPreview();
+            closeOfferTemplateEditor();
             setEditMode(false);
         });
     }
@@ -837,6 +1208,173 @@ document.addEventListener('DOMContentLoaded', function () {
 .settings-choice-row input[type="radio"]:checked + .settings-choice {
     border-color: rgba(52,211,153,0.65);
     background: rgba(52,211,153,0.22);
+}
+.offer-preview-card {
+    overflow: hidden;
+}
+.offer-editor-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1600;
+    background: rgba(15, 23, 42, 0.68);
+    backdrop-filter: blur(6px);
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+.offer-editor-dialog {
+    width: min(1100px, 100%);
+    max-height: calc(100vh - 40px);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 22px;
+    border-radius: 18px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    box-shadow: 0 32px 90px rgba(0, 0, 0, 0.45);
+}
+.offer-editor-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+.offer-editor-header h3 {
+    margin: 0;
+    font-size: 22px;
+}
+.offer-editor-header p {
+    margin: 6px 0 0 0;
+    color: var(--text-muted);
+}
+.offer-editor-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.offer-editor-textarea {
+    min-height: 58vh;
+    resize: vertical;
+    font-family: var(--font-main);
+    line-height: 1.65;
+    font-size: 16px;
+}
+.offer-editor-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.offer-preview-stage {
+    display: flex;
+    justify-content: center;
+    padding: 16px;
+    border-radius: 16px;
+    background:
+        radial-gradient(circle at top left, rgba(99,102,241,0.16), transparent 34%),
+        linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+    border: 1px solid rgba(255,255,255,0.06);
+}
+.offer-preview-sheet {
+    position: relative;
+    width: min(100%, 680px);
+    aspect-ratio: 210 / 297;
+    background: #ffffff;
+    color: #111827;
+    border-radius: 12px;
+    box-shadow: 0 28px 80px rgba(15, 23, 42, 0.28);
+    overflow: hidden;
+}
+.offer-preview-header {
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 34mm;
+    background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+    color: #ffffff;
+    padding: 9mm 18mm 0 18mm;
+}
+.offer-preview-company {
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.2;
+}
+.offer-preview-header-copy {
+    margin-top: 4px;
+    font-size: 12px;
+    opacity: 0.9;
+}
+.offer-preview-body {
+    position: absolute;
+    overflow: hidden;
+}
+.offer-preview-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 10px;
+}
+.offer-preview-paragraph {
+    margin: 0 0 8px 0;
+    font-size: 12px;
+    line-height: 1.55;
+    color: #1f2937;
+}
+.offer-preview-meta {
+    margin-top: 10px;
+    display: grid;
+    gap: 5px;
+    font-size: 12px;
+}
+.offer-preview-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+}
+.offer-preview-table th,
+.offer-preview-table td {
+    border: 1px solid #d1d5db;
+    padding: 6px 7px;
+    text-align: left;
+}
+.offer-preview-table th {
+    background: #eef2ff;
+    color: #3730a3;
+    font-weight: 700;
+}
+.offer-preview-table td:nth-child(n+2),
+.offer-preview-table th:nth-child(n+2) {
+    text-align: right;
+}
+.offer-preview-total td {
+    font-weight: 700;
+    background: #f8fafc;
+}
+.offer-preview-footer-note {
+    margin-top: 12px;
+    font-size: 11px;
+    color: #6b7280;
+}
+@media (max-width: 900px) {
+    .offer-editor-modal {
+        padding: 12px;
+    }
+    .offer-editor-dialog {
+        padding: 16px;
+        max-height: calc(100vh - 24px);
+    }
+    .offer-editor-header {
+        flex-direction: column;
+    }
+    .offer-editor-textarea {
+        min-height: 48vh;
+    }
+    .offer-preview-stage {
+        padding: 10px;
+    }
+    .offer-preview-sheet {
+        width: 100%;
+    }
 }
 </style>
 {% endblock %}

@@ -18,6 +18,19 @@ from dynamic_models.models import DynamicModel
 from core.mailers import send_branded_email
 
 
+def _frontend_base_url(request):
+    configured = list(getattr(settings, 'FRONTEND_BASE_URLS', []) or [])
+    if configured:
+        return str(configured[0]).rstrip('/')
+    single = str(getattr(settings, 'FRONTEND_BASE_URL', '') or '').strip().rstrip('/')
+    if single:
+        return single
+    built = request.build_absolute_uri('/').rstrip('/')
+    if built:
+        return built
+    return 'http://127.0.0.1:8000'
+
+
 class UserProfileViewSet(viewsets.ModelViewSet):
     """
     ViewSet for user profiles with multi-tenant support
@@ -135,11 +148,7 @@ class UserProfileViewSet(viewsets.ModelViewSet):
 
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             token = default_token_generator.make_token(user)
-            frontend_base = request.build_absolute_uri('/').rstrip('/')
-            if not frontend_base:
-                frontend_base = str(getattr(settings, 'FRONTEND_BASE_URL', '') or '').rstrip('/')
-            if not frontend_base:
-                frontend_base = 'http://127.0.0.1:8000'
+            frontend_base = _frontend_base_url(request)
             reset_link = f'{frontend_base}/reset-password/?uid={uid}&token={token}'
 
             email_sent = False
@@ -245,11 +254,7 @@ class UserProfileViewSet(viewsets.ModelViewSet):
         user = profile.user
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
-        frontend_base = request.build_absolute_uri('/').rstrip('/')
-        if not frontend_base:
-            frontend_base = str(getattr(settings, 'FRONTEND_BASE_URL', '') or '').rstrip('/')
-        if not frontend_base:
-            frontend_base = 'http://127.0.0.1:8000'
+        frontend_base = _frontend_base_url(request)
         reset_link = f'{frontend_base}/reset-password/?uid={uid}&token={token}'
 
         email_sent = False
