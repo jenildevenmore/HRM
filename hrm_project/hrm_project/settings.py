@@ -70,6 +70,7 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-change-me-in-produc
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = _env_bool('DJANGO_DEBUG', True)
+DEMO_MODE = _env_bool('DEMO_MODE', False)
 
 ALLOWED_HOSTS = _env_csv(
     'DJANGO_ALLOWED_HOSTS',
@@ -113,6 +114,8 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'core.middleware.ClientExecutionKeyMiddleware',
+    'core.middleware.DemoModeMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -269,6 +272,7 @@ CSRF_COOKIE_SECURE = _env_bool('CSRF_COOKIE_SECURE', not DEBUG)
 SECURE_SSL_REDIRECT = _env_bool('SECURE_SSL_REDIRECT', False)
 BACKEND_API_URL = os.getenv('BACKEND_API_URL', 'http://127.0.0.1:8000')
 USE_INTERNAL_API = _env_bool('USE_INTERNAL_API', True)
+CLIENT_EXECUTION_SECRET_KEY = str(os.getenv('CLIENT_EXECUTION_SECRET_KEY', '')).strip()
 
 FRONTEND_BASE_URLS = [
     url.strip().rstrip('/')

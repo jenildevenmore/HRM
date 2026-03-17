@@ -1,0 +1,649 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HRM User Manual</title>
+  <style>
+    :root {
+      --bg: #f6f7fb;
+      --card: #ffffff;
+      --ink: #1d2433;
+      --muted: #5b6476;
+      --line: #e4e8f1;
+      --brand: #0f6dff;
+      --brand-soft: #e8f0ff;
+      --ok: #0f8a4b;
+      --warn: #9a6400;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font: 15px/1.6 "Segoe UI", Tahoma, sans-serif;
+      color: var(--ink);
+      background: radial-gradient(circle at top right, #eef4ff 0%, var(--bg) 42%);
+    }
+    .wrap {
+      max-width: 1300px;
+      margin: 0 auto;
+      padding: 24px;
+      display: grid;
+      grid-template-columns: 300px minmax(0, 1fr);
+      gap: 22px;
+    }
+    .sidebar {
+      position: sticky;
+      top: 18px;
+      align-self: start;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 18px;
+      max-height: calc(100vh - 36px);
+      overflow: auto;
+    }
+    .brand {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .4px;
+      color: var(--brand);
+      background: var(--brand-soft);
+      border-radius: 999px;
+      padding: 6px 10px;
+      margin-bottom: 10px;
+    }
+    .sidebar h1 {
+      margin: 0 0 8px;
+      font-size: 20px;
+      line-height: 1.25;
+    }
+    .sidebar p {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .toc {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .toc a {
+      display: block;
+      padding: 7px 9px;
+      margin: 2px 0;
+      text-decoration: none;
+      color: var(--ink);
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    .toc a:hover,
+    .toc a.active {
+      background: var(--brand-soft);
+      color: var(--brand);
+      font-weight: 600;
+    }
+    .content {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 28px;
+    }
+    .hero {
+      margin-bottom: 18px;
+      padding: 16px 18px;
+      border-radius: 12px;
+      background: linear-gradient(105deg, #f0f6ff 0%, #ffffff 65%);
+      border: 1px solid #dfe9ff;
+    }
+    .hero h2 {
+      margin: 0 0 6px;
+      font-size: 28px;
+      line-height: 1.2;
+    }
+    .hero p {
+      margin: 0;
+      color: var(--muted);
+    }
+    section {
+      margin: 26px 0;
+      scroll-margin-top: 14px;
+    }
+    section h3 {
+      margin: 0 0 8px;
+      font-size: 22px;
+    }
+    section h4 {
+      margin: 14px 0 6px;
+      font-size: 16px;
+    }
+    p { margin: 0 0 12px; }
+    ul, ol { margin: 0 0 12px 20px; }
+    code {
+      background: #f3f5fb;
+      border: 1px solid var(--line);
+      padding: 1px 6px;
+      border-radius: 6px;
+      font-family: Consolas, monospace;
+      font-size: 13px;
+    }
+    pre {
+      margin: 0 0 12px;
+      padding: 12px;
+      border-radius: 10px;
+      background: #101623;
+      color: #eaf0ff;
+      overflow-x: auto;
+      font: 13px/1.5 Consolas, monospace;
+    }
+    .note {
+      border-left: 4px solid var(--warn);
+      background: #fff8e9;
+      color: #684200;
+      padding: 10px 12px;
+      border-radius: 8px;
+      margin: 10px 0 12px;
+    }
+    .good {
+      border-left: 4px solid var(--ok);
+      background: #e8f8ef;
+      color: #1a5f3b;
+      padding: 10px 12px;
+      border-radius: 8px;
+      margin: 10px 0 12px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 8px 0 12px;
+      font-size: 14px;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 9px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #f7f9ff;
+      font-weight: 700;
+    }
+    .foot {
+      margin-top: 30px;
+      border-top: 1px solid var(--line);
+      padding-top: 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    @media (max-width: 1024px) {
+      .wrap { grid-template-columns: 1fr; }
+      .sidebar { position: static; max-height: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <aside class="sidebar">
+      <span class="brand">DOCUMENTATION</span>
+      <h1>HRM User Manual</h1>
+      <p>Customer-facing guide for setup, login, modules, and one-time activation.</p>
+      <ul class="toc">
+        <li><a href="#intro">1. Introduction</a></li>
+        <li><a href="#login">2. Login</a></li>
+        <li><a href="#dashboard">3. Dashboard</a></li>
+        <li><a href="#clients">4. Client Management</a></li>
+        <li><a href="#employees">5. Employee Management</a></li>
+        <li><a href="#roles">6. Roles & Permissions</a></li>
+        <li><a href="#leaves">7. Leave Management</a></li>
+        <li><a href="#attendance">8. Attendance</a></li>
+        <li><a href="#holidays">9. Holidays</a></li>
+        <li><a href="#shifts">10. Shifts</a></li>
+        <li><a href="#banks">11. Bank Accounts</a></li>
+        <li><a href="#policy">12. Policy Management</a></li>
+        <li><a href="#documents">13. Documents</a></li>
+        <li><a href="#payroll">14. Payroll</a></li>
+        <li><a href="#custom-fields">15. Custom Fields</a></li>
+        <li><a href="#dynamic-models">16. Dynamic Models</a></li>
+        <li><a href="#activity-logs">17. Activity Logs</a></li>
+        <li><a href="#import-export">18. Import / Export</a></li>
+        <li><a href="#settings">19. Settings & Branding</a></li>
+        <li><a href="#activation">20. Activation Key</a></li>
+        <li><a href="#deploy">21. Deployment (Linux VPS)</a></li>
+        <li><a href="#faq">22. FAQ</a></li>
+      </ul>
+    </aside>
+
+    <main class="content">
+      <header class="hero">
+        <h2>Human Resource Management (HRM)</h2>
+        <p>This manual explains how admins and users operate the HRM platform delivered as your branded product.</p>
+      </header>
+
+      <section id="intro">
+        <h3>1. Introduction</h3>
+        <p>The HRM application is a complete platform for employee lifecycle operations: onboarding, leaves, attendance, payroll, document handling, and activity logs.</p>
+        <table>
+          <tr><th>Area</th><th>What it helps with</th></tr>
+          <tr><td>Admin</td><td>Client setup, permissions, modules, branding, policy configuration.</td></tr>
+          <tr><td>HR / Manager</td><td>Employee records, leave reviews, documents, payroll setup.</td></tr>
+          <tr><td>Employee</td><td>Leave requests, attendance actions, personal document interactions.</td></tr>
+        </table>
+      </section>
+
+      <section id="login">
+        <h3>2. Login</h3>
+        <ol>
+          <li>Open <code>/login/</code>.</li>
+          <li>Select login mode and client (if required).</li>
+          <li>Enter username and password.</li>
+          <li>On success, user is redirected to dashboard.</li>
+        </ol>
+        <div class="note">If login fails after deployment, check client activation key and <code>.env</code> values first.</div>
+      </section>
+
+      <section id="dashboard">
+        <h3>3. Dashboard</h3>
+        <p>The dashboard shows quick access cards and operational summaries. Use it as the daily entry point for module navigation.</p>
+        <ul>
+          <li>Employees summary</li>
+          <li>Leave and attendance indicators</li>
+          <li>Quick links to major modules</li>
+        </ul>
+      </section>
+
+      <section id="clients">
+        <h3>4. Client Management</h3>
+        <p>Client Management is used by superadmin to onboard organizations and configure tenant-level settings.</p>
+        <h4>4.1 Creating Client</h4>
+        <ol>
+          <li>Go to <code>Clients</code> from sidebar.</li>
+          <li>Click <code>Create Client</code>.</li>
+          <li>Fill name, domain, password, add-ons, role limit, and admin credentials.</li>
+          <li>Save to provision the client and client admin.</li>
+        </ol>
+        <h4>4.2 Client Features</h4>
+        <ul>
+          <li>Add-on enable/disable per client</li>
+          <li>Role limit for custom client roles</li>
+          <li>Client-level app settings and branding controls</li>
+        </ul>
+      </section>
+
+      <section id="employees">
+        <h3>5. Employee Management</h3>
+        <p>The Employee Management module helps you create, organize, and control your workforce records from one place.</p>
+
+        <h4>5.1 Employee Administration</h4>
+        <p>This section handles employee profile creation, role mapping, reporting structure, and record updates.</p>
+
+        <h4>5.1.1 Creating Employee</h4>
+        <p>To add a new employee, follow these steps:</p>
+        <ol>
+          <li><strong>Access Employee Form</strong></li>
+        </ol>
+        <ul>
+          <li>Navigate to <code>Employees</code> from the main sidebar.</li>
+          <li>Click <code>Create Employee</code> (or <code>Add Employee</code>) at the top area.</li>
+        </ul>
+
+        <ol start="2">
+          <li><strong>Fill Employee Information</strong></li>
+        </ol>
+        <p>Enter the required employee details:</p>
+        <ul>
+          <li><strong>First Name</strong>: Employee first name (required)</li>
+          <li><strong>Last Name</strong>: Employee last name (required)</li>
+          <li><strong>Email</strong>: Unique employee email (required, used for mapping/login workflows)</li>
+          <li><strong>Role</strong>: Select role (Employee / HR / Manager or configured role)</li>
+          <li><strong>HR</strong>: Assign HR person (optional, based on organization flow)</li>
+          <li><strong>Manager</strong>: Assign reporting manager (optional)</li>
+          <li><strong>Joining Date</strong>: Select joining date (required)</li>
+        </ul>
+
+        <ol start="3">
+          <li><strong>Save Record</strong></li>
+        </ol>
+        <ul>
+          <li>Click <code>Save</code> or <code>Create</code>.</li>
+          <li>System creates employee profile and links organizational context for module access.</li>
+        </ul>
+
+        <h4>5.1.2 Employee Features</h4>
+        <ul>
+          <li><strong>Role Assignment</strong>: Define access level through role and permission model</li>
+          <li><strong>HR/Manager Mapping</strong>: Build approval and reporting hierarchy</li>
+          <li><strong>Custom Fields Support</strong>: Capture additional client-specific employee data</li>
+          <li><strong>Search & Filter</strong>: Quickly locate employees by name, email, or role</li>
+          <li><strong>Profile Updates</strong>: Edit employee information without data loss</li>
+          <li><strong>Safe Deletion Control</strong>: Remove employee records with permission-based restrictions</li>
+        </ul>
+
+        <h4>5.1.3 Editing Employee</h4>
+        <ol>
+          <li>Go to <code>Employees</code> list.</li>
+          <li>Select the employee and click <code>Edit</code>.</li>
+          <li>Update fields such as role, manager, HR, or contact details.</li>
+          <li>Click <code>Update</code> to save changes.</li>
+        </ol>
+
+        <h4>5.1.4 Viewing Employee Details</h4>
+        <ol>
+          <li>Open <code>Employees</code>.</li>
+          <li>Click the employee name or <code>View</code> action.</li>
+          <li>Review profile summary, assignments, and related data.</li>
+        </ol>
+
+        <h4>5.1.5 Deleting Employee</h4>
+        <ol>
+          <li>From employee list, click <code>Delete</code> on target record.</li>
+          <li>Confirm action in prompt/modal.</li>
+          <li>System removes the employee if permission and business rules allow.</li>
+        </ol>
+        <div class="note">In demo mode, create/update/delete buttons are clickable but write actions are blocked by design.</div>
+      </section>
+
+      <section id="roles">
+        <h3>6. Roles & Permissions</h3>
+        <p>Use this module to define role-based access for users and control feature visibility.</p>
+        <h4>6.1 Creating Role</h4>
+        <ol>
+          <li>Open <code>Roles</code> module.</li>
+          <li>Click <code>Create Role</code>.</li>
+          <li>Enter role name and permissions.</li>
+          <li>Set add-ons if applicable and save.</li>
+        </ol>
+        <h4>6.2 Permission Group Assignment</h4>
+        <ol>
+          <li>Go to <code>Permissions</code>.</li>
+          <li>Create or edit permission group.</li>
+          <li>Assign group to user profiles.</li>
+        </ol>
+        <h4>6.3 Permission System</h4>
+        <p>The Permission System provides granular access control and security management across all HRM modules. It ensures users can only access features relevant to their role.</p>
+
+        <h4>6.3.1 Understanding Permissions</h4>
+        <p>HRM uses module-level permission keys with action scopes like:</p>
+        <ul>
+          <li><strong>View</strong>: Allows users to read module records and pages</li>
+          <li><strong>Create</strong>: Allows users to add new records</li>
+          <li><strong>Edit</strong>: Allows users to update existing records</li>
+          <li><strong>Delete</strong>: Allows users to remove records</li>
+          <li><strong>Approve / Manage</strong>: Allows workflow review or module-level administration where applicable</li>
+        </ul>
+
+        <h4>6.3.2 Permission Categories</h4>
+        <p>Permissions are grouped by module so access can be configured precisely:</p>
+        <ul>
+          <li><strong>Employees</strong>: Employee profile create/edit/view/delete permissions</li>
+          <li><strong>Leaves</strong>: Leave request lifecycle and approval permissions</li>
+          <li><strong>Attendance</strong>: Attendance view/create/edit/delete controls</li>
+          <li><strong>Holidays</strong>: Holiday setup and maintenance permissions</li>
+          <li><strong>Shifts</strong>: Shift schedule management permissions</li>
+          <li><strong>Bank</strong>: Employee bank details management permissions</li>
+          <li><strong>Policy</strong>: Company policy create/edit/view/delete permissions</li>
+          <li><strong>Documents</strong>: Document and upload-request permissions</li>
+          <li><strong>Import / Export</strong>: Data import/export operation permissions</li>
+          <li><strong>Custom Fields</strong>: Metadata field management permissions</li>
+          <li><strong>Dynamic Models</strong>: Dynamic model/field/record permissions</li>
+          <li><strong>Activity Logs</strong>: Audit log visibility permissions</li>
+        </ul>
+        <p>By assigning permissions carefully, you can keep security tight while giving each user exactly what they need to do their work.</p>
+      </section>
+
+      <section id="leaves">
+        <h3>7. Leave Management</h3>
+        <p>Leave Management supports leave policy setup, request approval, and leave balance tracking.</p>
+        <h4>7.1 Leave Type Setup</h4>
+        <ol>
+          <li>Open <code>Leaves &gt; Types</code>.</li>
+          <li>Create leave type (name, yearly limit, paid/unpaid).</li>
+          <li>Save type for employee usage.</li>
+        </ol>
+        <h4>7.2 Creating Leave Request</h4>
+        <ol>
+          <li>Go to <code>Leaves</code> and click <code>Create Leave</code>.</li>
+          <li>Select employee and leave type.</li>
+          <li>Choose leave unit: day, half-day, or hour.</li>
+          <li>Fill dates/times and reason, then submit.</li>
+        </ol>
+        <h4>7.3 Leave Features</h4>
+        <ul>
+          <li>Approval/rejection with reviewer comments</li>
+          <li>Leave balance computation endpoint</li>
+          <li>Cancellation and history tracking</li>
+        </ul>
+      </section>
+
+      <section id="attendance">
+        <h3>8. Attendance</h3>
+        <p>Attendance records check-in/check-out and can enforce location/selfie policies.</p>
+        <h4>8.1 Daily Punch Workflow</h4>
+        <ol>
+          <li>Open attendance entity screen.</li>
+          <li>Submit punch in with required fields.</li>
+          <li>Submit punch out when shift is complete.</li>
+        </ol>
+        <h4>8.2 Attendance Features</h4>
+        <ul>
+          <li>One check-in/check-out cycle per day per employee</li>
+          <li>Auto clock-out utility endpoint</li>
+          <li>Location and selfie enforcement via add-ons</li>
+        </ul>
+      </section>
+
+      <section id="holidays">
+        <h3>9. Holidays</h3>
+        <p>Maintain client holiday calendar for leave and payroll references.</p>
+        <h4>9.1 Creating Holiday</h4>
+        <ol>
+          <li>Open <code>Holidays</code> module.</li>
+          <li>Enter name, type, date range, and paid status.</li>
+          <li>Save holiday.</li>
+        </ol>
+      </section>
+
+      <section id="shifts">
+        <h3>10. Shifts</h3>
+        <p>Shift management defines work schedules for attendance and payroll logic.</p>
+        <h4>10.1 Creating Shift</h4>
+        <ol>
+          <li>Go to <code>Shifts</code>.</li>
+          <li>Set shift code, start/end time, and grace minutes.</li>
+          <li>Configure weekly off and active status.</li>
+          <li>Save shift.</li>
+        </ol>
+      </section>
+
+      <section id="banks">
+        <h3>11. Bank Accounts</h3>
+        <p>Store employee banking details used for payroll operations.</p>
+        <h4>11.1 Adding Bank Account</h4>
+        <ol>
+          <li>Open <code>Banks</code> module.</li>
+          <li>Choose employee and fill bank details.</li>
+          <li>Mark primary account if required.</li>
+          <li>Save record.</li>
+        </ol>
+      </section>
+
+      <section id="policy">
+        <h3>12. Policy Management</h3>
+        <p>Manage company policy records and employee-facing policy documents.</p>
+        <h4>12.1 Creating Policy</h4>
+        <ol>
+          <li>Go to <code>Policy</code> module.</li>
+          <li>Enter title, category, content, and active status.</li>
+          <li>Attach policy image/document URL if needed.</li>
+          <li>Save policy.</li>
+        </ol>
+      </section>
+
+      <section id="documents">
+        <h3>13. Documents</h3>
+        <p>Manage internal documents and public tokenized upload requests.</p>
+        <h4>13.1 Internal Documents</h4>
+        <ol>
+          <li>Open <code>Documents</code> module.</li>
+          <li>Create document with title/category and optional file.</li>
+          <li>Save and share internally.</li>
+        </ol>
+        <h4>13.2 Public Upload Request</h4>
+        <ol>
+          <li>Create document upload request.</li>
+          <li>Select emails and requested document types.</li>
+          <li>Send tokenized link to external users.</li>
+        </ol>
+        <h4>13.3 Document Features</h4>
+        <ul>
+          <li>Public upload via secure token URL</li>
+          <li>Multiple document type collection</li>
+          <li>Offer letter PDF generation and email send</li>
+        </ul>
+      </section>
+
+      <section id="payroll">
+        <h3>14. Payroll</h3>
+        <p>Payroll module includes policy setup, compensation mapping, and report generation.</p>
+        <h4>14.1 Payroll Policy</h4>
+        <ol>
+          <li>Open <code>Payroll</code>.</li>
+          <li>Set monthly working days and standard hours/day.</li>
+          <li>Choose salary basis and payout options.</li>
+          <li>Save policy.</li>
+        </ol>
+        <h4>14.2 Employee Compensation</h4>
+        <ol>
+          <li>Select employee.</li>
+          <li>Set monthly/daily/hourly salary values.</li>
+          <li>Set effective date and save.</li>
+        </ol>
+        <h4>14.3 Payroll Features</h4>
+        <ul>
+          <li>Policy and compensation history</li>
+          <li>Payroll report endpoint for period-wise summary</li>
+          <li>Support for day/hour-based salary calculations</li>
+        </ul>
+      </section>
+
+      <section id="custom-fields">
+        <h3>15. Custom Fields</h3>
+        <p>Create custom metadata fields for employee/client records.</p>
+        <h4>15.1 Creating Custom Field</h4>
+        <ol>
+          <li>Go to <code>Custom Fields</code>.</li>
+          <li>Select model and field type.</li>
+          <li>Enter field name and save.</li>
+        </ol>
+      </section>
+
+      <section id="dynamic-models">
+        <h3>16. Dynamic Models</h3>
+        <p>Build custom modules dynamically with fields and record screens.</p>
+        <h4>16.1 Creating Dynamic Model</h4>
+        <ol>
+          <li>Open <code>Dynamic Models</code>.</li>
+          <li>Create model with name and slug.</li>
+          <li>Add fields and validation choices.</li>
+          <li>Create records from entity screen.</li>
+        </ol>
+      </section>
+
+      <section id="activity-logs">
+        <h3>17. Activity Logs</h3>
+        <p>Track user actions for audit and operational visibility.</p>
+        <h4>17.1 Viewing Logs</h4>
+        <ol>
+          <li>Open <code>Activity Logs</code>.</li>
+          <li>Filter by user/module/action if needed.</li>
+          <li>Review event history and timestamps.</li>
+        </ol>
+      </section>
+
+      <section id="import-export">
+        <h3>18. Import / Export</h3>
+        <p>Use import/export screens to move operational data in and out of the system.</p>
+        <h4>18.1 Typical Usage</h4>
+        <ol>
+          <li>Open <code>Import / Export</code> module.</li>
+          <li>Select import or export action.</li>
+          <li>Upload/download template files per format requirements.</li>
+        </ol>
+      </section>
+
+      <section id="settings">
+        <h3>19. Settings & Branding</h3>
+        <p>Settings page supports branding customization such as logo, colors, typography, and module icon preferences.</p>
+        <h4>19.1 Branding Setup</h4>
+        <ol>
+          <li>Open <code>Settings</code>.</li>
+          <li>Update brand name, logo, favicon, and tagline.</li>
+          <li>Set colors, sidebar style, and font family.</li>
+          <li>Save and verify UI updates.</li>
+        </ol>
+        <div class="good">Branding changes are client-scoped and can be managed without touching source code.</div>
+      </section>
+
+      <section id="activation">
+        <h3>20. Activation Key (One-Time)</h3>
+        <p>This product uses one-time client activation through <code>CLIENT_EXECUTION_SECRET_KEY</code> in <code>.env</code>.</p>
+        <ol>
+          <li>Seller provides one activation key for client purchase.</li>
+          <li>Client adds key in <code>.env</code>.</li>
+          <li>First valid run/login consumes key and activates client.</li>
+          <li>Same key cannot activate another client.</li>
+        </ol>
+        <pre># .env
+CLIENT_EXECUTION_SECRET_KEY=replace-with-your-activation-key</pre>
+      </section>
+
+      <section id="deploy">
+        <h3>21. Deployment (Linux VPS)</h3>
+        <p>For production deployments, use Ubuntu + Gunicorn + Nginx with HTTPS.</p>
+        <h4>Core commands</h4>
+        <pre>sudo apt update
+sudo apt install -y python3 python3-venv python3-pip nginx
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py collectstatic --noinput</pre>
+        <p>Then configure systemd for Gunicorn and Nginx reverse proxy to <code>127.0.0.1:8000</code>.</p>
+      </section>
+
+      <section id="faq">
+        <h3>22. FAQ</h3>
+        <h4>Q: App opens but write actions do nothing.</h4>
+        <p>A: Demo mode may be enabled. Set <code>DEMO_MODE=False</code> for normal production behavior.</p>
+
+        <h4>Q: Login fails with activation key message.</h4>
+        <p>A: Check <code>CLIENT_EXECUTION_SECRET_KEY</code> and restart app service.</p>
+
+        <h4>Q: Static files missing in production.</h4>
+        <p>A: Verify Nginx static alias and run <code>python manage.py collectstatic --noinput</code>.</p>
+      </section>
+
+      <div class="foot">
+        Last updated: 2026-03-17 | Product: HRM Project
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const links = [...document.querySelectorAll('.toc a')];
+    const sections = links
+      .map(a => document.querySelector(a.getAttribute('href')))
+      .filter(Boolean);
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        const id = '#' + entry.target.id;
+        links.forEach(a => a.classList.toggle('active', a.getAttribute('href') === id));
+      });
+    }, { rootMargin: '-20% 0px -65% 0px', threshold: 0 });
+
+    sections.forEach(s => observer.observe(s));
+  </script>
+</body>
+</html>

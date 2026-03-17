@@ -1,250 +1,316 @@
 # HRM Project
 
-A full-stack HRM (Human Resource Management) system built with Django + DRF, Jinja templates, and a modular addon/permission model.
+End-to-end HRM (Human Resource Management) platform built with Django and Django REST Framework.
+The project serves both:
 
-This project runs UI and API in one Django app.
+- Server-rendered web UI (Jinja templates)
+- REST APIs (`/api/...`)
+
+Both run from one Django project.
+
+## Table of Contents
+
+- Overview
+- Tech Stack
+- Features
+- Project Structure
+- Prerequisites
+- Quick Start (Local)
+- Environment Variables
+- Database Notes
+- Running the Application
+- API Overview
+- Common Management Commands
+- Deployment Notes
+- Troubleshooting
+- Related Docs
+
+## Overview
+
+This repository provides a modular HRM system with role-based access, client-level configuration, and operational modules such as employee management, leave workflows, payroll configuration, documents, and activity logging.
 
 ## Tech Stack
 
 - Python 3.10+
-- Django 5.2
-- Django REST Framework
+- Django 5.2.12
+- Django REST Framework 3.16.1
 - Jinja2 templates
 - JWT auth (`djangorestframework-simplejwt`)
-- PostgreSQL (default in current settings)
+- `django-filter`
+- ReportLab (PDF generation)
+- PostgreSQL (current active DB configuration in settings)
 
-## Core Modules
+## Features
 
-- Authentication and user profiles
-- Client management (multi-client, roles, addon toggles)
-- Employee management
-- Leave management
-  - Leave types
-  - Leave applications (Day / Half Day / Hourly)
-  - Leave balance per employee
-- Attendance (dynamic model driven)
-- Payroll
-- Documents
-  - Internal document list
-  - Public upload links
-  - Multi-document upload support
-  - Offer-letter PDF generation + email send
-- Holidays
-- Shifts
-- Bank accounts
-- Company policies
-- Activity logs
-- Import / Export
-- Settings (branding, theme, sidebar logo/icons)
+- Authentication and profile management
+- Client and role management
+- Employee lifecycle management
+- Leave types, requests, balance, approval flows
+- Dynamic model/field/record engine
+- Attendance auto clock-out trigger endpoint
+- Payroll policy, compensation, and payroll report APIs
+- Document management + public tokenized upload links
+- Offer letter PDF generation and email sending
+- Holiday, shift, bank, and company policy modules
+- Activity logging
+- UI branding/theming settings
 
 ## Project Structure
 
 ```text
 c:\hrm_project
-+-- hrm_project\                # Django project root (run manage.py here)
++-- hrm_project\
 |   +-- manage.py
-|   +-- hrm_project\            # settings, urls, wsgi, jinja env
-|   +-- core\                   # frontend routes + page controllers
+|   +-- hrm_project\          # settings.py, urls.py, wsgi.py
+|   +-- core\                 # UI routes/views/templates context
 |   +-- accounts\
 |   +-- clients\
 |   +-- employees\
 |   +-- leaves\
 |   +-- payroll\
 |   +-- documents\
-|   +-- ... other apps
+|   +-- dynamic_models\
+|   +-- ...other apps
 |   +-- templates\
 |   +-- static\
 |   \-- media\
++-- deploy\
++-- postman\
 +-- requirements.txt
-\-- .env
++-- .env
+\-- LIVE_SERVERS.md
 ```
 
-## Installation
+## Prerequisites
 
-1. Create and activate virtual environment:
+- Python 3.10 or newer
+- pip
+- Virtual environment support (`venv`)
+- PostgreSQL (if using current default DB config)
+
+## Quick Start (Local)
+
+1. Create virtual environment:
 
 ```powershell
-cd c:\hrm_project
+cd C:\hrm_project
 python -m venv .venv
+```
+
+2. Activate virtual environment:
+
+```powershell
 .\.venv\Scripts\activate
 ```
 
-2. Install dependencies:
+3. Install dependencies:
 
 ```powershell
 pip install -r requirements.txt
 ```
 
-## Environment Variables
+4. Configure `.env` in project root (`C:\hrm_project\.env`).
 
-Create/update `.env` in `c:\hrm_project\`.
-
-### Django / Security
-
-- `DJANGO_SECRET_KEY=...`
-- `DJANGO_DEBUG=True`
-- `DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost`
-- `DJANGO_CSRF_TRUSTED_ORIGINS=http://127.0.0.1:8000,http://localhost:8000`
-- `DJANGO_TIME_ZONE=Asia/Kolkata`
-
-### Database (current default: PostgreSQL)
-
-- `DJANGO_PG_NAME=HRM`
-- `DJANGO_PG_USER=admin`
-- `DJANGO_PG_PASSWORD=admin`
-- `DJANGO_PG_HOST=localhost`
-- `DJANGO_PG_PORT=5433`
-
-### Static / Media
-
-- `DJANGO_STATIC_URL=/static/`
-- `DJANGO_STATIC_ROOT=...` (optional)
-- `DJANGO_MEDIA_URL=/media/`
-- `DJANGO_MEDIA_ROOT=...` (optional)
-
-### Email
-
-- `EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend`
-- `EMAIL_HOST=smtp.gmail.com`
-- `EMAIL_PORT=587`
-- `EMAIL_USE_TLS=True`
-- `EMAIL_HOST_USER=...`
-- `EMAIL_HOST_PASSWORD=...`
-- `DEFAULT_FROM_EMAIL=...`
-
-### Internal API + Frontend URL
-
-- `BACKEND_API_URL=http://127.0.0.1:8000`
-- `USE_INTERNAL_API=True`
-- `FRONTEND_BASE_URLS=http://127.0.0.1:8000`
-
-## Run the Project
+5. Run migrations:
 
 ```powershell
-cd c:\hrm_project\hrm_project
-..\.venv\Scripts\python.exe manage.py migrate
-..\.venv\Scripts\python.exe manage.py runserver 0.0.0.0:8000
+cd C:\hrm_project\hrm_project
+..\ .venv\Scripts\python.exe manage.py migrate
 ```
 
-Use:
+6. Start server:
+
+```powershell
+..\ .venv\Scripts\python.exe manage.py runserver 0.0.0.0:8000
+```
+
+Open:
 
 - UI: `http://127.0.0.1:8000/login/`
-- API root: `http://127.0.0.1:8000/api/`
+- API: `http://127.0.0.1:8000/api/`
+- Admin: `http://127.0.0.1:8000/admin/`
 
-If venv-relative command fails in your shell, use:
+If the venv path command fails in your shell:
 
 ```powershell
 python manage.py runserver
 ```
 
-## API Endpoints (Main)
+## Environment Variables
 
-- Auth
-  - `POST /api/token/`
-  - `POST /api/token/refresh/`
-- Accounts / Roles
-  - `/api/accounts/`
-  - `/api/account-groups/`
-  - `/api/clients/`
-  - `/api/client-roles/`
-- HR Modules
-  - `/api/employees/`
-  - `/api/leaves/`
-  - `/api/leave-types/`
-  - `/api/leave-balance/`
-  - `/api/holidays/`
-  - `/api/shifts/`
-  - `/api/bank-accounts/`
-  - `/api/payroll-policy/`
-  - `/api/employee-compensation/`
-  - `/api/payroll-report/`
-  - `/api/company-policies/`
-  - `/api/documents/`
-  - `/api/document-upload-requests/`
-  - `/api/document-upload/<uuid:token>/`
-  - `/api/activity-logs/`
-- Dynamic Models
-  - `/api/dynamic-models/`
-  - `/api/dynamic-fields/`
-  - `/api/dynamic-records/`
-  - `/api/attendance/auto-clockout/run/`
+Create/update `.env` with values for your environment.
 
-## Permissions and Addons
+### Core / Security
 
-- Module visibility is controlled via:
-  - enabled addons
-  - module permissions
-  - role (`superadmin`, `admin`, employee roles)
-- Sidebar/menu items are dynamic from addon + permission context.
+- `DJANGO_SECRET_KEY`
+- `DJANGO_DEBUG`
+- `DEMO_MODE`
+- `DJANGO_ALLOWED_HOSTS`
+- `DJANGO_CSRF_TRUSTED_ORIGINS`
+- `DJANGO_TIME_ZONE`
 
-## Leave Rules Implemented
+### Database (PostgreSQL active)
 
-- Leave unit options: `day`, `half_day`, `hour`
-- Half day requires slot: `first_half` / `second_half`
-- Hourly leave:
-  - max 3 hours/day
-  - start time required
-  - end time auto-calculated from selected leave hours
-- Past-date leave requests blocked in serializer validation.
+- `DJANGO_PG_NAME`
+- `DJANGO_PG_USER`
+- `DJANGO_PG_PASSWORD`
+- `DJANGO_PG_HOST`
+- `DJANGO_PG_PORT`
 
-## Documents / Offer Letter
+### Static / Media
 
-- Public upload links support required document types.
-- Multi-document uploads supported through requested type mapping.
-- Offer letter builder can generate PDF and send by email directly to employee.
+- `DJANGO_STATIC_URL`
+- `DJANGO_STATIC_ROOT`
+- `DJANGO_MEDIA_URL`
+- `DJANGO_MEDIA_ROOT`
 
-## Theming and Branding
+### Email
 
-Available via settings UI:
+- `EMAIL_BACKEND`
+- `EMAIL_HOST`
+- `EMAIL_PORT`
+- `EMAIL_USE_TLS`
+- `EMAIL_HOST_USER`
+- `EMAIL_HOST_PASSWORD`
+- `DEFAULT_FROM_EMAIL`
 
-- Light/system theme behavior
-- Brand name/logo/favicon
-- Sidebar logo
-- Per-module sidebar icons
-- Font family and base font size
+### App URLs and Runtime Flags
 
-## Common Commands
+- `BACKEND_API_URL`
+- `USE_INTERNAL_API`
+- `FRONTEND_BASE_URLS`
+- `FRONTEND_BASE_URL`
+- `CLIENT_EXECUTION_SECRET_KEY`
+  - Used as one-time activation key per client (consumed after first valid use).
+
+### HTTPS / Cookies
+
+- `SESSION_COOKIE_SECURE`
+- `CSRF_COOKIE_SECURE`
+- `SECURE_SSL_REDIRECT`
+
+### Demo Mode
+
+- Set `DEMO_MODE=True` to disable create/update/delete operations in both UI and API.
+- Users can still click actions and navigate, but writes are blocked with a demo message.
+
+## Database Notes
+
+Current `hrm_project/settings.py` uses PostgreSQL configuration directly.
+
+- The SQLite fallback block exists but is currently commented out.
+- If you want SQLite locally, either:
+1. uncomment and use the `DJANGO_DB_ENGINE` switch logic in `settings.py`, or
+2. manually change `DATABASES` to `django.db.backends.sqlite3`.
+
+## Running the Application
+
+The project is in unified mode:
+
+- UI routes are served by `core.urls`
+- API routes are served under `/api/` from DRF router and custom endpoints
+
+Key UI routes:
+
+- `/login/`
+- `/`
+- `/employees/`
+- `/leaves/`
+- `/documents/`
+- `/settings/`
+
+## API Overview
+
+Auth:
+
+- `POST /api/token/`
+- `POST /api/token/refresh/`
+
+Main resources:
+
+- `/api/accounts/`
+- `/api/account-groups/`
+- `/api/clients/`
+- `/api/client-roles/`
+- `/api/employees/`
+- `/api/custom-fields/`
+- `/api/custom-field-values/`
+- `/api/dynamic-models/`
+- `/api/dynamic-fields/`
+- `/api/dynamic-records/`
+- `/api/leaves/`
+- `/api/leave-types/`
+- `/api/holidays/`
+- `/api/shifts/`
+- `/api/bank-accounts/`
+- `/api/payroll-policy/`
+- `/api/employee-compensation/`
+- `/api/company-policies/`
+- `/api/documents/`
+- `/api/document-upload-requests/`
+- `/api/activity-logs/`
+
+Custom endpoints:
+
+- `GET /api/leave-balance/`
+- `GET /api/payroll-report/`
+- `POST /api/attendance/auto-clockout/run/`
+- `POST /api/document-upload/<uuid:token>/`
+
+## Common Management Commands
+
+Run these from `C:\hrm_project\hrm_project`:
 
 ```powershell
-# create migrations
 python manage.py makemigrations
-
-# apply migrations
 python manage.py migrate
-
-# create admin user
 python manage.py createsuperuser
-
-# collect static (production)
 python manage.py collectstatic --noinput
+python manage.py check
 ```
+
+## Deployment Notes
+
+For live server tracking and provider-specific details (AWS/Hostinger/etc.), use:
+
+- `LIVE_SERVERS.md`
+
+Production baseline:
+
+- `DJANGO_DEBUG=False`
+- restricted `DJANGO_ALLOWED_HOSTS`
+- correct `DJANGO_CSRF_TRUSTED_ORIGINS` with HTTPS domains
+- secure cookie flags enabled
+- static collection completed
 
 ## Troubleshooting
 
-### ModuleNotFoundError: django_filters
-
-Install dependencies in active venv:
+Missing package errors:
 
 ```powershell
 pip install -r requirements.txt
 ```
 
-### Database connection issue
+Database connection issues:
 
-- Verify PostgreSQL is running on configured host/port.
-- Check `.env` values for `DJANGO_PG_*`.
+- Verify PostgreSQL is running and reachable.
+- Recheck `DJANGO_PG_*` values.
 
-### Static/media not loading
+Static/media not loading:
 
-- In dev, keep `DEBUG=True`.
-- Ensure `static/` and `media/` paths are valid in settings.
+- Confirm `DJANGO_STATIC_ROOT` and `DJANGO_MEDIA_ROOT`.
+- Run `collectstatic` for production.
 
-### Email not sending
+Email not sending:
 
-- Verify SMTP credentials.
-- For Gmail, use app password and allow SMTP access.
+- Verify SMTP credentials and host/port/TLS.
+- Use app password where required (for Gmail SMTP).
 
-## Notes
+## Related Docs
 
-- Current settings file is configured for PostgreSQL by default.
-- If you want SQLite locally, update `DATABASES` in `hrm_project/settings.py` accordingly.
+- `PROJECT_DETAILS.md` - functional and architecture notes
+- `ONE_PROJECT_RUN.md` - unified run mode note
+- `LIVE_SERVERS.md` - multi-provider live server documentation
+- `PYTHONANYWHERE_DEPLOY.md` - legacy/optional provider-specific deployment reference
+- `CLIENT_ZIP_DELIVERY_GUIDE.md` - customer handover guide for ZIP-based delivery + activation key
+- `HRM_USER_MANUAL.html` - ready-to-share user manual web page (WorkDo-style layout)
