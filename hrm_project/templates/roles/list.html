@@ -1,0 +1,288 @@
+{% extends "base.html" %}
+
+{% block title %}Role Management - HRM System{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <span class="current">Role Management</span>
+</div>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Role Management</h1>
+        <p class="page-subtitle">Create client roles and map them to Employee/HR/Manager base roles.</p>
+    </div>
+</div>
+
+{% if errors %}
+<ul class="error-list">
+    {% for err in errors %}<li>{{ err }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<div class="card" style="margin-bottom:20px;">
+    <h3 class="section-title">Create Role</h3>
+    <form method="post">
+        {{ csrf_input }}
+        <input type="hidden" name="action" value="create">
+        <div class="form-row">
+            <div class="form-group">
+                <label>Role Name</label>
+                <input type="text" name="name" placeholder="e.g. Senior HR" required>
+            </div>
+        </div>
+        <p style="margin:4px 0 12px;color:var(--text-muted);">
+            Base role is auto-detected from role name (contains "HR" or "Manager"; otherwise Employee).
+        </p>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Create Role</button>
+        </div>
+        {% if permission_options %}
+        <div class="permission-sections-grid" style="margin-top:14px;">
+            {% for section in permission_options %}
+            <div class="permission-section-card">
+                <button type="button" class="permission-section-title role-section-toggle" data-role-section-scope="create" style="background:none;border:none;padding:0;text-align:left;cursor:pointer;width:100%;">
+                    {{ section.title }}
+                </button>
+                <div class="permission-list role-section-body">
+                    {% for perm in section.permissions %}
+                    <label class="permission-list-item">
+                        <input type="checkbox" name="module_permissions" value="{{ perm.key }}">
+                        <span>{{ perm.label }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        <div class="form-section" style="margin-top:14px;">
+            <button type="button" class="section-title role-addon-toggle" data-role-addon-scope="create" style="background:none;border:none;padding:0;text-align:left;cursor:pointer;">
+                Add-On Access
+            </button>
+            <div class="addon-grid role-addon-body">
+                {% for key, label in addon_options %}
+                <label class="addon-item">
+                    <input type="checkbox" name="enabled_addons" value="{{ key }}">
+                    <span>{{ label }}</span>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+        {% if client_info %}
+        <p style="margin-top:10px;color:var(--text-muted);">
+            Role Limit: {{ client_info.role_limit or 0 }} (0 means unlimited)
+        </p>
+        {% endif %}
+    </form>
+</div>
+
+{% if roles %}
+<div class="card permission-editor-card">
+    <div class="permission-panel-head">
+        <h3 class="section-title">Existing Roles</h3>
+        <p class="permission-panel-subtitle">Click a role to open details. Fields are locked until you click Edit.</p>
+    </div>
+    <div class="permission-group-tabs" id="roleTabs">
+        {% for role in roles %}
+        <button type="button" class="permission-group-tab-btn" data-role-target="{{ role.id }}">
+            {{ role.name }}
+        </button>
+        {% endfor %}
+    </div>
+    <div class="permission-group-panels">
+        {% for role in roles %}
+        <form method="post" class="permission-card permission-group-panel role-panel is-readonly" data-role-panel="{{ role.id }}">
+            {{ csrf_input }}
+            <input type="hidden" name="action" value="update">
+            <input type="hidden" name="role_id" value="{{ role.id }}">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Role Name</label>
+                    <input class="role-edit-field" type="text" name="name" value="{{ role.name }}" required>
+                </div>
+            </div>
+            <p style="margin:4px 0 12px;color:var(--text-muted);">
+                Detected base role: {{ role.base_role|upper }}
+            </p>
+            {% if permission_options %}
+            <div class="permission-sections-grid" style="margin-top:14px;">
+                {% for section in permission_options %}
+                <div class="permission-section-card">
+                    <button type="button" class="permission-section-title role-section-toggle" data-role-section-scope="role-{{ role.id }}" style="background:none;border:none;padding:0;text-align:left;cursor:pointer;width:100%;">
+                        {{ section.title }}
+                    </button>
+                    <div class="permission-list role-section-body">
+                        {% for perm in section.permissions %}
+                        <label class="permission-list-item">
+                            <input class="role-edit-field" type="checkbox" name="module_permissions" value="{{ perm.key }}" {% if perm.key in (role.module_permissions or []) %}checked{% endif %}>
+                            <span>{{ perm.label }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            <div class="form-section" style="margin-top:14px;">
+                <button type="button" class="section-title role-addon-toggle" data-role-addon-scope="role-{{ role.id }}" style="background:none;border:none;padding:0;text-align:left;cursor:pointer;">
+                    Add-On Access
+                </button>
+                <div class="addon-grid role-addon-body">
+                    {% for key, label in addon_options %}
+                    <label class="addon-item">
+                        <input class="role-edit-field" type="checkbox" name="enabled_addons" value="{{ key }}" {% if key in (role.enabled_addons or []) %}checked{% endif %}>
+                        <span>{{ label }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="permission-list-item">
+                    <input class="role-edit-field" type="checkbox" name="is_active" value="true" {% if role.is_active %}checked{% endif %}>
+                    <span>Active</span>
+                </label>
+            </div>
+            <div class="form-actions permission-group-actions">
+                <button type="button" class="btn btn-secondary role-edit-btn">Edit</button>
+                <button type="submit" class="btn btn-primary role-save-btn is-hidden">Save</button>
+                <button type="button" class="btn btn-secondary role-close-btn">Close</button>
+                <button type="submit" class="btn btn-danger" formaction="{{ url('role_delete', args=[role.id]) }}" onclick="return confirm('Delete this role?')">Delete</button>
+            </div>
+        </form>
+        {% endfor %}
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <div class="empty-state">
+        <p>No roles created yet.</p>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var tabWrap = document.getElementById('roleTabs');
+    var tabButtons = tabWrap ? Array.prototype.slice.call(tabWrap.querySelectorAll('.permission-group-tab-btn')) : [];
+    var panels = Array.prototype.slice.call(document.querySelectorAll('.role-panel'));
+
+    function setEditMode(panel, isEditing) {
+        var editFields = Array.prototype.slice.call(panel.querySelectorAll('.role-edit-field'));
+        var editBtn = panel.querySelector('.role-edit-btn');
+        var saveBtn = panel.querySelector('.role-save-btn');
+
+        editFields.forEach(function (field) { field.disabled = !isEditing; });
+        panel.classList.toggle('is-readonly', !isEditing);
+        if (editBtn) { editBtn.classList.toggle('is-hidden', isEditing); }
+        if (saveBtn) { saveBtn.classList.toggle('is-hidden', !isEditing); }
+    }
+
+    function setActiveRole(roleId) {
+        tabButtons.forEach(function (btn) {
+            btn.classList.toggle('active', btn.getAttribute('data-role-target') === roleId);
+        });
+        panels.forEach(function (panel) {
+            var isActive = panel.getAttribute('data-role-panel') === roleId;
+            panel.classList.toggle('active', isActive);
+            if (isActive) {
+                setEditMode(panel, false);
+            }
+        });
+    }
+
+    function closeAllRoles() {
+        tabButtons.forEach(function (btn) { btn.classList.remove('active'); });
+        panels.forEach(function (panel) {
+            panel.classList.remove('active');
+            panel.reset();
+            setEditMode(panel, false);
+        });
+    }
+
+    tabButtons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var targetId = btn.getAttribute('data-role-target');
+            if (btn.classList.contains('active')) {
+                closeAllRoles();
+                return;
+            }
+            setActiveRole(targetId);
+        });
+    });
+
+    Array.prototype.slice.call(document.querySelectorAll('.role-edit-btn')).forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var panel = btn.closest('.role-panel');
+            if (!panel) return;
+            setEditMode(panel, true);
+        });
+    });
+
+    Array.prototype.slice.call(document.querySelectorAll('.role-close-btn')).forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var panel = btn.closest('.role-panel');
+            if (panel) {
+                panel.reset();
+                setEditMode(panel, false);
+            }
+            closeAllRoles();
+        });
+    });
+
+    panels.forEach(function (panel) {
+        setEditMode(panel, false);
+    });
+
+    // Permission section accordion (open only clicked section per scope).
+    function closeSectionsInScope(scope) {
+        var scoped = Array.prototype.slice.call(document.querySelectorAll('.role-section-toggle[data-role-section-scope="' + scope + '"]'));
+        scoped.forEach(function (btn) {
+            btn.classList.remove('active');
+            var body = btn.closest('.permission-section-card').querySelector('.role-section-body');
+            if (body) { body.style.display = 'none'; }
+        });
+    }
+
+    Array.prototype.slice.call(document.querySelectorAll('.role-section-toggle')).forEach(function (btn) {
+        var scope = btn.getAttribute('data-role-section-scope');
+        var body = btn.closest('.permission-section-card').querySelector('.role-section-body');
+        if (body) { body.style.display = 'none'; }
+        btn.addEventListener('click', function () {
+            var isOpen = btn.classList.contains('active');
+            closeSectionsInScope(scope);
+            if (!isOpen) {
+                btn.classList.add('active');
+                if (body) { body.style.display = 'block'; }
+            }
+        });
+    });
+
+    // Add-on accordion (open only by click)
+    function closeAddonsInScope(scope) {
+        var scoped = Array.prototype.slice.call(document.querySelectorAll('.role-addon-toggle[data-role-addon-scope="' + scope + '"]'));
+        scoped.forEach(function (btn) {
+            btn.classList.remove('active');
+            var body = btn.closest('.form-section').querySelector('.role-addon-body');
+            if (body) { body.style.display = 'none'; }
+        });
+    }
+
+    Array.prototype.slice.call(document.querySelectorAll('.role-addon-toggle')).forEach(function (btn) {
+        var scope = btn.getAttribute('data-role-addon-scope');
+        var body = btn.closest('.form-section').querySelector('.role-addon-body');
+        if (body) { body.style.display = 'none'; }
+        btn.addEventListener('click', function () {
+            var isOpen = btn.classList.contains('active');
+            closeAddonsInScope(scope);
+            if (!isOpen) {
+                btn.classList.add('active');
+                if (body) { body.style.display = 'grid'; }
+            }
+        });
+    });
+});
+</script>
+{% endblock %}

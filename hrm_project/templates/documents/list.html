@@ -1,0 +1,932 @@
+{% extends "base.html" %}
+
+{% block title %}Documents - HRM System{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <span class="current">Documents</span>
+</div>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Manage Documents</h1>
+        <p class="page-subtitle">Upload internal documents and create public upload links for external users.</p>
+    </div>
+</div>
+
+{% if errors %}
+<ul class="error-list">
+    {% for err in errors %}<li>{{ err }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<div class="card" style="margin-bottom:20px;">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button type="button" class="btn btn-secondary doc-section-btn" data-target="section-create">Create Document</button>
+        <button type="button" class="btn btn-secondary doc-section-btn" data-target="section-offer">Offer Letter Builder</button>
+        <button type="button" class="btn btn-secondary doc-section-btn" data-target="section-public">Public Upload Links</button>
+        <button type="button" class="btn btn-secondary doc-section-btn" data-target="section-list">Documents List</button>
+    </div>
+</div>
+
+<div id="documents-search-card" class="card" style="margin-bottom:20px;">
+    <form method="get" class="form-row">
+        <div class="form-group">
+            <label>Search</label>
+            <input type="text" name="q" value="{{ search_q or '' }}" placeholder="Search documents...">
+        </div>
+        <div class="form-group">
+            <label>Category</label>
+            <input type="text" name="category" value="{{ category_q or '' }}" placeholder="e.g. Legal, HR, Contract">
+        </div>
+        <div class="form-group">
+            <label>Status</label>
+            <select name="status">
+                <option value="">All</option>
+                <option value="pending" {% if selected_status == 'pending' %}selected{% endif %}>Pending</option>
+                <option value="approved" {% if selected_status == 'approved' %}selected{% endif %}>Approved</option>
+                <option value="rejected" {% if selected_status == 'rejected' %}selected{% endif %}>Rejected</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Uploaded By</label>
+            <select name="uploader">
+                <option value="">All Users</option>
+                {% for uploader in uploader_options %}
+                <option value="{{ uploader }}" {% if selected_uploader == uploader %}selected{% endif %}>{{ uploader }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-actions" style="margin-top:28px;">
+            <button type="submit" class="btn btn-secondary">Search</button>
+            <a href="{{ url('document_list') }}" class="btn btn-secondary">Reset</a>
+        </div>
+    </form>
+</div>
+
+<div id="section-create" class="doc-section">
+{% if role in ['superadmin', 'admin'] or 'documents.create' in module_permissions %}
+<div class="form-card" style="max-width:1100px;margin-bottom:20px;">
+    <h3 class="section-title">Create Document</h3>
+    <form method="post" enctype="multipart/form-data">
+        {{ csrf_input }}
+        <input type="hidden" name="action" value="save_document">
+        <input type="hidden" name="edit_id" value="">
+        <input type="hidden" name="existing_file_url" value="">
+
+        <div class="form-row">
+            <div class="form-group">
+                <label>Title *</label>
+                <input type="text" id="docCreateTitle" name="title" value="" placeholder="Document title" required>
+            </div>
+            <div class="form-group">
+                <label>Category</label>
+                <input type="text" id="docCreateCategory" name="category" value="" placeholder="Document category">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Effective Date</label>
+                <input type="date" name="effective_date" value="">
+            </div>
+            <div class="form-group">
+                <label>Status</label>
+                <select name="status">
+                    <option value="pending" selected>Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="rejected">Rejected</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Notes</label>
+            <textarea id="docCreateNotes" name="notes" rows="3" placeholder="Optional notes"></textarea>
+        </div>
+        <div class="form-group">
+            <label>Document File</label>
+            <input type="file" name="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,image/*">
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Create Document</button>
+        </div>
+    </form>
+</div>
+{% endif %}
+    </div>
+
+<div id="section-offer" class="doc-section">
+{% if role in ['superadmin', 'admin'] or 'documents.create' in module_permissions %}
+<div class="form-card" style="max-width:1100px;margin-bottom:20px;">
+    <h3 class="section-title">Offer Letter Salary Breakup Builder</h3>
+    <p class="section-subtitle">Set annual income, state, and percentage components. Amounts are auto calculated and can be copied into document notes.</p>
+
+    <div class="form-row">
+        <div class="form-group">
+            <label>State *</label>
+            <select id="offerState">
+                <option value="gujarat" selected>Gujarat</option>
+                <option value="maharashtra">Maharashtra</option>
+                <option value="rajasthan">Rajasthan</option>
+                <option value="madhya_pradesh">Madhya Pradesh</option>
+                <option value="other">Other</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Annual Income (CTC) *</label>
+            <input type="number" id="offerAnnualIncome" min="0" step="1" placeholder="e.g. 1200000">
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label>Allowance Components (%)</label>
+        <div id="offerComponentsWrap" style="border:1px solid var(--border);border-radius:10px;padding:10px;background:rgba(255,255,255,0.01);display:grid;gap:8px;"></div>
+        <div style="display:flex;gap:8px;margin-top:10px;">
+            <button type="button" id="offerAddComponentBtn" class="btn btn-secondary btn-sm">+ Add Component</button>
+            <span id="offerPctSummary" style="color:var(--text-muted);font-size:13px;align-self:center;"></span>
+        </div>
+    </div>
+
+    <div class="table-wrapper" style="margin-top:14px;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Component</th>
+                    <th>Percentage</th>
+                    <th>Annual Amount</th>
+                    <th>Monthly Amount</th>
+                </tr>
+            </thead>
+            <tbody id="offerBreakupBody">
+                <tr><td colspan="4" style="color:var(--text-muted);">Enter annual income and percentages to preview breakup.</td></tr>
+            </tbody>
+            <tfoot>
+                <tr>
+                    <th>Total</th>
+                    <th id="offerTotalPct">0%</th>
+                    <th id="offerTotalAnnual">0.00</th>
+                    <th id="offerTotalMonthly">0.00</th>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+
+    <div class="form-actions">
+        <button type="button" id="offerUseInCreateBtn" class="btn btn-primary">Use In Create Document</button>
+    </div>
+
+    <form method="post" id="offerSendForm" style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px;">
+        {{ csrf_input }}
+        <input type="hidden" name="action" value="send_offer_letter_pdf">
+        <input type="hidden" name="offer_state" id="offerStateHidden">
+        <input type="hidden" name="offer_annual_income" id="offerAnnualIncomeHidden">
+        <input type="hidden" name="offer_components_json" id="offerComponentsJsonHidden">
+        <div class="form-row">
+            <div class="form-group">
+                <label>Candidate Name *</label>
+                <input type="text" name="offer_candidate_name" id="offerCandidateName" placeholder="e.g. Rahul Patel" required>
+            </div>
+            <div class="form-group">
+                <label>Recipient Email *</label>
+                <input type="email" name="offer_recipient_email" id="offerRecipientEmail" placeholder="employee@example.com" required>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Designation</label>
+                <input type="text" name="offer_designation" placeholder="e.g. Senior Python Engineer">
+            </div>
+            <div class="form-group">
+                <label>Joining Date</label>
+                <input type="text" name="offer_joining_date" placeholder="e.g. 13th March 2024">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Work Location</label>
+                <input type="text" name="offer_work_location" placeholder="e.g. Ahmedabad / Work From Home">
+            </div>
+            <div class="form-group">
+                <label>Reporting Manager</label>
+                <input type="text" name="offer_reporting_manager" placeholder="e.g. Gaurav Kumar">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Probation Period</label>
+                <input type="text" name="offer_probation_period" placeholder="e.g. 100 Days">
+            </div>
+            <div class="form-group">
+                <label>Signatory Name</label>
+                <input type="text" name="offer_signatory_name" placeholder="e.g. Kumar Gaurav">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Signatory Designation</label>
+                <input type="text" name="offer_signatory_designation" placeholder="e.g. Director">
+            </div>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Generate PDF & Send Email</button>
+        </div>
+    </form>
+</div>
+{% endif %}
+</div>
+
+<div id="section-public" class="doc-section">
+<div class="card" style="margin-bottom:20px;">
+    <h3 class="section-title">Public Upload Links</h3>
+    <p class="section-subtitle">Create a link and send it via email/chat. User can upload one or more documents without login in a single submit.</p>
+
+    {% if role in ['superadmin', 'admin'] or 'documents.create' in module_permissions %}
+    <form method="post" class="form-row" style="margin-bottom:14px;">
+        {{ csrf_input }}
+        <input type="hidden" name="action" value="create_link">
+        <div class="form-group">
+            <label>Title *</label>
+            <input type="text" name="request_title" placeholder="Requested document title" required>
+        </div>
+        <div class="form-group">
+            <label>Category</label>
+            <input type="text" name="request_category" placeholder="Category">
+        </div>
+        <div class="form-group" style="grid-column:1 / -1;">
+            <label>Requested Document Types</label>
+            <div id="docTypeBuilder" style="border:1px solid var(--border);border-radius:10px;padding:10px;background:rgba(255,255,255,0.01);">
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                    <input type="text" id="docTypeInput" placeholder="Type document name and click Add (e.g. Aadhaar Card)" style="flex:1;min-width:240px;">
+                    <button type="button" id="docTypeAddBtn" class="btn btn-secondary">Add</button>
+                </div>
+                <div id="docTypeChips" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;"></div>
+                <div style="color:var(--text-muted);font-size:.9rem;margin-top:8px;">Only added types will appear in email and upload dropdown.</div>
+            </div>
+        </div>
+        <div class="form-group" style="grid-column:1 / -1;">
+            <label>Recipient Emails</label>
+            <div id="recipientDropdown" style="position:relative;">
+                <button
+                    type="button"
+                    id="recipientToggle"
+                    class="btn btn-secondary"
+                    style="width:100%;text-align:left;justify-content:space-between;display:flex;align-items:center;gap:10px;min-height:44px;"
+                >
+                    <span id="recipientToggleText">Click to select recipient emails</span>
+                    <span aria-hidden="true">v</span>
+                </button>
+                <div
+                    id="recipientPanel"
+                    style="display:none;position:absolute;left:0;right:0;top:calc(100% + 8px);z-index:30;border:1px solid var(--border);border-radius:10px;background:#121527;padding:10px;box-shadow:0 10px 28px rgba(0,0,0,0.45);"
+                >
+                    <input
+                        type="text"
+                        id="recipientSearch"
+                        placeholder="Search by name or email"
+                        style="margin-bottom:8px;"
+                    >
+                    <div style="max-height:220px;overflow:auto;display:grid;gap:6px;" id="recipientOptions">
+                        {% for opt in employee_email_options %}
+                        <label class="recipient-option" data-search="{{ ((opt.email or '') ~ ' ' ~ (opt.name or ''))|lower }}" style="display:flex;align-items:flex-start;gap:8px;padding:8px;border-radius:8px;border:1px solid var(--border);background:rgba(255,255,255,0.01);">
+                            <input type="checkbox" name="request_emails" value="{{ opt.email }}" class="recipient-checkbox" style="width:auto;height:auto;min-width:16px;min-height:16px;padding:0;margin-top:2px;border:0;background:transparent;box-shadow:none;flex:0 0 auto;">
+                            <span>{{ opt.email }}{% if opt.name %} - {{ opt.name }}{% endif %}</span>
+                        </label>
+                        {% endfor %}
+                        {% if not employee_email_options %}
+                        <div style="color:var(--text-muted);">No employee emails found.</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="form-group" style="grid-column:1 / -1;">
+            <label>Extra Emails (Optional)</label>
+            <input type="text" name="request_email" placeholder="Add more emails separated by comma">
+        </div>
+        <div class="form-group">
+            <label>Expires In (Days)</label>
+            <input type="number" name="expires_in_days" min="1" max="365" placeholder="e.g. 7">
+        </div>
+        <div class="form-group" style="grid-column:1 / -1;">
+            <label>Notes</label>
+            <textarea name="request_notes" rows="2" placeholder="Instructions for uploader"></textarea>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Create Upload Link</button>
+        </div>
+    </form>
+    {% endif %}
+
+    {% if requests_list %}
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Email</th>
+                    <th>Requested Docs</th>
+                    <th>Expires</th>
+                    <th>Status</th>
+                    <th>Link</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in requests_list %}
+                <tr>
+                    <td>{{ r.title }}</td>
+                    <td>{{ r.request_email or '-' }}</td>
+                    <td>{{ (r.requested_doc_types or [])|join(', ') if r.requested_doc_types else '-' }}</td>
+                    <td>{{ r.expires_at or '-' }}</td>
+                    <td>{{ 'Active' if r.is_active else 'Used/Closed' }}</td>
+                    <td>
+                        {% if r.upload_url %}
+                        <a href="{{ r.upload_url }}" target="_blank" rel="noopener">{{ r.upload_url }}</a>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if role in ['superadmin', 'admin'] or 'documents.delete' in module_permissions %}
+                        <form method="post" action="{{ url('document_request_delete', args=[r.id]) }}" style="display:inline;">
+                            {{ csrf_input }}
+                            <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this upload link?')">Delete</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state"><p>No upload links created yet.</p></div>
+    {% endif %}
+</div>
+</div>
+
+<div id="section-list" class="doc-section">
+{% if documents %}
+<div class="table-wrapper">
+    <table>
+        <thead>
+            <tr>
+                <th>Title</th>
+                <th>Category</th>
+                <th>Effective Date</th>
+                <th>Uploaded By</th>
+                <th>Status</th>
+                <th>File</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for d in documents %}
+            <tr>
+                <td>{{ d.title }}</td>
+                <td>{{ d.category or '-' }}</td>
+                <td>{{ d.effective_date or '-' }}</td>
+                <td>
+                    {% set uploader_name = d.uploaded_by_username or d.uploader_name or '' %}
+                    {% if uploader_name %}
+                    <button
+                        type="button"
+                        class="uploader-filter-btn"
+                        data-uploader="{{ uploader_name|e }}"
+                        style="background:none;border:none;padding:0;color:var(--text);text-decoration:underline;cursor:pointer;"
+                        title="Show only {{ uploader_name }} documents"
+                    >{{ uploader_name }}</button>
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+                <td>
+                    {% if d.status == 'approved' %}
+                    <span class="badge badge-text">Approved</span>
+                    {% elif d.status == 'rejected' %}
+                    <span class="badge" style="background:rgba(248,113,113,0.16);color:var(--error);">Rejected</span>
+                    {% else %}
+                    <span class="badge badge-number">Pending</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if d.open_url or d.file_url %}
+                    <a href="{{ d.open_url or d.file_url }}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:rgba(255,255,255,0.03);">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M1.5 12s3.8-6.5 10.5-6.5S22.5 12 22.5 12s-3.8 6.5-10.5 6.5S1.5 12 1.5 12Z" stroke="currentColor" stroke-width="1.8"/>
+                            <circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.8"/>
+                        </svg>
+                        <span>Open</span>
+                    </a>
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+                <td>
+                    {% if role in ['superadmin', 'admin'] or 'documents.edit' in module_permissions %}
+                    <button
+                        type="button"
+                        class="btn btn-secondary btn-sm doc-edit-btn"
+                        data-id="{{ d.id }}"
+                        data-title="{{ d.title|e }}"
+                        data-category="{{ d.category|e }}"
+                        data-effective-date="{{ d.effective_date|e }}"
+                        data-status="{{ d.status|e }}"
+                        data-notes="{{ d.notes|e }}"
+                        data-file-url="{{ d.file_url|e }}"
+                        data-open-url="{{ (d.open_url or d.file_url)|e }}"
+                    >Edit</button>
+                    {% endif %}
+                    {% if role in ['superadmin', 'admin'] or 'documents.delete' in module_permissions %}
+                    <form method="post" action="{{ url('document_delete', args=[d.id]) }}" style="display:inline;">
+                        {{ csrf_input }}
+                        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this document?')">Delete</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card"><div class="empty-state"><p>No documents found.</p></div></div>
+{% endif %}
+</div>
+
+{% if role in ['superadmin', 'admin'] or 'documents.edit' in module_permissions %}
+<div id="docEditModal" style="display:none;position:fixed;inset:0;background:rgba(3,6,16,0.82);backdrop-filter:blur(2px);z-index:3000;padding:24px;overflow:auto;">
+    <div class="form-card" style="max-width:850px;margin:30px auto;background:#0f1326;border:1px solid var(--border);box-shadow:0 20px 55px rgba(0,0,0,0.55);position:relative;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+            <h3 class="section-title" style="margin:0;">Edit Document</h3>
+            <button type="button" id="docEditModalClose" class="btn btn-secondary btn-sm">Close</button>
+        </div>
+        <form method="post" enctype="multipart/form-data" style="margin-top:12px;">
+            {{ csrf_input }}
+            <input type="hidden" name="action" value="save_document">
+            <input type="hidden" name="edit_id" id="editDocId">
+            <input type="hidden" name="existing_file_url" id="editExistingFileUrl">
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Title *</label>
+                    <input type="text" name="title" id="editTitle" placeholder="Document title" required>
+                </div>
+                <div class="form-group">
+                    <label>Category</label>
+                    <input type="text" name="category" id="editCategory" placeholder="Document category">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Effective Date</label>
+                    <input type="date" name="effective_date" id="editEffectiveDate">
+                </div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select name="status" id="editStatus">
+                        <option value="pending">Pending</option>
+                        <option value="approved">Approved</option>
+                        <option value="rejected">Rejected</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Notes</label>
+                <textarea name="notes" rows="3" id="editNotes" placeholder="Optional notes"></textarea>
+            </div>
+            <div class="form-group">
+                <label>Replace Document File</label>
+                <input type="file" name="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,image/*">
+                <p style="margin-top:8px;"><a href="#" id="editCurrentFileLink" target="_blank" rel="noopener">Open current file</a></p>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<script>
+(function () {
+    const root = document.getElementById('recipientDropdown');
+    if (!root) return;
+
+    const toggle = document.getElementById('recipientToggle');
+    const toggleText = document.getElementById('recipientToggleText');
+    const panel = document.getElementById('recipientPanel');
+    const search = document.getElementById('recipientSearch');
+    const options = Array.from(root.querySelectorAll('.recipient-option'));
+    const checkboxes = Array.from(root.querySelectorAll('.recipient-checkbox'));
+
+    function refreshToggleText() {
+        const selected = checkboxes.filter(cb => cb.checked).map(cb => cb.value);
+        if (!selected.length) {
+            toggleText.textContent = 'Click to select recipient emails';
+            return;
+        }
+        if (selected.length <= 2) {
+            toggleText.textContent = selected.join(', ');
+            return;
+        }
+        toggleText.textContent = selected.slice(0, 2).join(', ') + ' +' + (selected.length - 2) + ' more';
+    }
+
+    function filterOptions() {
+        const q = (search.value || '').trim().toLowerCase();
+        options.forEach(opt => {
+            const hay = String(opt.getAttribute('data-search') || '');
+            opt.style.display = (!q || hay.indexOf(q) !== -1) ? 'flex' : 'none';
+        });
+    }
+
+    toggle.addEventListener('click', function () {
+        const isOpen = panel.style.display === 'block';
+        panel.style.display = isOpen ? 'none' : 'block';
+        if (!isOpen) search.focus();
+    });
+
+    document.addEventListener('click', function (event) {
+        if (!root.contains(event.target)) {
+            panel.style.display = 'none';
+        }
+    });
+
+    search.addEventListener('input', filterOptions);
+    checkboxes.forEach(cb => cb.addEventListener('change', refreshToggleText));
+    refreshToggleText();
+})();
+
+(function () {
+    const root = document.getElementById('docTypeBuilder');
+    if (!root) return;
+
+    const input = document.getElementById('docTypeInput');
+    const addBtn = document.getElementById('docTypeAddBtn');
+    const chips = document.getElementById('docTypeChips');
+    const form = root.closest('form');
+    if (!input || !addBtn || !chips || !form) return;
+
+    function currentValues() {
+        return Array.from(chips.querySelectorAll('[data-doc-type]')).map(function (el) {
+            return String(el.getAttribute('data-doc-type') || '').trim().toLowerCase();
+        });
+    }
+
+    function createHidden(value) {
+        const hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.name = 'request_doc_types';
+        hidden.value = value;
+        return hidden;
+    }
+
+    function addType(rawValue) {
+        const value = String(rawValue || '').trim();
+        if (!value) return;
+        if (currentValues().indexOf(value.toLowerCase()) !== -1) {
+            input.value = '';
+            return;
+        }
+
+        const chip = document.createElement('span');
+        chip.setAttribute('data-doc-type', value);
+        chip.style.display = 'inline-flex';
+        chip.style.alignItems = 'center';
+        chip.style.gap = '6px';
+        chip.style.padding = '6px 10px';
+        chip.style.border = '1px solid var(--border)';
+        chip.style.borderRadius = '999px';
+        chip.style.background = 'rgba(255,255,255,0.04)';
+        chip.textContent = value;
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.textContent = 'x';
+        removeBtn.className = 'btn btn-secondary btn-sm';
+        removeBtn.style.padding = '2px 8px';
+        removeBtn.addEventListener('click', function () {
+            chip.remove();
+        });
+
+        const hidden = createHidden(value);
+        chip.appendChild(removeBtn);
+        chip.appendChild(hidden);
+        chips.appendChild(chip);
+        input.value = '';
+    }
+
+    addBtn.addEventListener('click', function () {
+        addType(input.value);
+    });
+
+    input.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            addType(input.value);
+        }
+    });
+})();
+
+(function () {
+    const sectionButtons = Array.from(document.querySelectorAll('.doc-section-btn'));
+    const searchCard = document.getElementById('documents-search-card');
+    const sections = {
+        'section-create': document.getElementById('section-create'),
+        'section-offer': document.getElementById('section-offer'),
+        'section-public': document.getElementById('section-public'),
+        'section-list': document.getElementById('section-list'),
+    };
+    if (!sectionButtons.length) return;
+
+    function showSection(targetId) {
+        Object.keys(sections).forEach(function (key) {
+            if (!sections[key]) return;
+            sections[key].style.display = key === targetId ? 'block' : 'none';
+        });
+        sectionButtons.forEach(function (btn) {
+            const active = btn.getAttribute('data-target') === targetId;
+            btn.classList.toggle('btn-primary', active);
+            btn.classList.toggle('btn-secondary', !active);
+        });
+        if (searchCard) {
+            searchCard.style.display = targetId === 'section-list' ? 'block' : 'none';
+        }
+    }
+    window.showDocumentSection = showSection;
+
+    const hasEditButtons = document.querySelector('.doc-edit-btn');
+    showSection(hasEditButtons ? 'section-list' : 'section-public');
+
+    sectionButtons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            showSection(btn.getAttribute('data-target'));
+        });
+    });
+})();
+
+(function () {
+    const stateEl = document.getElementById('offerState');
+    const annualEl = document.getElementById('offerAnnualIncome');
+    const componentsWrap = document.getElementById('offerComponentsWrap');
+    const addBtn = document.getElementById('offerAddComponentBtn');
+    const summaryEl = document.getElementById('offerPctSummary');
+    const tbody = document.getElementById('offerBreakupBody');
+    const totalPctEl = document.getElementById('offerTotalPct');
+    const totalAnnualEl = document.getElementById('offerTotalAnnual');
+    const totalMonthlyEl = document.getElementById('offerTotalMonthly');
+    const useBtn = document.getElementById('offerUseInCreateBtn');
+    const sendForm = document.getElementById('offerSendForm');
+    const stateHidden = document.getElementById('offerStateHidden');
+    const annualHidden = document.getElementById('offerAnnualIncomeHidden');
+    const componentsHidden = document.getElementById('offerComponentsJsonHidden');
+    if (!stateEl || !annualEl || !componentsWrap || !addBtn || !summaryEl || !tbody || !totalPctEl || !totalAnnualEl || !totalMonthlyEl || !useBtn) return;
+
+    const defaultsByState = {
+        gujarat: [
+            { name: 'Basic', pct: 40 },
+            { name: 'HRA', pct: 20 },
+            { name: 'Conveyance', pct: 10 },
+            { name: 'Medical', pct: 10 },
+            { name: 'Special Allowance', pct: 20 }
+        ],
+        maharashtra: [
+            { name: 'Basic', pct: 40 },
+            { name: 'HRA', pct: 20 },
+            { name: 'Special Allowance', pct: 30 },
+            { name: 'Other Allowance', pct: 10 }
+        ],
+        rajasthan: [
+            { name: 'Basic', pct: 40 },
+            { name: 'HRA', pct: 20 },
+            { name: 'Special Allowance', pct: 40 }
+        ],
+        madhya_pradesh: [
+            { name: 'Basic', pct: 40 },
+            { name: 'HRA', pct: 20 },
+            { name: 'Special Allowance', pct: 40 }
+        ],
+        other: [
+            { name: 'Basic', pct: 40 },
+            { name: 'HRA', pct: 20 },
+            { name: 'Special Allowance', pct: 40 }
+        ]
+    };
+
+    function money(v) {
+        const n = Number(v || 0);
+        return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function componentRows() {
+        return Array.from(componentsWrap.querySelectorAll('.offer-comp-row'));
+    }
+
+    function renderComponents(items) {
+        componentsWrap.innerHTML = '';
+        (items || []).forEach(function (item) {
+            const row = document.createElement('div');
+            row.className = 'offer-comp-row';
+            row.style.display = 'grid';
+            row.style.gridTemplateColumns = '1fr 160px auto';
+            row.style.gap = '8px';
+            row.innerHTML =
+                '<input type="text" class="offer-comp-name" placeholder="Component name">' +
+                '<input type="number" class="offer-comp-pct" min="0" max="100" step="0.01" placeholder="%">' +
+                '<button type="button" class="btn btn-danger btn-sm offer-comp-remove">Remove</button>';
+            const nameInput = row.querySelector('.offer-comp-name');
+            const pctInput = row.querySelector('.offer-comp-pct');
+            const removeBtn = row.querySelector('.offer-comp-remove');
+            nameInput.value = item.name || '';
+            pctInput.value = item.pct != null ? String(item.pct) : '';
+            nameInput.addEventListener('input', recalc);
+            pctInput.addEventListener('input', function () {
+                if (pctInput.value !== '' && Number(pctInput.value) > 100) pctInput.value = '100';
+                recalc();
+            });
+            removeBtn.addEventListener('click', function () {
+                row.remove();
+                recalc();
+            });
+            componentsWrap.appendChild(row);
+        });
+        recalc();
+    }
+
+    function recalc() {
+        const annual = Number(annualEl.value || 0);
+        const rows = componentRows();
+        let totalPct = 0;
+        let totalAnnual = 0;
+        tbody.innerHTML = '';
+
+        rows.forEach(function (row) {
+            const name = (row.querySelector('.offer-comp-name').value || '').trim();
+            const pct = Number(row.querySelector('.offer-comp-pct').value || 0);
+            if (!name && !pct) return;
+            const annualAmt = (annual * pct) / 100;
+            const monthlyAmt = annualAmt / 12;
+            totalPct += pct;
+            totalAnnual += annualAmt;
+            const tr = document.createElement('tr');
+            tr.innerHTML =
+                '<td>' + (name || '-') + '</td>' +
+                '<td>' + pct.toFixed(2) + '%</td>' +
+                '<td>' + money(annualAmt) + '</td>' +
+                '<td>' + money(monthlyAmt) + '</td>';
+            tbody.appendChild(tr);
+        });
+
+        if (!tbody.children.length) {
+            const tr = document.createElement('tr');
+            tr.innerHTML = '<td colspan="4" style="color:var(--text-muted);">Enter annual income and percentages to preview breakup.</td>';
+            tbody.appendChild(tr);
+        }
+
+        summaryEl.textContent = 'Total Percentage: ' + totalPct.toFixed(2) + '%' + (totalPct > 100 ? ' (Over 100%)' : '');
+        summaryEl.style.color = totalPct > 100 ? 'var(--error)' : 'var(--text-muted)';
+        totalPctEl.textContent = totalPct.toFixed(2) + '%';
+        totalAnnualEl.textContent = money(totalAnnual);
+        totalMonthlyEl.textContent = money(totalAnnual / 12);
+    }
+
+    function collectComponents() {
+        return componentRows().map(function (row) {
+            return {
+                name: (row.querySelector('.offer-comp-name').value || '').trim(),
+                pct: Number(row.querySelector('.offer-comp-pct').value || 0)
+            };
+        }).filter(function (row) {
+            return row.name && row.pct >= 0;
+        });
+    }
+
+    addBtn.addEventListener('click', function () {
+        const current = componentRows().map(function (row) {
+            return {
+                name: row.querySelector('.offer-comp-name').value || '',
+                pct: row.querySelector('.offer-comp-pct').value || ''
+            };
+        });
+        current.push({ name: '', pct: '' });
+        renderComponents(current);
+    });
+
+    stateEl.addEventListener('change', function () {
+        renderComponents(defaultsByState[stateEl.value] || defaultsByState.other);
+    });
+    annualEl.addEventListener('input', recalc);
+
+    useBtn.addEventListener('click', function () {
+        const annual = Number(annualEl.value || 0);
+        const rows = componentRows();
+        const lines = [];
+        lines.push('Offer Letter Salary Breakup');
+        lines.push('State: ' + (stateEl.options[stateEl.selectedIndex] ? stateEl.options[stateEl.selectedIndex].text : stateEl.value));
+        lines.push('Annual Income (CTC): INR ' + money(annual));
+        lines.push('--------------------------------------------------');
+        rows.forEach(function (row) {
+            const name = (row.querySelector('.offer-comp-name').value || '').trim();
+            const pct = Number(row.querySelector('.offer-comp-pct').value || 0);
+            if (!name && !pct) return;
+            const annualAmt = (annual * pct) / 100;
+            const monthlyAmt = annualAmt / 12;
+            lines.push(name + ': ' + pct.toFixed(2) + '% | Annual INR ' + money(annualAmt) + ' | Monthly INR ' + money(monthlyAmt));
+        });
+        lines.push('--------------------------------------------------');
+        lines.push('Total Percentage: ' + totalPctEl.textContent);
+        lines.push('Total Annual: INR ' + totalAnnualEl.textContent);
+        lines.push('Total Monthly: INR ' + totalMonthlyEl.textContent);
+
+        const titleInput = document.getElementById('docCreateTitle');
+        const categoryInput = document.getElementById('docCreateCategory');
+        const notesInput = document.getElementById('docCreateNotes');
+        if (titleInput && !titleInput.value) titleInput.value = 'Offer Letter - Salary Breakup';
+        if (categoryInput && !categoryInput.value) categoryInput.value = 'Offer Letter';
+        if (notesInput) notesInput.value = lines.join('\n');
+        if (typeof window.showDocumentSection === 'function') window.showDocumentSection('section-create');
+    });
+
+    if (sendForm) {
+        sendForm.addEventListener('submit', function () {
+            if (stateHidden) stateHidden.value = stateEl.value || '';
+            if (annualHidden) annualHidden.value = annualEl.value || '';
+            if (componentsHidden) componentsHidden.value = JSON.stringify(collectComponents());
+        });
+    }
+
+    renderComponents(defaultsByState[stateEl.value] || defaultsByState.other);
+})();
+
+(function () {
+    const buttons = Array.from(document.querySelectorAll('.uploader-filter-btn'));
+    if (!buttons.length) return;
+    buttons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            const uploader = btn.getAttribute('data-uploader') || '';
+            const params = new URLSearchParams(window.location.search || '');
+            if (uploader) {
+                params.set('uploader', uploader);
+            } else {
+                params.delete('uploader');
+            }
+            window.location.href = '{{ url("document_list") }}' + '?' + params.toString();
+        });
+    });
+})();
+
+(function () {
+    const modal = document.getElementById('docEditModal');
+    const closeBtn = document.getElementById('docEditModalClose');
+    const openButtons = Array.from(document.querySelectorAll('.doc-edit-btn'));
+    if (!modal || !closeBtn || !openButtons.length) return;
+
+    const editId = document.getElementById('editDocId');
+    const existingFile = document.getElementById('editExistingFileUrl');
+    const title = document.getElementById('editTitle');
+    const category = document.getElementById('editCategory');
+    const effectiveDate = document.getElementById('editEffectiveDate');
+    const status = document.getElementById('editStatus');
+    const notes = document.getElementById('editNotes');
+    const currentFileLink = document.getElementById('editCurrentFileLink');
+
+    function openModal(btn) {
+        editId.value = btn.getAttribute('data-id') || '';
+        title.value = btn.getAttribute('data-title') || '';
+        category.value = btn.getAttribute('data-category') || '';
+        effectiveDate.value = btn.getAttribute('data-effective-date') || '';
+        status.value = btn.getAttribute('data-status') || 'pending';
+        notes.value = btn.getAttribute('data-notes') || '';
+        const fileUrl = btn.getAttribute('data-file-url') || '';
+        const openUrl = btn.getAttribute('data-open-url') || fileUrl;
+        existingFile.value = fileUrl;
+        currentFileLink.href = openUrl || '#';
+        currentFileLink.style.display = openUrl ? 'inline' : 'none';
+        modal.style.display = 'block';
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeModal() {
+        modal.style.display = 'none';
+        document.body.style.overflow = '';
+    }
+
+    openButtons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            openModal(btn);
+        });
+    });
+
+    closeBtn.addEventListener('click', closeModal);
+    modal.addEventListener('click', function (event) {
+        if (event.target === modal) closeModal();
+    });
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && modal.style.display === 'block') {
+            closeModal();
+        }
+    });
+})();
+</script>
+{% endblock %}
+

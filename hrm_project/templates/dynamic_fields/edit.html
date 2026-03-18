@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Dynamic Field - HRM System{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <a href="{{ url('dynamic_model_list') }}">Dynamic Models</a>
+    <span class="sep">></span>
+    <a href="{{ url('dynamic_field_list', args=[dynamic_model.id]) }}">{{ dynamic_model.name }} Fields</a>
+    <span class="sep">></span>
+    <span class="current">Edit: {{ dynamic_field.name }}</span>
+</div>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Edit Dynamic Field</h1>
+        <p class="page-subtitle">Update field {{ dynamic_field.name }}.</p>
+    </div>
+</div>
+
+{% if errors %}
+<ul class="error-list">
+    {% for err in errors %}<li>{{ err }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<div class="form-card">
+    <form method="post" action="{{ url('dynamic_field_edit', args=[dynamic_model.id, dynamic_field.id]) }}">
+        {{ csrf_input }}
+
+        <div class="form-row">
+            <div class="form-group">
+                <label>Name</label>
+                <input type="text" name="name" value="{{ form.name.value() or dynamic_field.name }}" required>
+            </div>
+            <div class="form-group">
+                <label>Key</label>
+                <input type="text" name="key" value="{{ form.key.value() or dynamic_field.key }}" required>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                {% set ftype = form.field_type.value() or dynamic_field.field_type %}
+                <label>Field Type</label>
+                <select name="field_type" required>
+                    <option value="text" {% if ftype=='text' %}selected{% endif %}>Text</option>
+                    <option value="number" {% if ftype=='number' %}selected{% endif %}>Number</option>
+                    <option value="date" {% if ftype=='date' %}selected{% endif %}>Date</option>
+                    <option value="boolean" {% if ftype=='boolean' %}selected{% endif %}>Boolean</option>
+                    <option value="email" {% if ftype=='email' %}selected{% endif %}>Email</option>
+                    <option value="file" {% if ftype=='file' %}selected{% endif %}>File</option>
+                    <option value="image" {% if ftype=='image' %}selected{% endif %}>Image</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Sort Order</label>
+                <input type="number" name="sort_order" value="{{ form.sort_order.value() or dynamic_field.sort_order or 0 }}">
+            </div>
+        </div>
+
+        <div class="form-group">
+            {% set dd = form.use_dropdown.value() if form.use_dropdown.value() is not none else (dynamic_field.choices_json|length > 0) %}
+            <label>Use Dropdown</label>
+            <select name="use_dropdown" required>
+                <option value="false" {% if dd in [False, 'False', 'false', '0', 0, None, ''] %}selected{% endif %}>No</option>
+                <option value="true" {% if dd in [True, 'True', 'true', '1', 1, 'on'] %}selected{% endif %}>Yes</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            {% set req = form.required.value() if form.required.value() is not none else dynamic_field.required %}
+            <label>Required</label>
+            <select name="required" required>
+                <option value="true" {% if req in [True, 'True', 'true', '1', 1, 'on'] %}selected{% endif %}>Yes</option>
+                <option value="false" {% if req in [False, 'False', 'false', '0', 0, None, ''] %}selected{% endif %}>No</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            {% set visible_val = form.visible_to_users.value() if form.visible_to_users.value() is not none else dynamic_field.visible_to_users %}
+            <label>Show This Field To Users</label>
+            <select name="visible_to_users" required>
+                <option value="true" {% if visible_val in [True, 'True', 'true', '1', 1, 'on'] %}selected{% endif %}>Yes</option>
+                <option value="false" {% if visible_val in [False, 'False', 'false', '0', 0, None, ''] %}selected{% endif %}>No</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>Choices (required when Use Dropdown = Yes)</label>
+            <textarea name="choices_json" placeholder='["morning","night"] or morning,night'>{{ form.choices_json.value() or '[]' }}</textarea>
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Save Changes</button>
+            <a href="{{ url('dynamic_field_list', args=[dynamic_model.id]) }}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

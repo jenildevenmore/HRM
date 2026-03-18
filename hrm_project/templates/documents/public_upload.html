@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document Upload</title>
+    <style>
+        :root {
+            --bg: #0d0d1a;
+            --card: rgba(255,255,255,0.04);
+            --border: rgba(255,255,255,0.12);
+            --text: #ececff;
+            --muted: #9da0bf;
+            --accent: #6c63ff;
+            --accent2: #a78bfa;
+            --error: #f87171;
+            --success: #34d399;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: Inter, system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .card {
+            width: 100%;
+            max-width: 760px;
+            border: 1px solid var(--border);
+            background: var(--card);
+            border-radius: 14px;
+            padding: 24px;
+        }
+        h1 { margin: 0 0 6px 0; color: var(--accent2); }
+        p { margin: 0 0 16px 0; color: var(--muted); }
+        .error-list {
+            border: 1px solid rgba(248,113,113,0.3);
+            background: rgba(248,113,113,0.12);
+            color: var(--error);
+            border-radius: 10px;
+            padding: 10px 14px;
+            margin-bottom: 14px;
+        }
+        .ok {
+            border: 1px solid rgba(52,211,153,0.3);
+            background: rgba(52,211,153,0.12);
+            color: var(--success);
+            border-radius: 10px;
+            padding: 10px 14px;
+            margin-bottom: 14px;
+        }
+        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .group { margin-bottom: 12px; }
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 12px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: .5px;
+        }
+        input, textarea, select {
+            width: 100%;
+            padding: 11px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: rgba(0,0,0,0.2);
+            color: var(--text);
+        }
+        select {
+            background-color: #121427;
+            color: var(--text);
+        }
+        select option {
+            background-color: #121427;
+            color: var(--text);
+        }
+        select option:checked {
+            background: #2a67b8 linear-gradient(0deg, #2a67b8 0%, #2a67b8 100%);
+            color: #ffffff;
+        }
+        textarea { min-height: 88px; resize: vertical; }
+        .btn {
+            border: 0;
+            border-radius: 8px;
+            padding: 11px 16px;
+            color: #fff;
+            background: linear-gradient(135deg, var(--accent), var(--accent2));
+            cursor: pointer;
+            font-weight: 700;
+        }
+        @media (max-width: 680px) { .row { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Upload Document</h1>
+        <p>Upload your document using the link you received.</p>
+
+        {% if errors %}
+        <div class="error-list">
+            {% for err in errors %}<div>{{ err }}</div>{% endfor %}
+        </div>
+        {% endif %}
+
+        {% if success_message %}
+        <div class="ok">{{ success_message }}</div>
+        {% endif %}
+
+        {% if info and not success_message %}
+        <form method="post" enctype="multipart/form-data">
+            {{ csrf_input }}
+            <div class="row">
+                <div class="group">
+                    <label>Title</label>
+                    <input type="text" value="{{ info.title or '' }}" readonly>
+                </div>
+                <div class="group">
+                    <label>Category</label>
+                    <input type="text" value="{{ info.category or '' }}" readonly>
+                </div>
+            </div>
+            <div class="row">
+                <div class="group">
+                    <label>Your Name</label>
+                    <input type="text" name="uploader_name" placeholder="Enter your name">
+                </div>
+                <div class="group">
+                    <label>Recipient Email</label>
+                    <input type="email" value="{{ info.request_email or '' }}" readonly>
+                </div>
+            </div>
+            {% if info.requested_doc_types %}
+            <div class="group">
+                <label>Document Type + File *</label>
+                <div id="docRows" style="display:grid;gap:10px;"></div>
+                <button type="button" id="addDocRow" class="btn" style="margin-top:10px;">Add Another Document</button>
+                <small style="display:block;margin-top:6px;color:var(--muted);">Choose a document type first, then upload only that document file.</small>
+            </div>
+            {% else %}
+            <div class="row">
+                <div class="group">
+                    <label>Document Files *</label>
+                    <input type="file" name="files" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,image/*" multiple required>
+                </div>
+            </div>
+            {% endif %}
+            <div class="group">
+                <label>Notes</label>
+                <textarea readonly>{{ info.notes or '' }}</textarea>
+            </div>
+            <button type="submit" class="btn">Upload Document</button>
+        </form>
+        {% endif %}
+    </div>
+    {% if info and info.requested_doc_types and not success_message %}
+    <script>
+        (function () {
+            const requestedTypes = {{ info.requested_doc_types|tojson }};
+            const container = document.getElementById('docRows');
+            const addBtn = document.getElementById('addDocRow');
+            if (!container || !addBtn || !Array.isArray(requestedTypes) || !requestedTypes.length) return;
+
+            function selectedTypes() {
+                return Array.from(container.querySelectorAll('select[name="doc_type"]'))
+                    .map(function (sel) { return String(sel.value || '').trim(); })
+                    .filter(function (val) { return !!val; });
+            }
+
+            function syncTypeOptions() {
+                const selects = Array.from(container.querySelectorAll('select[name="doc_type"]'));
+                const selected = selectedTypes();
+
+                selects.forEach(function (select) {
+                    const current = String(select.value || '').trim();
+                    select.innerHTML = '';
+
+                    const placeholder = document.createElement('option');
+                    placeholder.value = '';
+                    placeholder.textContent = 'Select type';
+                    select.appendChild(placeholder);
+
+                    requestedTypes.forEach(function (type) {
+                        const label = String(type || '').trim();
+                        if (!label) return;
+                        if (label !== current && selected.indexOf(label) !== -1) return;
+                        const opt = document.createElement('option');
+                        opt.value = label;
+                        opt.textContent = label;
+                        if (label === current) opt.selected = true;
+                        select.appendChild(opt);
+                    });
+                });
+
+                const canAddMore = selected.length < requestedTypes.length;
+                addBtn.disabled = !canAddMore;
+                addBtn.style.opacity = canAddMore ? '1' : '0.6';
+                addBtn.style.cursor = canAddMore ? 'pointer' : 'not-allowed';
+            }
+
+            function addRow() {
+                if (container.children.length >= requestedTypes.length) {
+                    syncTypeOptions();
+                    return;
+                }
+                const row = document.createElement('div');
+                row.style.display = 'grid';
+                row.style.gridTemplateColumns = '1fr 1fr auto';
+                row.style.gap = '8px';
+                row.innerHTML = ''
+                    + '<select name="doc_type" required>'
+                    + '<option value="">Select type</option>'
+                    + '</select>'
+                    + '<input type="file" name="doc_file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,image/*" required>'
+                    + '<button type="button" class="btn remove-doc" style="padding:10px 12px;">Remove</button>';
+                container.appendChild(row);
+
+                const select = row.querySelector('select[name="doc_type"]');
+                select.addEventListener('change', syncTypeOptions);
+
+                const removeBtn = row.querySelector('.remove-doc');
+                removeBtn.addEventListener('click', function () {
+                    if (container.children.length <= 1) return;
+                    row.remove();
+                    syncTypeOptions();
+                });
+
+                syncTypeOptions();
+            }
+
+            addBtn.addEventListener('click', addRow);
+            addRow();
+        })();
+    </script>
+    {% endif %}
+</body>
+</html>

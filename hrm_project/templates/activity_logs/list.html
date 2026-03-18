@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+
+{% block title %}Activity Logs - HRM System{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <span class="current">Activity Logs</span>
+</div>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Activity Logs</h1>
+        <p class="page-subtitle">Track user views, GET/API calls, create/update/delete, and clicks.</p>
+    </div>
+</div>
+
+{% if errors %}
+<ul class="error-list">
+    {% for err in errors %}<li>{{ err }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<div class="card" style="margin-bottom:20px;">
+    <form method="get" class="form-row">
+        <div class="form-group">
+            <label>Search</label>
+            <input type="text" name="q" value="{{ search_q }}" placeholder="username, name, email, module, or path">
+        </div>
+        <div class="form-group">
+            <label>Action</label>
+            <select name="action">
+                <option value="">All</option>
+                <option value="view" {% if action_filter == 'view' %}selected{% endif %}>View</option>
+                <option value="get" {% if action_filter == 'get' %}selected{% endif %}>Get</option>
+                <option value="create" {% if action_filter == 'create' %}selected{% endif %}>Create</option>
+                <option value="update" {% if action_filter == 'update' %}selected{% endif %}>Update</option>
+                <option value="delete" {% if action_filter == 'delete' %}selected{% endif %}>Delete</option>
+                <option value="click" {% if action_filter == 'click' %}selected{% endif %}>Click</option>
+                <option value="other" {% if action_filter == 'other' %}selected{% endif %}>Other</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Module</label>
+            <select name="module">
+                <option value="">All</option>
+                {% for m in module_options %}
+                <option value="{{ m }}" {% if module_filter == m %}selected{% endif %}>{{ m }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label>User</label>
+            <select name="user">
+                <option value="">All</option>
+                {% for u in user_options %}
+                <option value="{{ u }}" {% if user_filter == u %}selected{% endif %}>{{ u }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-actions" style="margin-top:28px;">
+            <button type="submit" class="btn btn-secondary">Search</button>
+            <a href="{{ url('activity_log_list') }}" class="btn btn-secondary">Reset</a>
+        </div>
+    </form>
+</div>
+
+{% if logs %}
+<div class="table-wrapper">
+    <table>
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>User</th>
+                <th>Role</th>
+                <th>Action</th>
+                <th>Module</th>
+                <th>Method</th>
+                <th>Status</th>
+                <th>Path</th>
+                <th>Payload</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in logs %}
+            <tr>
+                <td>{{ row.created_at_display or row.created_at }}</td>
+                <td>{{ row.actor_username or '-' }}</td>
+                <td>{{ row.actor_role or '-' }}</td>
+                <td>{{ row.action|upper }}</td>
+                <td>{{ row.module or '-' }}</td>
+                <td>{{ row.method or '-' }}</td>
+                <td>{{ row.status_code or '-' }}</td>
+                <td style="max-width:420px;word-break:break-all;">{{ row.path or '-' }}</td>
+                <td style="max-width:480px;">
+                    {% set before_payload = row.metadata.get('previous_payload') if row.metadata else none %}
+                    {% set after_payload = row.metadata.get('request_payload') if row.metadata else none %}
+                    {% if before_payload or after_payload %}
+                    <button
+                        type="button"
+                        class="btn btn-secondary btn-sm"
+                        onclick='openPayloadModal({{ before_payload|default(none)|tojson }}, {{ after_payload|default(none)|tojson }})'>
+                        View Payload
+                    </button>
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card"><div class="empty-state"><p>No activity logs found.</p></div></div>
+{% endif %}
+
+<div id="payloadModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1200;align-items:center;justify-content:center;padding:20px;">
+    <div id="payloadModalDialog" style="background:#fff;width:min(900px,96vw);max-height:88vh;overflow:auto;border-radius:12px;padding:16px 18px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <h3 style="margin:0;">Payload Details</h3>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="closePayloadModal()">Close</button>
+        </div>
+        <div id="payloadBeforeBlock" style="margin-bottom:12px;display:none;">
+            <strong>Current Saved Payload</strong>
+            <pre id="payloadBeforeText" style="white-space:pre-wrap;word-break:break-word;margin:6px 0 0;padding:10px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;"></pre>
+        </div>
+        <div id="payloadAfterBlock" style="display:none;">
+            <strong>After Update Payload</strong>
+            <pre id="payloadAfterText" style="white-space:pre-wrap;word-break:break-word;margin:6px 0 0;padding:10px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;"></pre>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function formatPayload(data) {
+    if (data === null || typeof data === 'undefined' || data === '') {
+        return '';
+    }
+    try {
+        return JSON.stringify(data, null, 2);
+    } catch (err) {
+        return String(data);
+    }
+}
+
+function openPayloadModal(beforePayload, afterPayload) {
+    const modal = document.getElementById('payloadModal');
+    const beforeBlock = document.getElementById('payloadBeforeBlock');
+    const afterBlock = document.getElementById('payloadAfterBlock');
+    const beforeText = document.getElementById('payloadBeforeText');
+    const afterText = document.getElementById('payloadAfterText');
+
+    const beforeFormatted = formatPayload(beforePayload);
+    const afterFormatted = formatPayload(afterPayload);
+
+    if (beforeFormatted) {
+        beforeBlock.style.display = 'block';
+        beforeText.textContent = beforeFormatted;
+    } else {
+        beforeBlock.style.display = 'none';
+        beforeText.textContent = '';
+    }
+
+    if (afterFormatted) {
+        afterBlock.style.display = 'block';
+        afterText.textContent = afterFormatted;
+    } else {
+        afterBlock.style.display = 'none';
+        afterText.textContent = '';
+    }
+
+    modal.style.display = 'flex';
+}
+
+function closePayloadModal() {
+    const modal = document.getElementById('payloadModal');
+    modal.style.display = 'none';
+}
+
+document.addEventListener('click', function (event) {
+    const modal = document.getElementById('payloadModal');
+    if (!modal || modal.style.display === 'none') {
+        return;
+    }
+    if (event.target === modal) {
+        closePayloadModal();
+    }
+});
+
+document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') {
+        closePayloadModal();
+    }
+});
+</script>
+{% endblock %}

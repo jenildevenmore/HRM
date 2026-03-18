@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Dynamic Records - HRM System{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <a href="{{ url('dynamic_model_list') }}">Dynamic Models</a>
+    <span class="sep">></span>
+    <span class="current">{{ dynamic_model.name }} Records</span>
+</div>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Dynamic Records</h1>
+        <p class="page-subtitle">Manage records for model {{ dynamic_model.name }}.</p>
+    </div>
+    <a href="{{ url('dynamic_record_create', args=[dynamic_model.id]) }}" class="btn btn-primary">+ Add Record</a>
+</div>
+
+{% if dynamic_records %}
+<div class="table-wrapper">
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Data</th>
+                <th>Created</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in dynamic_records %}
+            <tr>
+                <td>{{ r.id }}</td>
+                <td><pre style="white-space:pre-wrap;margin:0;">{{ r.data }}</pre></td>
+                <td>{{ r.created_at }}</td>
+                <td>
+                    <a href="{{ url('dynamic_record_edit', args=[dynamic_model.id, r.id]) }}" class="btn btn-secondary btn-sm">Edit</a>
+                    <form method="post" action="{{ url('dynamic_record_delete', args=[dynamic_model.id, r.id]) }}" style="display:inline;">
+                        {{ csrf_input }}
+                        <button type="submit" class="btn btn-danger btn-sm"
+                            onclick="return confirm('Delete record #{{ r.id }}?')">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card"><div class="empty-state"><p>No records yet.</p></div></div>
+{% endif %}
+{% endblock %}
+

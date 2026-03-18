@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}Leave Balance - HRM System{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <span class="current">Leave Management</span>
+</div>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Leave Balance</h1>
+        <p class="page-subtitle">Per-employee yearly leave usage and available balance.</p>
+    </div>
+</div>
+
+<div class="permission-group-tabs" style="margin-bottom:20px;">
+    {% if role in ['superadmin', 'admin'] %}
+    <a href="{{ url('leave_type_list') }}" class="permission-group-tab-btn">Leave Types</a>
+    {% endif %}
+    <a href="{{ url('leave_list') }}" class="permission-group-tab-btn">Applications</a>
+    <a href="{{ url('leave_balance') }}" class="permission-group-tab-btn active">Leave Balance</a>
+</div>
+
+{% if errors %}
+<ul class="error-list">
+    {% for err in errors %}<li>{{ err }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+{% if balances %}
+<div class="permissions-grid1">
+    {% for row in balances %}
+    <div class="card1">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;">
+            <h3 style="margin:0;">{{ row.employee_name }}</h3>
+            <span class="badge badge-text">{{ (row.role or 'employee')|upper }}</span>
+        </div>
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Leave Type</th>
+                        <th>Total</th>
+                        <th>Used</th>
+                        <th>Available</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for b in row.balances %}
+                    <tr>
+                        <td>{{ b.leave_type }}</td>
+                        <td>{{ b.total }}</td>
+                        <td style="color:var(--error);">{{ b.used }}</td>
+                        <td style="color:var(--success);">{{ b.available }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="card"><div class="empty-state"><p>No leave balance data found.</p></div></div>
+{% endif %}
+{% endblock %}

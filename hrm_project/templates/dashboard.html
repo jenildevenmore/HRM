@@ -1,0 +1,318 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - HRM System{% endblock %}
+
+{% block content %}
+<style>
+    .db-wrap { display: grid; gap: 16px; }
+    .db-head h1 { margin: 0; font-size: 2.1rem; line-height: 1.1; }
+    .db-head p { margin: 8px 0 0 0; color: var(--text-muted); }
+
+    .db-kpis {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(180px, 1fr));
+        gap: 12px;
+    }
+    .db-kpi {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 14px;
+        background: var(--bg-card);
+    }
+    .db-kpi-link {
+        display: block;
+        text-decoration: none;
+        color: inherit;
+    }
+    .db-kpi-link .db-kpi { transition: transform .18s ease, box-shadow .18s ease; }
+    .db-kpi-link:hover .db-kpi {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+    }
+    .db-kpi.t-blue   { background: rgba(59,130,246,0.14); border-color: rgba(59,130,246,0.3); }
+    .db-kpi.t-green  { background: rgba(34,197,94,0.14); border-color: rgba(34,197,94,0.3); }
+    .db-kpi.t-red    { background: rgba(239,68,68,0.14); border-color: rgba(239,68,68,0.3); }
+    .db-kpi.t-purple { background: rgba(168,85,247,0.14); border-color: rgba(168,85,247,0.3); }
+    .db-kpi.t-cyan   { background: rgba(6,182,212,0.14); border-color: rgba(6,182,212,0.3); }
+    .db-kpi.t-indigo { background: rgba(99,102,241,0.14); border-color: rgba(99,102,241,0.3); }
+    .db-kpi h3 { margin: 0 0 8px 0; font-size: .95rem; color: var(--text-muted); font-weight: 700; }
+    .db-kpi .val { font-size: 2rem; font-weight: 800; line-height: 1; margin-bottom: 6px; }
+    .db-kpi .sub { font-size: .85rem; color: var(--text-muted); }
+
+    .db-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .db-grid-main { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; }
+    .db-card {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--bg-card);
+        padding: 14px;
+    }
+    .db-title {
+        margin: 0 0 12px 0;
+        font-size: 1.35rem;
+        font-weight: 700;
+    }
+    .db-list { display: grid; gap: 10px; max-height: 340px; overflow: auto; padding-right: 4px; }
+    .db-row {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px 12px;
+        background: rgba(255,255,255,0.02);
+    }
+    .db-row-top { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+    .db-muted { color: var(--text-muted); font-size: .86rem; }
+    .db-progress { height: 8px; background: rgba(255,255,255,0.08); border-radius: 999px; overflow: hidden; margin-top: 8px; }
+    .db-progress > span { display: block; height: 100%; background: var(--accent-grad); }
+    .db-actions a { display: flex; align-items: center; justify-content: space-between; text-decoration: none; color: var(--text); }
+
+    .db-cal-head {
+        display: flex; justify-content: space-between; align-items: center;
+        margin-bottom: 10px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid var(--border);
+    }
+    .db-cal-table { width: 100%; border-collapse: collapse; }
+    .db-cal-table th, .db-cal-table td {
+        border: 1px solid var(--border);
+        vertical-align: top;
+        width: 14.285%;
+        min-height: 70px;
+        height: 90px;
+        padding: 6px;
+    }
+    .db-cal-table th { color: var(--text-muted); font-weight: 700; }
+    .db-cal-off { color: var(--text-dim); opacity: .55; }
+    .db-cal-today { outline: 2px solid rgba(108,99,255,0.45); outline-offset: -2px; border-radius: 4px; }
+    .db-holiday {
+        display: inline-block;
+        margin-top: 5px;
+        padding: 2px 6px;
+        border-radius: 999px;
+        font-size: .72rem;
+        background: rgba(239,68,68,0.2);
+        color: #fecaca;
+        max-width: 100%;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .db-status {
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: .8rem;
+        font-weight: 700;
+    }
+    .s-approved { background: rgba(34,197,94,0.18); color: #86efac; }
+    .s-pending { background: rgba(234,179,8,0.18); color: #fde68a; }
+    .s-rejected { background: rgba(239,68,68,0.18); color: #fca5a5; }
+
+    @media (max-width: 1280px) {
+        .db-kpis { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
+        .db-grid-main { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 760px) {
+        .db-grid-2 { grid-template-columns: 1fr; }
+        .db-kpis { grid-template-columns: 1fr; }
+    }
+</style>
+
+<div class="db-wrap">
+    <header class="db-head">
+        <h1 class="page-title">HRM Dashboard</h1>
+        <p>Welcome back, {{ username }}. Here is your live workforce snapshot.</p>
+    </header>
+
+    <section class="db-kpis">
+        <a class="db-kpi-link" href="{{ url('employee_list') }}"><article class="db-kpi t-blue"><h3>Total Employees</h3><div class="val">{{ emp_count }}</div><div class="sub">Active employees</div></article></a>
+        <a class="db-kpi-link" href="{% if attendance_model_id %}{{ url('dynamic_entity_create', args=[attendance_model_id]) }}{% else %}{{ url('dashboard') }}{% endif %}"><article class="db-kpi t-green"><h3>Present Today</h3><div class="val">{{ present_today }}</div><div class="sub">{% if emp_count %}{{ ((present_today*100.0)/emp_count)|round(1) }}% attendance rate{% else %}0.0% attendance rate{% endif %}</div></article></a>
+        <a class="db-kpi-link" href="{% if attendance_model_id %}{{ url('dynamic_entity_create', args=[attendance_model_id]) }}{% else %}{{ url('dashboard') }}{% endif %}"><article class="db-kpi t-red"><h3>Absent Today</h3><div class="val">{{ absent_today }}</div><div class="sub">Missing attendance (excluding leave)</div></article></a>
+        <a class="db-kpi-link" href="{{ url('leave_list') }}"><article class="db-kpi t-purple"><h3>On Leave</h3><div class="val">{{ on_leave_today }}</div><div class="sub">{{ pending_leave_approvals }} pending approvals</div></article></a>
+        <a class="db-kpi-link" href="{{ url('employee_list') }}"><article class="db-kpi t-cyan"><h3>Total Branch</h3><div class="val">{{ total_branch_count }}</div><div class="sub">Active branches</div></article></a>
+        <a class="db-kpi-link" href="{{ url('employee_list') }}"><article class="db-kpi t-indigo"><h3>Total Department</h3><div class="val">{{ total_department_count }}</div><div class="sub">Department groups</div></article></a>
+        <a class="db-kpi-link" href="{{ url('employee_list') }}"><article class="db-kpi t-green"><h3>Total Promotions</h3><div class="val">{{ total_promotions }}</div><div class="sub">This year</div></article></a>
+        <a class="db-kpi-link" href="{{ url('employee_list') }}"><article class="db-kpi t-red"><h3>Terminations</h3><div class="val">{{ terminations_this_month }}</div><div class="sub">This month</div></article></a>
+    </section>
+
+    <section class="db-grid-2">
+        <div class="db-card">
+            <h2 class="db-title">Department Distribution</h2>
+            <div class="db-list">
+                {% if department_distribution %}
+                    {% for item in department_distribution %}
+                    <div class="db-row">
+                        <div class="db-row-top">
+                            <strong>{{ item.name }}</strong>
+                            <strong>{{ item.count }}</strong>
+                        </div>
+                        <div class="db-progress"><span style="width: {{ item.percent }}%;"></span></div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="empty-state"><p>No department data available.</p></div>
+                {% endif %}
+            </div>
+        </div>
+        <div class="db-card">
+            <h2 class="db-title">Quick Actions</h2>
+            <div class="db-list db-actions">
+                {% for item in quick_actions %}
+                <div class="db-row">
+                    {% if item.url == 'employee_create' %}
+                    <a href="{{ url('employee_create') }}"><span>{{ item.label }}</span><span>></span></a>
+                    {% elif item.url == 'attendance_mark' %}
+                    <a href="{% if attendance_model_id %}{{ url('dynamic_entity_create', args=[attendance_model_id]) }}{% else %}{{ url('dynamic_model_create_attendance') }}{% endif %}"><span>{{ item.label }}</span><span>></span></a>
+                    {% elif item.url == 'employee_list' %}
+                    <a href="{{ url('employee_list') }}"><span>{{ item.label }}</span><span>></span></a>
+                    {% elif item.url == 'leave_create' %}
+                    <a href="{{ url('leave_create') }}"><span>{{ item.label }}</span><span>></span></a>
+                    {% elif item.url == 'dashboard' %}
+                    <a href="{{ url('dashboard') }}"><span>{{ item.label }}</span><span>></span></a>
+                    {% elif item.url == 'leave_list' %}
+                    <a href="{{ url('leave_list') }}"><span>{{ item.label }}</span><span>></span></a>
+                    {% elif item.url == 'payroll_list' %}
+                    <a href="{{ url('payroll_list') }}"><span>{{ item.label }}</span><span>></span></a>
+                    {% elif item.url == 'document_list' %}
+                    <a href="{{ url('document_list') }}"><span>{{ item.label }}</span><span>></span></a>
+                    {% elif item.url == 'import_export_page' %}
+                    <a href="{{ url('import_export_page') }}"><span>{{ item.label }}</span><span>></span></a>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+
+    <section class="db-grid-2">
+        <div class="db-card">
+            <h2 class="db-title">Employees on Leave</h2>
+            <div class="db-list">
+                {% if employees_on_leave %}
+                    {% for row in employees_on_leave %}
+                    <div class="db-row">
+                        <div class="db-row-top"><strong>{{ row.name }}</strong></div>
+                        <div class="db-muted">{{ row.email }}</div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="empty-state"><p>No employees on leave today.</p></div>
+                {% endif %}
+            </div>
+        </div>
+        <div class="db-card">
+            <h2 class="db-title">Missing Attendance Today</h2>
+            <div class="db-list">
+                {% if missing_attendance_today %}
+                    {% for row in missing_attendance_today %}
+                    <div class="db-row">
+                        <div class="db-row-top"><strong>{{ row.name }}</strong></div>
+                        <div class="db-muted">{{ row.email }}</div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="empty-state"><p>No missing attendance today.</p></div>
+                {% endif %}
+            </div>
+        </div>
+    </section>
+
+    <section class="db-grid-main">
+        <div class="db-card">
+            <h2 class="db-title">Events & Holidays Calendar</h2>
+            <div class="db-cal-head">
+                <strong>{{ current_month_label }}</strong>
+                <span class="badge badge-date">Month</span>
+            </div>
+            <table class="db-cal-table">
+                <thead>
+                    <tr>
+                        <th>Sun</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for week in holiday_calendar_weeks %}
+                    <tr>
+                        {% for cell in week %}
+                        <td class="{% if not cell.in_month %}db-cal-off{% endif %} {% if cell.is_today %}db-cal-today{% endif %}">
+                            <div>{{ cell.day }}</div>
+                            {% if cell.holidays %}
+                            <div class="db-holiday">{{ cell.holidays[0] }}</div>
+                            {% endif %}
+                        </td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div style="display:grid;gap:14px;">
+            <div class="db-card">
+                <h2 class="db-title">Recent Leave Applications</h2>
+                <div class="db-list">
+                    {% if recent_leave_applications %}
+                        {% for row in recent_leave_applications %}
+                        {% set st = (row.status or '')|lower %}
+                        <div class="db-row">
+                            <div class="db-row-top">
+                                <strong>{{ row.employee_name or ('Employee #' ~ row.employee) }} - {{ row.leave_type }}</strong>
+                                <span class="db-status {% if st == 'approved' %}s-approved{% elif st == 'rejected' %}s-rejected{% else %}s-pending{% endif %}">
+                                    {{ st|upper if st else 'PENDING' }}
+                                </span>
+                            </div>
+                            <div class="db-muted">{{ row.start_date }} - {{ row.end_date }} ({{ row.total_days }} days)</div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="empty-state"><p>No leave applications found.</p></div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="db-card">
+                <h2 class="db-title">Announcements</h2>
+                <div class="db-list">
+                    {% for row in announcements %}
+                    <div class="db-row">
+                        <div class="db-row-top"><strong>{{ row.title }}</strong></div>
+                        <div class="db-muted">{{ row.content }}</div>
+                        <div class="db-muted" style="margin-top:6px;">{{ row.date }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </section>
+
+    {% if auto_clockout_alerts %}
+    <section class="db-card">
+        <h2 class="db-title">Auto Clock-Out Alerts</h2>
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Employee</th>
+                        <th>Date</th>
+                        <th>Check In</th>
+                        <th>Check Out (Auto)</th>
+                        <th>Manager</th>
+                        <th>HR</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in auto_clockout_alerts %}
+                    <tr>
+                        <td>{{ row.employee_name }}</td>
+                        <td>{{ row.attendance_date }}</td>
+                        <td>{{ row.check_in }}</td>
+                        <td>{{ row.check_out }}</td>
+                        <td>{{ row.manager_name }}</td>
+                        <td>{{ row.hr_name }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {% endif %}
+</div>
+{% endblock %}

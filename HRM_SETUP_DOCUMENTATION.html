@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HRM Setup Documentation</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --card: #ffffff;
+      --ink: #1e2738;
+      --muted: #5e6779;
+      --line: #e2e8f2;
+      --brand: #0f6dff;
+      --brand-soft: #eaf1ff;
+      --good: #0d8c55;
+      --good-soft: #eaf9f1;
+      --warn: #b06a00;
+      --warn-soft: #fff5df;
+      --dark: #101724;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font: 15px/1.65 "Segoe UI", Tahoma, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top right, #edf4ff 0%, transparent 28%),
+        linear-gradient(180deg, #f9fbff 0%, var(--bg) 100%);
+    }
+    .wrap {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 24px;
+      display: grid;
+      grid-template-columns: 310px minmax(0, 1fr);
+      gap: 22px;
+    }
+    .sidebar {
+      position: sticky;
+      top: 18px;
+      align-self: start;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 18px;
+      max-height: calc(100vh - 36px);
+      overflow: auto;
+      box-shadow: 0 18px 40px rgba(16, 23, 36, 0.06);
+    }
+    .eyebrow {
+      display: inline-block;
+      margin-bottom: 10px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: var(--brand-soft);
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .4px;
+    }
+    .sidebar h1 {
+      margin: 0 0 8px;
+      font-size: 22px;
+      line-height: 1.25;
+    }
+    .sidebar p {
+      margin: 0 0 16px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .toc {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .toc a {
+      display: block;
+      padding: 8px 10px;
+      margin: 3px 0;
+      color: var(--ink);
+      text-decoration: none;
+      border-radius: 9px;
+      font-size: 14px;
+    }
+    .toc a:hover,
+    .toc a.active {
+      background: var(--brand-soft);
+      color: var(--brand);
+      font-weight: 600;
+    }
+    .content {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 28px;
+      box-shadow: 0 18px 40px rgba(16, 23, 36, 0.06);
+    }
+    .hero {
+      padding: 22px;
+      border-radius: 14px;
+      border: 1px solid #dce8ff;
+      background: linear-gradient(120deg, #eef5ff 0%, #ffffff 72%);
+      margin-bottom: 22px;
+    }
+    .hero h2 {
+      margin: 0 0 8px;
+      font-size: 30px;
+      line-height: 1.15;
+    }
+    .hero p {
+      margin: 0;
+      color: var(--muted);
+      max-width: 820px;
+    }
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .meta-card {
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.8);
+      border: 1px solid var(--line);
+    }
+    .meta-card strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .4px;
+    }
+    section {
+      margin: 28px 0;
+      scroll-margin-top: 16px;
+    }
+    section h3 {
+      margin: 0 0 10px;
+      font-size: 23px;
+    }
+    section h4 {
+      margin: 16px 0 8px;
+      font-size: 17px;
+    }
+    p { margin: 0 0 12px; }
+    ul, ol { margin: 0 0 12px 22px; }
+    li { margin-bottom: 4px; }
+    code {
+      background: #f4f6fb;
+      border: 1px solid var(--line);
+      padding: 1px 6px;
+      border-radius: 6px;
+      font-family: Consolas, monospace;
+      font-size: 13px;
+    }
+    pre {
+      margin: 0 0 14px;
+      padding: 14px;
+      border-radius: 12px;
+      background: var(--dark);
+      color: #eaf1ff;
+      overflow-x: auto;
+      font: 13px/1.55 Consolas, monospace;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0 14px;
+      font-size: 14px;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 10px 11px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #f8faff;
+      font-weight: 700;
+    }
+    .note,
+    .good {
+      margin: 12px 0 14px;
+      padding: 12px 14px;
+      border-radius: 10px;
+    }
+    .note {
+      background: var(--warn-soft);
+      border-left: 4px solid var(--warn);
+      color: #774700;
+    }
+    .good {
+      background: var(--good-soft);
+      border-left: 4px solid var(--good);
+      color: #146342;
+    }
+    .foot {
+      margin-top: 30px;
+      padding-top: 14px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+    }
+    @media (max-width: 1024px) {
+      .wrap { grid-template-columns: 1fr; }
+      .sidebar { position: static; max-height: none; }
+      .meta { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <aside class="sidebar">
+      <span class="eyebrow">SETUP GUIDE</span>
+      <h1>HRM Setup Documentation</h1>
+      <p>Installation, environment configuration, database preparation, first run, and production readiness for the HRM project.</p>
+      <ul class="toc">
+        <li><a href="#intro">1. Introduction</a></li>
+        <li><a href="#stack">2. Technology Stack</a></li>
+        <li><a href="#requirements">3. System Requirements</a></li>
+        <li><a href="#structure">4. Project Structure</a></li>
+        <li><a href="#urls">5. Key URLs</a></li>
+        <li><a href="#install">6. Installation Guide</a></li>
+        <li><a href="#env">7. Environment Configuration</a></li>
+        <li><a href="#database">8. Database Setup</a></li>
+        <li><a href="#run">9. Running the Application</a></li>
+        <li><a href="#first-time">10. First-Time Application Setup</a></li>
+        <li><a href="#client-admin">11. Create Client Admin</a></li>
+        <li><a href="#api">12. Important API Endpoints</a></li>
+        <li><a href="#production">13. Production Deployment Checklist</a></li>
+        <li><a href="#commands">14. Common Commands</a></li>
+        <li><a href="#troubleshooting">15. Troubleshooting</a></li>
+        <li><a href="#related">16. Related Documents</a></li>
+        <li><a href="#notes">17. Final Notes</a></li>
+      </ul>
+    </aside>
+
+    <main class="content">
+      <header class="hero">
+        <h2>HRM Project Installation & Setup</h2>
+        <p>This page is a browser-ready version of the setup documentation for your Django-based HRM platform. It covers local installation, PostgreSQL configuration, environment variables, first-time setup, and production deployment preparation.</p>
+        <div class="meta">
+          <div class="meta-card">
+            <strong>Project Type</strong>
+            Unified Django application with UI and REST API
+          </div>
+          <div class="meta-card">
+            <strong>Database</strong>
+            PostgreSQL is the active configured engine
+          </div>
+          <div class="meta-card">
+            <strong>Primary Run URL</strong>
+            <code>http://127.0.0.1:8000/login/</code>
+          </div>
+        </div>
+      </header>
+
+      <section id="intro">
+        <h3>1. Introduction</h3>
+        <p>The HRM Project is a Django-based Human Resource Management platform that combines a browser-based web interface with REST APIs for internal workflows and external integrations.</p>
+        <table>
+          <tr><th>Area</th><th>Description</th></tr>
+          <tr><td>Frontend</td><td>Server-rendered pages for HR, managers, admins, and employees.</td></tr>
+          <tr><td>Backend</td><td>Django REST Framework APIs for authentication, module data, and integrations.</td></tr>
+          <tr><td>Modules</td><td>Employees, leave, payroll, documents, attendance, settings, and activity logs.</td></tr>
+        </table>
+      </section>
+
+      <section id="stack">
+        <h3>2. Technology Stack</h3>
+        <ul>
+          <li>Python 3.10+</li>
+          <li>Django 5.2.12</li>
+          <li>Django REST Framework 3.16.1</li>
+          <li>PostgreSQL</li>
+          <li>Jinja2 templates</li>
+          <li>JWT authentication</li>
+          <li>ReportLab for PDF generation</li>
+        </ul>
+      </section>
+
+      <section id="requirements">
+        <h3>3. System Requirements</h3>
+        <h4>Minimum Recommended Environment</h4>
+        <ul>
+          <li>Windows 10/11, Ubuntu 22.04+, or any modern Linux server</li>
+          <li>Python 3.10 or above</li>
+          <li>pip package manager</li>
+          <li>PostgreSQL 13+ recommended</li>
+          <li>4 GB RAM minimum</li>
+          <li>2 GB free disk space minimum</li>
+        </ul>
+        <h4>Production Recommendations</h4>
+        <ul>
+          <li>Nginx or Apache as reverse proxy</li>
+          <li>Gunicorn or another WSGI server</li>
+          <li>HTTPS-enabled domain</li>
+          <li>SMTP account for email delivery</li>
+        </ul>
+      </section>
+
+      <section id="structure">
+        <h3>4. Project Structure</h3>
+        <pre>c:\hrm_project
++-- hrm_project\
+|   +-- manage.py
+|   +-- hrm_project\          # settings.py, urls.py, wsgi.py
+|   +-- accounts\
+|   +-- clients\
+|   +-- employees\
+|   +-- leaves\
+|   +-- payroll\
+|   +-- documents\
+|   +-- dynamic_models\
+|   +-- templates\
+|   +-- static\
+|   \-- media\
++-- deploy\
++-- postman\
++-- requirements.txt
++-- .env
+\-- HRM_SETUP_DOCUMENTATION.html</pre>
+      </section>
+
+      <section id="urls">
+        <h3>5. Key URLs</h3>
+        <table>
+          <tr><th>Purpose</th><th>URL</th></tr>
+          <tr><td>Login page</td><td><code>http://127.0.0.1:8000/login/</code></td></tr>
+          <tr><td>Dashboard</td><td><code>http://127.0.0.1:8000/</code></td></tr>
+          <tr><td>Admin panel</td><td><code>http://127.0.0.1:8000/admin/</code></td></tr>
+          <tr><td>API root</td><td><code>http://127.0.0.1:8000/api/</code></td></tr>
+          <tr><td>JWT login endpoint</td><td><code>http://127.0.0.1:8000/api/token/</code></td></tr>
+        </table>
+      </section>
+
+      <section id="install">
+        <h3>6. Installation Guide</h3>
+        <h4>6.1 Clone or Copy the Project</h4>
+        <pre>cd C:\
+git clone &lt;your-repository-url&gt; hrm_project
+cd C:\hrm_project</pre>
+        <p>If the project is shared as a ZIP file, extract it into <code>C:\hrm_project</code>.</p>
+
+        <h4>6.2 Create a Virtual Environment</h4>
+        <pre>cd C:\hrm_project
+python -m venv .venv</pre>
+        <p>Activate it on Windows:</p>
+        <pre>.\.venv\Scripts\activate</pre>
+        <p>Activate it on Linux:</p>
+        <pre>source .venv/bin/activate</pre>
+
+        <h4>6.3 Install Dependencies</h4>
+        <pre>pip install -r requirements.txt</pre>
+        <div class="note">
+          The current <code>requirements.txt</code> does not include a PostgreSQL adapter package. Install <code>psycopg[binary]</code> or <code>psycopg2-binary</code> before running migrations if your environment does not already provide it.
+        </div>
+      </section>
+
+      <section id="env">
+        <h3>7. Environment Configuration</h3>
+        <p>Create or update the root environment file at <code>c:\hrm_project\.env</code>.</p>
+        <pre>DJANGO_SECRET_KEY=change-this-to-a-secure-value
+DJANGO_DEBUG=True
+DEMO_MODE=False
+DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost
+DJANGO_CSRF_TRUSTED_ORIGINS=http://127.0.0.1:8000,http://localhost:8000
+DJANGO_TIME_ZONE=Asia/Kolkata
+
+DJANGO_PG_NAME=HRM
+DJANGO_PG_USER=postgres
+DJANGO_PG_PASSWORD=postgres
+DJANGO_PG_HOST=localhost
+DJANGO_PG_PORT=5432
+
+DJANGO_STATIC_URL=/static/
+DJANGO_STATIC_ROOT=
+DJANGO_MEDIA_URL=/media/
+DJANGO_MEDIA_ROOT=
+
+EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USE_TLS=True
+EMAIL_HOST_USER=
+EMAIL_HOST_PASSWORD=
+DEFAULT_FROM_EMAIL=
+
+BACKEND_API_URL=http://127.0.0.1:8000
+USE_INTERNAL_API=True
+FRONTEND_BASE_URLS=http://127.0.0.1:8000
+FRONTEND_BASE_URL=http://127.0.0.1:8000
+CLIENT_EXECUTION_SECRET_KEY=
+
+SESSION_COOKIE_SECURE=False
+CSRF_COOKIE_SECURE=False
+SECURE_SSL_REDIRECT=False</pre>
+        <div class="good">
+          PostgreSQL is the active configured database engine in the current codebase. If <code>DJANGO_PG_PORT</code> is not set, the application defaults to port <code>5433</code>.
+        </div>
+      </section>
+
+      <section id="database">
+        <h3>8. Database Setup</h3>
+        <h4>8.1 Create PostgreSQL Database</h4>
+        <pre>CREATE DATABASE HRM;
+CREATE USER hrm_user WITH PASSWORD 'strong-password';
+GRANT ALL PRIVILEGES ON DATABASE HRM TO hrm_user;</pre>
+        <p>Then update your <code>.env</code> values with the real database credentials.</p>
+
+        <h4>8.2 Run Migrations</h4>
+        <pre>cd C:\hrm_project\hrm_project
+..\.venv\Scripts\python.exe manage.py migrate</pre>
+        <p>If your shell already has the environment activated, you can simply run:</p>
+        <pre>cd C:\hrm_project\hrm_project
+python manage.py migrate</pre>
+
+        <h4>8.3 Optional: Create Admin User</h4>
+        <pre>python manage.py createsuperuser</pre>
+      </section>
+
+      <section id="run">
+        <h3>9. Running the Application</h3>
+        <pre>cd C:\hrm_project\hrm_project
+python manage.py runserver 0.0.0.0:8000</pre>
+        <p>After startup, open the following routes in a browser:</p>
+        <ul>
+          <li><code>http://127.0.0.1:8000/login/</code></li>
+          <li><code>http://127.0.0.1:8000/api/</code></li>
+          <li><code>http://127.0.0.1:8000/admin/</code></li>
+        </ul>
+      </section>
+
+      <section id="first-time">
+        <h3>10. First-Time Application Setup</h3>
+        <ol>
+          <li>Create a superuser using <code>createsuperuser</code>.</li>
+          <li>Log in through Django admin or the HRM UI.</li>
+          <li>Create a client or company record.</li>
+          <li>Create user roles and permission groups.</li>
+          <li>Add employees and assign roles.</li>
+          <li>Configure leave types, holidays, shifts, banks, payroll, and documents.</li>
+        </ol>
+        <p>The UI also includes an onboarding route:</p>
+        <pre>/onboarding/setup-org/</pre>
+      </section>
+
+      <section id="client-admin">
+        <h3>11. Create Client Admin</h3>
+        <p>The project includes a helper command to create a client-specific admin user from the command line.</p>
+        <pre>python manage.py create_client_admin --username admin1 --password StrongPass123 --email admin@example.com --client-id 1</pre>
+        <ul>
+          <li>Creates a Django user</li>
+          <li>Links that user to a client</li>
+          <li>Assigns the role <code>admin</code></li>
+        </ul>
+      </section>
+
+      <section id="api">
+        <h3>12. Important API Endpoints</h3>
+        <h4>Authentication</h4>
+        <ul>
+          <li><code>POST /api/token/</code></li>
+          <li><code>POST /api/token/refresh/</code></li>
+        </ul>
+        <h4>Main HR Modules</h4>
+        <ul>
+          <li><code>/api/clients/</code></li>
+          <li><code>/api/client-roles/</code></li>
+          <li><code>/api/employees/</code></li>
+          <li><code>/api/leaves/</code></li>
+          <li><code>/api/leave-types/</code></li>
+          <li><code>/api/leave-balance/</code></li>
+          <li><code>/api/holidays/</code></li>
+          <li><code>/api/shifts/</code></li>
+          <li><code>/api/bank-accounts/</code></li>
+          <li><code>/api/payroll-policy/</code></li>
+          <li><code>/api/employee-compensation/</code></li>
+          <li><code>/api/payroll-report/</code></li>
+          <li><code>/api/documents/</code></li>
+          <li><code>/api/document-upload-requests/</code></li>
+          <li><code>/api/activity-logs/</code></li>
+          <li><code>/api/dynamic-models/</code></li>
+          <li><code>/api/dynamic-fields/</code></li>
+          <li><code>/api/dynamic-records/</code></li>
+        </ul>
+        <h4>Public Upload Endpoint</h4>
+        <ul>
+          <li><code>POST /api/document-upload/&lt;uuid:token&gt;/</code></li>
+        </ul>
+      </section>
+
+      <section id="production">
+        <h3>13. Production Deployment Checklist</h3>
+        <ul>
+          <li>Set <code>DJANGO_DEBUG=False</code></li>
+          <li>Use a strong <code>DJANGO_SECRET_KEY</code></li>
+          <li>Set real domains in <code>DJANGO_ALLOWED_HOSTS</code></li>
+          <li>Set HTTPS domains in <code>DJANGO_CSRF_TRUSTED_ORIGINS</code></li>
+          <li>Set <code>SESSION_COOKIE_SECURE=True</code></li>
+          <li>Set <code>CSRF_COOKIE_SECURE=True</code></li>
+          <li>Set <code>SECURE_SSL_REDIRECT=True</code></li>
+          <li>Configure valid SMTP credentials</li>
+          <li>Run static file collection</li>
+          <li>Serve media files correctly</li>
+          <li>Place Gunicorn behind Nginx or Apache</li>
+        </ul>
+        <pre>python manage.py collectstatic --noinput</pre>
+      </section>
+
+      <section id="commands">
+        <h3>14. Common Commands</h3>
+        <pre>python manage.py check
+python manage.py makemigrations
+python manage.py migrate
+python manage.py createsuperuser
+python manage.py collectstatic --noinput</pre>
+      </section>
+
+      <section id="troubleshooting">
+        <h3>15. Troubleshooting</h3>
+        <h4>15.1 Database Connection Error</h4>
+        <ul>
+          <li>Verify the PostgreSQL service is running.</li>
+          <li>Recheck database name, username, password, host, and port.</li>
+          <li>Confirm the values in <code>.env</code> match the real server.</li>
+        </ul>
+
+        <h4>15.2 Static Files Not Loading</h4>
+        <ul>
+          <li>Check <code>DJANGO_STATIC_URL</code> and <code>DJANGO_STATIC_ROOT</code>.</li>
+          <li>Verify reverse proxy static mapping in production.</li>
+          <li>Run <code>collectstatic</code>.</li>
+        </ul>
+
+        <h4>15.3 Media Files Not Opening</h4>
+        <ul>
+          <li>Check <code>DJANGO_MEDIA_URL</code> and <code>DJANGO_MEDIA_ROOT</code>.</li>
+          <li>Verify path permissions on the server.</li>
+        </ul>
+
+        <h4>15.4 Email Not Sending</h4>
+        <ul>
+          <li>Verify SMTP host, port, TLS, username, and password.</li>
+          <li>Use an app password when required by the provider.</li>
+        </ul>
+
+        <h4>15.5 Login or Permission Issue</h4>
+        <ul>
+          <li>Check that the user exists.</li>
+          <li>Check profile and client mapping.</li>
+          <li>Verify role and permission-group assignment.</li>
+        </ul>
+      </section>
+
+      <section id="related">
+        <h3>16. Related Documents</h3>
+        <ul>
+          <li><code>README.md</code> for project overview</li>
+          <li><code>PROJECT_DETAILS.md</code> for architecture and modules</li>
+          <li><code>ONE_PROJECT_RUN.md</code> for unified run mode</li>
+          <li><code>LIVE_SERVERS.md</code> for live server tracking</li>
+          <li><code>PYTHONANYWHERE_DEPLOY.md</code> for provider-specific notes</li>
+          <li><code>CLIENT_ZIP_DELIVERY_GUIDE.md</code> for handover flow</li>
+          <li><code>HRM_USER_MANUAL.html</code> for end-user documentation</li>
+        </ul>
+      </section>
+
+      <section id="notes">
+        <h3>17. Final Notes</h3>
+        <p>This project runs frontend and backend together from one Django application. The setup process is command-line driven rather than a browser installer flow.</p>
+        <ul>
+          <li>Configure <code>.env</code></li>
+          <li>Prepare PostgreSQL</li>
+          <li>Run migrations</li>
+          <li>Create admin users</li>
+          <li>Start the server</li>
+        </ul>
+        <div class="good">
+          This HTML page is ready to share directly with clients or teammates and can also be exported to PDF from the browser.
+        </div>
+      </section>
+
+      <div class="foot">
+        Last updated: 2026-03-17 | Product: HRM Project | Document type: Setup Documentation
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const links = [...document.querySelectorAll('.toc a')];
+    const sections = links
+      .map(link => document.querySelector(link.getAttribute('href')))
+      .filter(Boolean);
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        const id = '#' + entry.target.id;
+        links.forEach((link) => {
+          link.classList.toggle('active', link.getAttribute('href') === id);
+        });
+      });
+    }, { rootMargin: '-20% 0px -65% 0px', threshold: 0 });
+
+    sections.forEach((section) => observer.observe(section));
+  </script>
+</body>
+</html>

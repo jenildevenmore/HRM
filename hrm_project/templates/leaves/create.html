@@ -1,0 +1,286 @@
+{% extends "base.html" %}
+
+{% block title %}Create Leave Request - HRM System{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <a href="{{ url('leave_list') }}">Leave Applications</a>
+    <span class="sep">></span>
+    <span class="current">Create</span>
+</div>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Create Leave Request</h1>
+        <p class="page-subtitle">Submit a leave request for an employee.</p>
+    </div>
+</div>
+
+<div class="permission-group-tabs" style="margin-bottom:20px;">
+    {% if role in ['superadmin', 'admin'] %}
+    <a href="{{ url('leave_type_list') }}" class="permission-group-tab-btn">Leave Types</a>
+    {% endif %}
+    <a href="{{ url('leave_list') }}" class="permission-group-tab-btn active">Applications</a>
+    <a href="{{ url('leave_balance') }}" class="permission-group-tab-btn">Leave Balance</a>
+</div>
+
+{% if errors %}
+<ul class="error-list">
+    {% for err in errors %}<li>{{ err }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<div class="form-card">
+    <form method="post" action="{{ url('leave_create') }}">
+        {{ csrf_input }}
+        {% if can_choose_employee %}
+        <div class="form-group">
+            <label>Employee *</label>
+            <select name="employee" id="employeeSelect" required>
+                <option value="">Select employee</option>
+                {% for e in employees %}
+                <option value="{{ e.id }}" data-manager="{{ e.manager_name or '-' }}" data-hr="{{ e.hr_name or '-' }}">
+                    {{ e.first_name }} {{ e.last_name }}
+                </option>
+                {% endfor %}
+            </select>
+            <small id="assignmentPreview" style="display:block;margin-top:6px;color:var(--text-muted);">
+                Manager: - | HR: -
+            </small>
+        </div>
+        {% else %}
+        <div class="form-group">
+            <label>Employee</label>
+            <input type="text" value="{% if employees %}{{ employees[0].first_name }} {{ employees[0].last_name }}{% else %}Your account{% endif %}" readonly>
+            <small style="display:block;margin-top:6px;color:var(--text-muted);">This leave request will be created only for your profile.</small>
+        </div>
+        {% endif %}
+        <div class="form-group">
+            <label>Leave Type *</label>
+            <select name="leave_type" required>
+                <option value="">Select leave type</option>
+                {% for t in leave_types %}
+                <option value="{{ t.name }}">{{ t.name }} ({{ t.max_days_per_year }} days/year)</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Leave Unit *</label>
+                <select name="leave_unit" id="leaveUnitSelect" required>
+                    <option value="day" selected>Day Leave</option>
+                    <option value="half_day">Half Day Leave</option>
+                    <option value="hour">Hourly Leave</option>
+                </select>
+            </div>
+            <div class="form-group" id="halfDaySlotGroup" style="display:none;">
+                <label>Half Day Slot *</label>
+                <select name="half_day_slot" id="halfDaySlotSelect">
+                    <option value="">Select half</option>
+                    <option value="first_half">First Half</option>
+                    <option value="second_half">Second Half</option>
+                </select>
+            </div>
+            <div class="form-group" id="leaveHoursGroup" style="display:none;">
+                <label>Leave Hours (Max 3) *</label>
+                <input type="number" step="0.5" min="0.5" max="3" name="leave_hours" id="leaveHoursInput">
+            </div>
+        </div>
+        <div class="form-row" id="hourlyTimeRow" style="display:none;">
+            <div class="form-group">
+                <label>From Time *</label>
+                <input type="time" name="leave_start_time" id="leaveStartTimeInput">
+            </div>
+            <div class="form-group">
+                <label>To Time (Auto)</label>
+                <input type="time" name="leave_end_time" id="leaveEndTimeInput" readonly>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Start Date *</label>
+                <input type="date" name="start_date" id="startDateInput" required>
+            </div>
+            <div class="form-group">
+                <label>End Date *</label>
+                <input type="date" name="end_date" id="endDateInput" required>
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Reason</label>
+            <textarea name="reason" rows="3" placeholder="Reason for leave"></textarea>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Submit Leave</button>
+            <a href="{{ url('leave_list') }}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var employeeSelect = document.getElementById('employeeSelect');
+    var preview = document.getElementById('assignmentPreview');
+    var leaveUnitSelect = document.getElementById('leaveUnitSelect');
+    var halfDaySlotGroup = document.getElementById('halfDaySlotGroup');
+    var halfDaySlotSelect = document.getElementById('halfDaySlotSelect');
+    var hourlyTimeRow = document.getElementById('hourlyTimeRow');
+    var leaveStartTimeInput = document.getElementById('leaveStartTimeInput');
+    var leaveEndTimeInput = document.getElementById('leaveEndTimeInput');
+    var leaveHoursGroup = document.getElementById('leaveHoursGroup');
+    var leaveHoursInput = document.getElementById('leaveHoursInput');
+    var startDateInput = document.getElementById('startDateInput');
+    var endDateInput = document.getElementById('endDateInput');
+    var todayIso = new Date().toISOString().slice(0, 10);
+    if (!employeeSelect || !preview) {
+        // Continue for leave-unit behavior even when employee selector is not shown.
+    }
+
+    function renderAssignment() {
+        if (!employeeSelect || !preview) {
+            return;
+        }
+        var selected = employeeSelect.options[employeeSelect.selectedIndex];
+        if (!selected || !selected.value) {
+            preview.textContent = 'Manager: - | HR: -';
+            return;
+        }
+        var manager = selected.getAttribute('data-manager') || '-';
+        var hr = selected.getAttribute('data-hr') || '-';
+        preview.textContent = 'Manager: ' + manager + ' | HR: ' + hr;
+    }
+
+    function setReadonlyEndDate(isLocked) {
+        if (!endDateInput) return;
+        endDateInput.readOnly = !!isLocked;
+        endDateInput.style.pointerEvents = isLocked ? 'none' : '';
+        endDateInput.style.opacity = isLocked ? '0.8' : '';
+    }
+
+    function recalculateHourlyEndTime() {
+        if (!leaveStartTimeInput || !leaveEndTimeInput || !leaveHoursInput) return;
+        var start = leaveStartTimeInput.value;
+        var hoursValue = parseFloat(leaveHoursInput.value || '');
+        if (!start || !hoursValue || hoursValue <= 0) {
+            leaveEndTimeInput.value = '';
+            return;
+        }
+        if (hoursValue > 3) {
+            hoursValue = 3;
+            leaveHoursInput.value = '3';
+        }
+        var startParts = start.split(':');
+        if (startParts.length < 2) {
+            leaveEndTimeInput.value = '';
+            return;
+        }
+        var startHour = parseInt(startParts[0], 10);
+        var startMinute = parseInt(startParts[1], 10);
+        var totalStartMinutes = (startHour * 60) + startMinute;
+        var addMinutes = Math.round(hoursValue * 60);
+        var totalEndMinutes = totalStartMinutes + addMinutes;
+        if (totalEndMinutes > (24 * 60) - 1) {
+            leaveEndTimeInput.value = '';
+            return;
+        }
+        var endHour = Math.floor(totalEndMinutes / 60);
+        var endMinute = totalEndMinutes % 60;
+        var endHourText = (endHour < 10 ? '0' : '') + endHour;
+        var endMinuteText = (endMinute < 10 ? '0' : '') + endMinute;
+        leaveEndTimeInput.value = endHourText + ':' + endMinuteText;
+    }
+
+    function clampHourlyHoursInput() {
+        if (!leaveHoursInput) return;
+        if (leaveHoursInput.value === '') return;
+        var hoursValue = parseFloat(leaveHoursInput.value);
+        if (isNaN(hoursValue)) return;
+        if (hoursValue > 3) {
+            leaveHoursInput.value = '3';
+        }
+    }
+
+    function applyLeaveUnitBehavior() {
+        if (!leaveUnitSelect) {
+            return;
+        }
+        var isHourly = leaveUnitSelect.value === 'hour';
+        var isHalfDay = leaveUnitSelect.value === 'half_day';
+        var isSingleDate = isHourly || isHalfDay;
+        if (halfDaySlotGroup) {
+            halfDaySlotGroup.style.display = isHalfDay ? '' : 'none';
+        }
+        if (halfDaySlotSelect) {
+            halfDaySlotSelect.required = isHalfDay;
+            if (!isHalfDay) {
+                halfDaySlotSelect.value = '';
+            }
+        }
+        if (hourlyTimeRow) {
+            hourlyTimeRow.style.display = isHourly ? '' : 'none';
+        }
+        if (leaveStartTimeInput) {
+            leaveStartTimeInput.required = isHourly;
+            if (!isHourly) {
+                leaveStartTimeInput.value = '';
+            }
+        }
+        if (leaveEndTimeInput) {
+            leaveEndTimeInput.required = false;
+            if (!isHourly) {
+                leaveEndTimeInput.value = '';
+            }
+        }
+        if (leaveHoursGroup) {
+            leaveHoursGroup.style.display = isHourly ? '' : 'none';
+        }
+        if (leaveHoursInput) {
+            leaveHoursInput.required = isHourly;
+            if (!isHourly) {
+                leaveHoursInput.value = '';
+            } else {
+                recalculateHourlyEndTime();
+            }
+        }
+        if (startDateInput && endDateInput && isSingleDate && startDateInput.value) {
+            endDateInput.value = startDateInput.value;
+        }
+        setReadonlyEndDate(isSingleDate);
+    }
+
+    if (employeeSelect) {
+        employeeSelect.addEventListener('change', renderAssignment);
+    }
+    if (leaveUnitSelect) {
+        leaveUnitSelect.addEventListener('change', applyLeaveUnitBehavior);
+    }
+    if (startDateInput) {
+        startDateInput.min = todayIso;
+        if (startDateInput.value && startDateInput.value < todayIso) startDateInput.value = todayIso;
+    }
+    if (endDateInput) {
+        endDateInput.min = todayIso;
+        if (endDateInput.value && endDateInput.value < todayIso) endDateInput.value = todayIso;
+    }
+    if (startDateInput) {
+        startDateInput.addEventListener('change', function () {
+            if (leaveUnitSelect && (leaveUnitSelect.value === 'hour' || leaveUnitSelect.value === 'half_day') && endDateInput) {
+                endDateInput.value = startDateInput.value;
+            }
+            if (endDateInput) endDateInput.min = startDateInput.value || todayIso;
+        });
+    }
+    if (leaveStartTimeInput) {
+        leaveStartTimeInput.addEventListener('change', recalculateHourlyEndTime);
+    }
+    if (leaveHoursInput) {
+        leaveHoursInput.addEventListener('input', function () {
+            clampHourlyHoursInput();
+            recalculateHourlyEndTime();
+        });
+    }
+    renderAssignment();
+    applyLeaveUnitBehavior();
+});
+</script>
+{% endblock %}

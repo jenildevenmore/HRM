@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+
+{% block title %}{{ dynamic_model.name }} - HRM System{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <a href="{{ url('dashboard') }}">Main</a>
+    <span class="sep">></span>
+    <span class="current">{{ dynamic_model.name }}</span>
+</div>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">{{ dynamic_model.name }}</h1>
+        <p class="page-subtitle">Manage {{ dynamic_model.name }} records.</p>
+    </div>
+    <div class="attendance-actions">
+        {% if dynamic_model.slug == 'attendance' and can_view_all_attendance %}
+        <form id="attendanceFilterForm" class="attendance-filter-inline" method="get" action="{{ url('dynamic_entity_list', args=[dynamic_model.id]) }}">
+            <select id="attendanceEmployeeFilter" name="employee" aria-label="Filter attendance by employee">
+                <option value="">All Employees (Today)</option>
+                {% for emp in attendance_employees %}
+                <option value="{{ emp.id }}" {% if selected_employee_id == (emp.id|string) %}selected{% endif %}>
+                    {{ emp.first_name }} {{ emp.last_name }}
+                </option>
+                {% endfor %}
+            </select>
+        </form>
+        {% endif %}
+        {% if dynamic_model.slug == 'attendance' and can_manage_attendance_template %}
+        <a href="{{ url('attendance_template_v2') }}" class="btn btn-secondary">Attendance Template V2</a>
+        {% endif %}
+        <!-- {% if dynamic_model.slug == 'attendance' %}
+        <button type="button" class="btn btn-secondary" onclick="openPunchModal()">Punch In / Punch Out</button>
+        {% endif %} -->
+        {% if dynamic_model.slug == 'attendance' and attendance_add_locked %}
+            {% if attendance_open_record_id %}
+            <a href="{{ url('dynamic_entity_edit', args=[dynamic_model.id, attendance_open_record_id]) }}" class="btn btn-primary">Punch Out</a>
+            {% else %}
+            <span class="btn btn-secondary" style="opacity:0.65;cursor:not-allowed;">Attendance Done</span>
+            {% endif %}
+        {% else %}
+        <a href="{{ url('dynamic_entity_create', args=[dynamic_model.id]) }}" class="btn btn-primary">+ Add {{ dynamic_model.name }}</a>
+        {% endif %}
+    </div>
+</div>
+
+{% if dynamic_model.slug == 'attendance' and attendance_summary %}
+<div class="card" style="margin-bottom:14px;">
+    <strong>Today ({{ attendance_summary.date }})</strong>
+    <span style="margin-left:14px;color:var(--success);">Present: {{ attendance_summary.present }}</span>
+    <span style="margin-left:14px;color:var(--error);">Absent: {{ attendance_summary.absent }}</span>
+</div>
+{% endif %}
+
+{% if records %}
+<div class="table-wrapper">
+    <table>
+        <thead>
+            <tr>
+                <!-- <th>#</th> -->
+                {% if dynamic_model.slug == 'attendance' %}
+                <th>Employee</th>
+                {% endif %}
+                {% for f in fields %}
+                <th>{{ f.name }}</th>
+                {% endfor %}
+                {% if dynamic_model.slug == 'attendance' %}
+                <th>Total Time</th>
+                {% endif %}
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in records %}
+            <tr>
+                <!-- <td>{{ r.id }}</td> -->
+                {% if dynamic_model.slug == 'attendance' %}
+                <td>{{ r.employee_name or '-' }}</td>
+                {% endif %}
+                {% for f in fields %}
+                {% set cell_value = r.data.get(f.key, '-') %}
+                <td>
+                    {% if f.field_type == 'image' and cell_value not in ['-', '', None] %}
+                    <a href="{{ cell_value }}" target="_blank" rel="noopener">View Image</a>
+                    {% elif f.field_type == 'file' and cell_value not in ['-', '', None] %}
+                    <a href="{{ cell_value }}" target="_blank" rel="noopener">View File</a>
+                    {% else %}
+                    {{ cell_value }}
+                    {% endif %}
+                </td>
+                {% endfor %}
+                {% if dynamic_model.slug == 'attendance' %}
+                <td>{{ r.total_time or '-' }}</td>
+                {% endif %}
+                <td>
+                    {% if dynamic_model.slug == 'attendance' %}
+                        {% if r.is_open_attendance %}
+                        <a href="{{ url('dynamic_entity_edit', args=[dynamic_model.id, r.id]) }}" class="btn btn-primary btn-sm">Punch Out</a>
+                        {% else %}
+                        <span class="btn btn-secondary btn-sm" style="opacity:0.65;cursor:not-allowed;">Completed</span>
+                        {% endif %}
+                    {% else %}
+                    <a href="{{ url('dynamic_entity_edit', args=[dynamic_model.id, r.id]) }}" class="btn btn-secondary btn-sm">Edit</a>
+                    {% endif %}
+                    {% if dynamic_model.slug == 'attendance' %}
+                        {% if role in ['superadmin', 'admin'] or 'attendance.delete' in module_permissions %}
+                        <form method="post" action="{{ url('dynamic_entity_delete', args=[dynamic_model.id, r.id]) }}" style="display:inline;">
+                            {{ csrf_input }}
+                            <button type="submit" class="btn btn-danger btn-sm"
+                                onclick="return confirm('Delete this record?')">Delete</button>
+                        </form>
+                        {% endif %}
+                    {% else %}
+                        {% set dynamic_delete_perm = 'dynamic_model.' ~ dynamic_model.id ~ '.delete' %}
+                        {% if role in ['superadmin', 'admin'] or dynamic_delete_perm in module_permissions %}
+                        <form method="post" action="{{ url('dynamic_entity_delete', args=[dynamic_model.id, r.id]) }}" style="display:inline;">
+                            {{ csrf_input }}
+                            <button type="submit" class="btn btn-danger btn-sm"
+                                onclick="return confirm('Delete this record?')">Delete</button>
+                        </form>
+                        {% endif %}
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card"><div class="empty-state"><p>No records yet. Create first {{ dynamic_model.name }}.</p></div></div>
+{% endif %}
+
+{% if dynamic_model.slug == 'attendance' %}
+<div class="confirm-overlay" id="punchModal" style="display:none;">
+    <div class="confirm-dialog" style="max-width:520px;">
+        <h3>Attendance Punch</h3>
+        <p>First click creates Punch In. Second click today saves Punch Out.</p>
+        <form method="post" action="{{ url('dynamic_entity_punch', args=[dynamic_model.id]) }}">
+            {{ csrf_input }}
+            <div class="form-group">
+                <label>Employee ID</label>
+                <input type="number" name="employee_id" required>
+            </div>
+            <div class="form-group">
+                <label>Shift (optional)</label>
+                <input type="text" name="shift" placeholder="morning / evening / night">
+            </div>
+            <div class="form-group">
+                <label>Remarks (optional)</label>
+                <input type="text" name="remarks" placeholder="Notes">
+            </div>
+            {% if attendance_location_required %}
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Latitude *</label>
+                    <input type="text" name="location_lat" placeholder="e.g. 23.0225">
+                </div>
+                <div class="form-group">
+                    <label>Longitude *</label>
+                    <input type="text" name="location_lng" placeholder="e.g. 72.5714">
+                </div>
+            </div>
+            {% endif %}
+            {% if attendance_selfie_required %}
+            <div class="form-group">
+                <label>Selfie URL *</label>
+                <input type="text" name="selfie_url" placeholder="https://...">
+            </div>
+            {% endif %}
+            <div class="confirm-actions">
+                <button type="submit" class="btn btn-primary">Save Punch</button>
+                <button type="button" class="btn btn-secondary" onclick="closePunchModal()">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+{% if dynamic_model.slug == 'attendance' %}
+{% block extra_js %}
+<script>
+function openPunchModal() {
+    document.getElementById('punchModal').style.display = 'flex';
+}
+function closePunchModal() {
+    document.getElementById('punchModal').style.display = 'none';
+}
+document.addEventListener('DOMContentLoaded', function () {
+    var employeeFilter = document.getElementById('attendanceEmployeeFilter');
+    var filterForm = document.getElementById('attendanceFilterForm');
+    if (employeeFilter && filterForm) {
+        employeeFilter.addEventListener('change', function () {
+            filterForm.submit();
+        });
+    }
+});
+</script>
+{% endblock %}
+{% endif %}
+{% endblock %}

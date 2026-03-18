@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - HRM System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="{{ static('css/style.css') }}" rel="stylesheet">
+</head>
+
+<body>
+
+    <div class="login-page">
+        <div class="login-card">
+
+            <div class="login-logo">
+                <div class="logo-icon">H</div>
+                <div>
+                    <h1>HRM System</h1>
+                    <p>Human Resource Management</p>
+                </div>
+            </div>
+
+            {% if error %}
+            <div class="login-error">{{ error }}</div>
+            {% endif %}
+
+            {% if login_mode == 'superadmin' %}
+            <div class="page-header" style="margin-bottom: 18px;">
+                <div>
+                    <h2 class="page-title" style="margin:0; font-size:1.2rem;">Super Admin Login</h2>
+                    <p class="page-subtitle" style="margin:6px 0 0 0;">Login with superadmin username and password.</p>
+                </div>
+                <a href="{{ url('login') }}" class="btn btn-secondary btn-sm">Back</a>
+            </div>
+
+            <form method="post" action="{{ url('login') }}">
+                {{ csrf_input }}
+                <input type="hidden" name="login_mode" value="superadmin">
+
+                <div class="form-group">
+                    <label for="id_username">Username</label>
+                    <input type="text" name="username" id="id_username" placeholder="Enter superadmin username"
+                        value="{{ form.username.value() or '' }}" autofocus required>
+                </div>
+
+                <div class="form-group">
+                    <label for="id_password">Password</label>
+                    <input type="password" name="password" id="id_password" placeholder="Enter password" required>
+                </div>
+                <div style="margin:-4px 0 12px 0;text-align:right;">
+                    <a href="{{ url('forgot_password') }}" style="font-size:.92rem;">Forgot password?</a>
+                </div>
+
+                <button type="submit" class="btn btn-primary login-btn">Sign In as Super Admin</button>
+            </form>
+            {% elif selected_client %}
+            <div class="page-header" style="margin-bottom: 18px;">
+                <div>
+                    <h2 class="page-title" style="margin:0; font-size:1.2rem;">{{ selected_client.name }}</h2>
+                    <p class="page-subtitle" style="margin:6px 0 0 0;">{{ selected_client.domain }}</p>
+                </div>
+                <a href="{{ url('login') }}" class="btn btn-secondary btn-sm">Change Client</a>
+            </div>
+
+            <form method="post" action="{{ url('login') }}">
+                {{ csrf_input }}
+                <input type="hidden" name="client_id" value="{{ selected_client.id }}">
+
+                <div class="form-group">
+                    <label for="id_username">Client Username</label>
+                    <input type="text" name="username" id="id_username" placeholder="Enter username"
+                        value="{{ form.username.value() or '' }}" autofocus required>
+                </div>
+
+                <div class="form-group">
+                    <label for="id_password">Client Password</label>
+                    <input type="password" name="password" id="id_password" placeholder="Enter password" required>
+                </div>
+                <div style="margin:-4px 0 12px 0;text-align:right;">
+                    <a href="{{ url('forgot_password') }}?client={{ selected_client.id }}" style="font-size:.92rem;">Forgot password?</a>
+                </div>
+
+                <button type="submit" class="btn btn-primary login-btn">Sign In</button>
+            </form>
+            {% else %}
+            <h2 style="margin:0 0 12px 0; font-size:1.2rem;">Select Client</h2>
+            <p class="page-subtitle" style="margin-bottom:14px;">Choose a client, then login with a client user account.</p>
+            <div style="margin-bottom: 14px;">
+                <a href="{{ url('login') }}?mode=superadmin" class="btn btn-secondary btn-sm">Super Admin Login</a>
+            </div>
+
+            {% if clients %}
+            <div class="table-card" style="padding:0;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Domain</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for client in clients %}
+                        <tr>
+                            <td>{{ client.name }}</td>
+                            <td>{{ client.domain }}</td>
+                            <td>
+                                <a href="{{ url('login') }}?client={{ client.id }}" class="btn btn-primary btn-sm">Use Client</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            {% if clients_load_failed %}
+            <div class="login-error">Backend API unreachable. Start backend server and refresh.</div>
+            {% else %}
+            <div class="login-error">No clients available. Create a client first.</div>
+            {% endif %}
+            {% endif %}
+            {% endif %}
+        </div>
+    </div>
+
+    <script src="{{ static('js/main.js') }}"></script>
+</body>
+
+</html>

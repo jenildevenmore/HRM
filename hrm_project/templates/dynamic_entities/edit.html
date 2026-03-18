@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}Edit {{ dynamic_model.name }} - HRM System{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <a href="{{ url('dynamic_entity_list', args=[dynamic_model.id]) }}">{{ dynamic_model.name }}</a>
+    <span class="sep">></span>
+    <span class="current">Edit #{{ record.id }}</span>
+</div>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Edit {{ dynamic_model.name }}</h1>
+        <p class="page-subtitle">Update record #{{ record.id }}.</p>
+    </div>
+</div>
+
+{% if errors %}
+<ul class="error-list">
+    {% for err in errors %}<li>{{ err }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<div class="form-card">
+    <form method="post" action="{{ url('dynamic_entity_edit', args=[dynamic_model.id, record.id]) }}" enctype="multipart/form-data">
+        {{ csrf_input }}
+
+        {% if is_attendance %}
+        <div class="form-group">
+            <label>Employee ID</label>
+            <input type="text" value="{{ record.employee }}" readonly>
+        </div>
+        <div class="form-group">
+            <label>Attendance Date</label>
+            <input type="text" value="{{ record.data.get('attendance_date', '-') }}" readonly>
+        </div>
+        <div class="form-group">
+            <label>Check In Time</label>
+            <input type="text" value="{{ record.data.get('check_in', '-') }}" readonly>
+        </div>
+        <div class="form-group">
+            <label>Check Out Time</label>
+            <input type="text" value="{{ current_time }}" readonly>
+            <small style="color:var(--text-muted);">Current server time is saved when you click Check Out.</small>
+        </div>
+        <div class="form-group">
+            <label>Total Time</label>
+            {% if attendance_total_time %}
+            <input type="text" value="{{ attendance_total_time }}" readonly>
+            {% elif attendance_total_time_preview %}
+            <input type="text" value="{{ attendance_total_time_preview }}" readonly>
+            <small style="color:var(--text-muted);">Preview using current time as check-out.</small>
+            {% else %}
+            <input type="text" value="-" readonly>
+            {% endif %}
+        </div>
+        <div class="form-group">
+            <label>Remarks (optional)</label>
+            <input type="text" name="remarks" value="{{ record.data.get('remarks', '') }}" placeholder="Notes">
+        </div>
+        {% else %}
+            {% for f in fields %}
+            {% set value = record.data.get(f.key, '') %}
+            <div class="form-group">
+                <label>{{ f.name }}{% if f.required %} *{% endif %}</label>
+                {% if f.choices_json and f.field_type != 'boolean' %}
+                <select name="df_{{ f.key }}" {% if f.required %}required{% endif %}>
+                    {% if not f.required %}<option value="">Select</option>{% endif %}
+                    {% for opt in f.choices_json %}
+                    <option value="{{ opt }}" {% if value == opt %}selected{% endif %}>{{ opt }}</option>
+                    {% endfor %}
+                </select>
+                {% elif f.field_type == 'number' %}
+                <input type="number" name="df_{{ f.key }}" value="{{ value }}" {% if f.required %}required{% endif %}>
+                {% elif f.field_type == 'date' %}
+                <input type="date" name="df_{{ f.key }}" value="{{ value }}" {% if f.required %}required{% endif %}>
+                {% elif f.field_type == 'boolean' %}
+                <select name="df_{{ f.key }}" {% if f.required %}required{% endif %}>
+                    <option value="false" {% if value in [False, 'false', 'False', 0, '0', 'no', 'No'] %}selected{% endif %}>No</option>
+                    <option value="true" {% if value in [True, 'true', 'True', 1, '1', 'yes', 'Yes'] %}selected{% endif %}>Yes</option>
+                </select>
+                {% elif f.field_type == 'email' %}
+                <input type="email" name="df_{{ f.key }}" value="{{ value }}" {% if f.required %}required{% endif %}>
+                {% elif f.field_type == 'image' %}
+                {% if value %}
+                <small style="display:block;margin-bottom:6px;color:var(--text-muted);">Current: <a href="{{ value }}" target="_blank" rel="noopener">View image</a></small>
+                {% endif %}
+                <input type="file" name="df_{{ f.key }}" accept="image/*" {% if f.required and not value %}required{% endif %}>
+                {% elif f.field_type == 'file' %}
+                {% if value %}
+                <small style="display:block;margin-bottom:6px;color:var(--text-muted);">Current: <a href="{{ value }}" target="_blank" rel="noopener">View file</a></small>
+                {% endif %}
+                <input type="file" name="df_{{ f.key }}" {% if f.required and not value %}required{% endif %}>
+                {% else %}
+                <input type="text" name="df_{{ f.key }}" value="{{ value }}" {% if f.required %}required{% endif %}>
+                {% endif %}
+            </div>
+            {% endfor %}
+        {% endif %}
+
+        <div class="form-actions">
+            {% if is_attendance %}
+            {% if record.data.get('check_out') %}
+            <button type="button" class="btn btn-secondary" disabled>Already Checked Out</button>
+            {% else %}
+            <button type="submit" class="btn btn-primary">Check Out</button>
+            {% endif %}
+            {% else %}
+            <button type="submit" class="btn btn-primary">Save Changes</button>
+            {% endif %}
+            <a href="{{ url('dynamic_entity_list', args=[dynamic_model.id]) }}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

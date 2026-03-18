@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}Add Dynamic Record - HRM System{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <a href="{{ url('dynamic_model_list') }}">Dynamic Models</a>
+    <span class="sep">></span>
+    <a href="{{ url('dynamic_record_list', args=[dynamic_model.id]) }}">{{ dynamic_model.name }} Records</a>
+    <span class="sep">></span>
+    <span class="current">Add Record</span>
+</div>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Add Dynamic Record</h1>
+        <p class="page-subtitle">Enter a JSON object for {{ dynamic_model.name }}.</p>
+    </div>
+</div>
+
+{% if errors %}
+<ul class="error-list">
+    {% for err in errors %}<li>{{ err }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<div class="form-card">
+    <form method="post" action="{{ url('dynamic_record_create', args=[dynamic_model.id]) }}">
+        {{ csrf_input }}
+        <div class="form-group">
+            <label>Data JSON</label>
+            <textarea name="data_json">{{ form.data_json.value() or '{}' }}</textarea>
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Create Record</button>
+            <a href="{{ url('dynamic_record_list', args=[dynamic_model.id]) }}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}
+

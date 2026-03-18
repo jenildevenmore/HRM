@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}Custom Fields — HRM System{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Custom Fields</h1>
+        <p class="page-subtitle">Define extra data fields for any model.</p>
+    </div>
+    <a href="{{ url('custom_field_create') }}" class="btn btn-primary">＋ Add Field</a>
+</div>
+
+{% if custom_fields %}
+<div class="table-wrapper">
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Field Name</th>
+                <th>Type</th>
+                <th>Model</th>
+                {% if show_client_model %}
+                <th>Client ID</th>
+                {% endif %}
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for cf in custom_fields %}
+            <tr>
+                <td style="color:var(--text-dim);">{{ cf.id }}</td>
+                <td><strong>{{ cf.field_name }}</strong></td>
+                <td>
+                    <span class="badge badge-{{ cf.field_type }}">{{ cf.field_type }}</span>
+                </td>
+                <td style="color:var(--text-muted);">{{ cf.model_name }}</td>
+                {% if show_client_model %}
+                <td style="color:var(--text-muted);">{{ cf.client }}</td>
+                {% endif %}
+                <td>
+                    <div style="display:flex;gap:8px;">
+                        <a href="{{ url('custom_field_edit', args=[cf.id]) }}" class="btn btn-secondary btn-sm">✏️
+                            Edit</a>
+
+                        <form id="del-cf-{{ cf.id }}" method="post"
+                            action="{{ url('custom_field_delete', args=[cf.id]) }}" style="display:inline;">
+                            {{ csrf_input }}
+                            <button type="button" class="btn btn-danger btn-sm"
+                                onclick="confirmDelete('del-cf-{{ cf.id }}', '{{ cf.field_name }}')">
+                                🗑 Delete
+                            </button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card">
+    <div class="empty-state">
+        <div class="empty-icon">⚙️</div>
+        <p>No custom fields defined yet. <a href="{{ url('custom_field_create') }}">Create one →</a></p>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

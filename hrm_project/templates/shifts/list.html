@@ -1,0 +1,309 @@
+{% extends "base.html" %}
+
+{% block title %}Shifts - HRM System{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <span class="current">Shifts</span>
+</div>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Manage Shifts</h1>
+        <p class="page-subtitle">Create and manage work shifts for this client.</p>
+    </div>
+</div>
+
+{% if errors %}
+<ul class="error-list">
+    {% for err in errors %}<li>{{ err }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<div class="card" style="margin-bottom:20px;">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button type="button" class="btn btn-secondary shift-section-btn" data-target="shift-section-create">Create Shift</button>
+        <button type="button" class="btn btn-secondary shift-section-btn" data-target="shift-section-list">Shifts List</button>
+    </div>
+</div>
+
+<div id="shifts-search-card" class="card" style="margin-bottom:20px;">
+    <form method="get" class="form-row">
+        <div class="form-group">
+            <label>Search</label>
+            <input type="text" name="q" value="{{ search_q or '' }}" placeholder="Shift name or code">
+        </div>
+        <div class="form-group">
+            <label>Active</label>
+            <select name="is_active">
+                <option value="">All</option>
+                <option value="true" {% if selected_active == 'true' %}selected{% endif %}>Active</option>
+                <option value="false" {% if selected_active == 'false' %}selected{% endif %}>Inactive</option>
+            </select>
+        </div>
+        <div class="form-actions" style="margin-top:28px;">
+            <button type="submit" class="btn btn-secondary">Search</button>
+            <a href="{{ url('shift_list') }}" class="btn btn-secondary">Reset</a>
+        </div>
+    </form>
+</div>
+
+<div id="shift-section-create" class="shift-section">
+{% if role in ['superadmin', 'admin'] or 'shifts.create' in module_permissions %}
+<div class="form-card" style="max-width:980px;margin-bottom:20px;">
+    <form method="post" action="{{ url('shift_list') }}">
+        {{ csrf_input }}
+        <input type="hidden" name="edit_id" value="">
+        <div class="form-row">
+            <div class="form-group">
+                <label>Shift Name *</label>
+                <input type="text" name="name" value="" required>
+            </div>
+            <div class="form-group">
+                <label>Code</label>
+                <input type="text" name="code" value="" placeholder="e.g. GEN-A">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Start Time *</label>
+                <input type="time" name="start_time" value="" required>
+            </div>
+            <div class="form-group">
+                <label>End Time *</label>
+                <input type="time" name="end_time" value="" required>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Grace Minutes</label>
+                <input type="number" name="grace_minutes" min="0" value="0">
+            </div>
+            <div class="form-group">
+                <label>Weekly Off</label>
+                <input type="text" name="weekly_off" value="" placeholder="Sunday">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Night Shift</label>
+                <select name="is_night_shift">
+                    <option value="false" selected>No</option>
+                    <option value="true">Yes</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Active</label>
+                <select name="is_active">
+                    <option value="true" selected>Yes</option>
+                    <option value="false">No</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Create Shift</button>
+        </div>
+    </form>
+</div>
+{% endif %}
+</div>
+
+<div id="shift-section-list" class="shift-section">
+{% if shifts %}
+<div class="table-wrapper">
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Code</th>
+                <th>Start</th>
+                <th>End</th>
+                <th>Grace</th>
+                <th>Night</th>
+                <th>Weekly Off</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in shifts %}
+            <tr>
+                <td>{{ s.name }}</td>
+                <td>{{ s.code or '-' }}</td>
+                <td>{{ s.start_time }}</td>
+                <td>{{ s.end_time }}</td>
+                <td>{{ s.grace_minutes }}</td>
+                <td>{{ 'Yes' if s.is_night_shift else 'No' }}</td>
+                <td>{{ s.weekly_off or '-' }}</td>
+                <td>{{ 'Active' if s.is_active else 'Inactive' }}</td>
+                <td>
+                    {% if role in ['superadmin', 'admin'] or 'shifts.edit' in module_permissions %}
+                    <button
+                        type="button"
+                        class="btn btn-secondary btn-sm shift-edit-btn"
+                        data-id="{{ s.id }}"
+                        data-name="{{ s.name|e }}"
+                        data-code="{{ s.code|e }}"
+                        data-start-time="{{ s.start_time|e }}"
+                        data-end-time="{{ s.end_time|e }}"
+                        data-grace-minutes="{{ s.grace_minutes }}"
+                        data-weekly-off="{{ s.weekly_off|e }}"
+                        data-is-night-shift="{{ 'true' if s.is_night_shift else 'false' }}"
+                        data-is-active="{{ 'true' if s.is_active else 'false' }}"
+                    >Edit</button>
+                    {% endif %}
+                    {% if role in ['superadmin', 'admin'] or 'shifts.delete' in module_permissions %}
+                    <form method="post" action="{{ url('shift_delete', args=[s.id]) }}" style="display:inline;">
+                        {{ csrf_input }}
+                        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this shift?')">Delete</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card"><div class="empty-state"><p>No shifts found.</p></div></div>
+{% endif %}
+</div>
+
+{% if role in ['superadmin', 'admin'] or 'shifts.edit' in module_permissions %}
+<div id="shiftEditModal" style="display:none;position:fixed;inset:0;background:rgba(3,6,16,0.82);backdrop-filter:blur(2px);z-index:3000;padding:24px;overflow:auto;">
+    <div class="form-card" style="max-width:920px;margin:30px auto;background:#0f1326;border:1px solid var(--border);box-shadow:0 20px 55px rgba(0,0,0,0.55);position:relative;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+            <h3 class="section-title" style="margin:0;">Edit Shift</h3>
+            <button type="button" id="shiftEditModalClose" class="btn btn-secondary btn-sm">Close</button>
+        </div>
+        <form method="post" action="{{ url('shift_list') }}" style="margin-top:12px;">
+            {{ csrf_input }}
+            <input type="hidden" name="edit_id" id="shiftEditId">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Shift Name *</label>
+                    <input type="text" name="name" id="shiftEditName" required>
+                </div>
+                <div class="form-group">
+                    <label>Code</label>
+                    <input type="text" name="code" id="shiftEditCode" placeholder="e.g. GEN-A">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Start Time *</label>
+                    <input type="time" name="start_time" id="shiftEditStartTime" required>
+                </div>
+                <div class="form-group">
+                    <label>End Time *</label>
+                    <input type="time" name="end_time" id="shiftEditEndTime" required>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Grace Minutes</label>
+                    <input type="number" name="grace_minutes" id="shiftEditGraceMinutes" min="0">
+                </div>
+                <div class="form-group">
+                    <label>Weekly Off</label>
+                    <input type="text" name="weekly_off" id="shiftEditWeeklyOff">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Night Shift</label>
+                    <select name="is_night_shift" id="shiftEditIsNightShift">
+                        <option value="false">No</option>
+                        <option value="true">Yes</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Active</label>
+                    <select name="is_active" id="shiftEditIsActive">
+                        <option value="true">Yes</option>
+                        <option value="false">No</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Update Shift</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<script>
+(function () {
+    const sectionButtons = Array.from(document.querySelectorAll('.shift-section-btn'));
+    const searchCard = document.getElementById('shifts-search-card');
+    const sections = {
+        'shift-section-create': document.getElementById('shift-section-create'),
+        'shift-section-list': document.getElementById('shift-section-list'),
+    };
+    if (!sectionButtons.length) return;
+
+    function showSection(targetId) {
+        Object.keys(sections).forEach(function (key) {
+            if (!sections[key]) return;
+            sections[key].style.display = key === targetId ? 'block' : 'none';
+        });
+        sectionButtons.forEach(function (btn) {
+            const active = btn.getAttribute('data-target') === targetId;
+            btn.classList.toggle('btn-primary', active);
+            btn.classList.toggle('btn-secondary', !active);
+        });
+        if (searchCard) {
+            searchCard.style.display = targetId === 'shift-section-create' ? 'none' : 'block';
+        }
+    }
+
+    showSection('shift-section-list');
+    sectionButtons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            showSection(btn.getAttribute('data-target'));
+        });
+    });
+})();
+
+(function () {
+    const modal = document.getElementById('shiftEditModal');
+    const closeBtn = document.getElementById('shiftEditModalClose');
+    const openButtons = Array.from(document.querySelectorAll('.shift-edit-btn'));
+    if (!modal || !closeBtn || !openButtons.length) return;
+
+    function bind(btn) {
+        document.getElementById('shiftEditId').value = btn.getAttribute('data-id') || '';
+        document.getElementById('shiftEditName').value = btn.getAttribute('data-name') || '';
+        document.getElementById('shiftEditCode').value = btn.getAttribute('data-code') || '';
+        document.getElementById('shiftEditStartTime').value = btn.getAttribute('data-start-time') || '';
+        document.getElementById('shiftEditEndTime').value = btn.getAttribute('data-end-time') || '';
+        document.getElementById('shiftEditGraceMinutes').value = btn.getAttribute('data-grace-minutes') || '0';
+        document.getElementById('shiftEditWeeklyOff').value = btn.getAttribute('data-weekly-off') || '';
+        document.getElementById('shiftEditIsNightShift').value = btn.getAttribute('data-is-night-shift') || 'false';
+        document.getElementById('shiftEditIsActive').value = btn.getAttribute('data-is-active') || 'true';
+    }
+
+    function openModal(btn) {
+        bind(btn);
+        modal.style.display = 'block';
+        document.body.style.overflow = 'hidden';
+    }
+    function closeModal() {
+        modal.style.display = 'none';
+        document.body.style.overflow = '';
+    }
+
+    openButtons.forEach(function (btn) {
+        btn.addEventListener('click', function () { openModal(btn); });
+    });
+    closeBtn.addEventListener('click', closeModal);
+    modal.addEventListener('click', function (event) {
+        if (event.target === modal) closeModal();
+    });
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && modal.style.display === 'block') closeModal();
+    });
+})();
+</script>
+{% endblock %}

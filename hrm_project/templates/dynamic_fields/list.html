@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}Dynamic Fields - HRM System{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <a href="{{ url('dynamic_model_list') }}">Dynamic Models</a>
+    <span class="sep">></span>
+    <span class="current">{{ dynamic_model.name }} Fields</span>
+</div>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Dynamic Fields</h1>
+        <p class="page-subtitle">Manage fields for model {{ dynamic_model.name }}.</p>
+    </div>
+    <a href="{{ url('dynamic_field_create', args=[dynamic_model.id]) }}" class="btn btn-primary">+ Add Field</a>
+</div>
+
+{% if dynamic_fields %}
+<div class="table-wrapper">
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Name</th>
+                <th>Key</th>
+                <th>Type</th>
+                <th>Required</th>
+                <th>User Visible</th>
+                <th>Order</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for f in dynamic_fields %}
+            <tr>
+                <td>{{ f.id }}</td>
+                <td>{{ f.name }}</td>
+                <td>{{ f.key }}</td>
+                <td>{{ f.field_type }}</td>
+                <td>{{ 'Yes' if f.required else 'No' }}</td>
+                <td>{{ 'Yes' if f.visible_to_users else 'No' }}</td>
+                <td>{{ f.sort_order }}</td>
+                <td>
+                    <a href="{{ url('dynamic_field_edit', args=[dynamic_model.id, f.id]) }}" class="btn btn-secondary btn-sm">Edit</a>
+                    <form method="post" action="{{ url('dynamic_field_delete', args=[dynamic_model.id, f.id]) }}" style="display:inline;">
+                        {{ csrf_input }}
+                        <button type="submit" class="btn btn-danger btn-sm"
+                            onclick="return confirm('Delete field {{ f.name }}?')">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card"><div class="empty-state"><p>No fields yet.</p></div></div>
+{% endif %}
+{% endblock %}

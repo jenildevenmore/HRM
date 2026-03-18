@@ -1,0 +1,385 @@
+{% extends "base.html" %}
+
+{% block title %}Attendance Template V2 - HRM System{% endblock %}
+
+{% block content %}
+<style>
+    .att-v2-wrap { max-width: 1200px; margin: 0 auto 96px auto; }
+    .att-v2-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 14px;
+    }
+    .att-v2-back {
+        color: var(--text-muted);
+        font-size: 0.95rem;
+    }
+    .att-v2-back:hover { color: var(--text); }
+    .att-v2-main {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: var(--bg-card);
+        padding: 20px;
+    }
+    .att-v2-title {
+        margin: 0;
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: var(--text);
+    }
+    .att-v2-sub {
+        margin-top: 4px;
+        color: var(--text-muted);
+    }
+    .att-v2-name { max-width: 420px; margin-top: 14px; }
+    .att-v2-section-list { margin-top: 14px; display: grid; gap: 12px; }
+    .att-v2-sec {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: rgba(255,255,255,0.02);
+        overflow: hidden;
+    }
+    .att-v2-sec > summary {
+        list-style: none;
+        cursor: pointer;
+        padding: 14px 16px;
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+        border-bottom: 1px solid transparent;
+    }
+    .att-v2-sec > summary::-webkit-details-marker { display: none; }
+    .att-v2-sec[open] > summary { border-bottom-color: var(--border); }
+    .att-v2-sec-title { font-weight: 700; color: var(--text); }
+    .att-v2-sec-sub { color: var(--text-muted); font-size: 0.92rem; }
+    .att-v2-sec-body { padding: 14px 16px; display: grid; gap: 12px; }
+    .att-radio-list { display: grid; gap: 12px; }
+    .att-radio-item {
+        display: grid;
+        grid-template-columns: 22px 1fr;
+        gap: 10px;
+        align-items: start;
+    }
+    .att-radio-item input[type="radio"] {
+        width: 18px;
+        height: 18px;
+        margin-top: 2px;
+    }
+    .att-radio-item b {
+        display: block;
+        margin-bottom: 2px;
+        color: var(--text);
+        font-weight: 600;
+    }
+    .att-radio-item span {
+        color: var(--text-muted);
+        font-size: 0.92rem;
+    }
+    .att-toggle-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        border: 1px dashed var(--border);
+        border-radius: 10px;
+        padding: 12px;
+    }
+    .att-toggle-row b {
+        color: var(--text);
+        display: block;
+        margin-bottom: 2px;
+    }
+    .att-toggle-row span {
+        color: var(--text-muted);
+        font-size: 0.92rem;
+    }
+    .switch {
+        position: relative;
+        width: 46px;
+        height: 24px;
+        flex-shrink: 0;
+    }
+    .switch input {
+        width: 0;
+        height: 0;
+        opacity: 0;
+    }
+    .switch-slider {
+        position: absolute;
+        inset: 0;
+        border-radius: 999px;
+        background: #8d95a7;
+        transition: all .2s ease;
+    }
+    .switch-slider::before {
+        content: "";
+        position: absolute;
+        width: 18px;
+        height: 18px;
+        left: 3px;
+        top: 3px;
+        border-radius: 50%;
+        background: #fff;
+        transition: all .2s ease;
+    }
+    .switch input:checked + .switch-slider {
+        background: var(--accent);
+    }
+    .switch input:checked + .switch-slider::before {
+        left: 25px;
+    }
+    .att-inline-field {
+        max-width: 280px;
+    }
+    .att-note-box {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: rgba(255,255,255,0.03);
+        padding: 10px 12px;
+        color: var(--text-muted);
+        font-size: 0.9rem;
+    }
+    .att-note-box ul {
+        list-style: disc;
+        margin-left: 16px;
+    }
+    .att-save-bar {
+        position: fixed;
+        right: 24px;
+        bottom: 18px;
+        z-index: 40;
+    }
+</style>
+
+<div class="att-v2-wrap">
+    <div class="att-v2-top">
+        <a class="att-v2-back" href="{{ request.META.HTTP_REFERER or url('dashboard') }}">&larr; Back</a>
+    </div>
+
+    <form method="post" class="att-v2-main">
+        {{ csrf_input }}
+
+        <h1 class="att-v2-title">Attendance Template</h1>
+        <p class="att-v2-sub">Configure attendance modes, attendance on holidays, and more.</p>
+
+        {% if errors %}
+        <ul class="error-list" style="margin-top:12px;">
+            {% for err in errors %}<li>{{ err }}</li>{% endfor %}
+        </ul>
+        {% endif %}
+
+        <div class="form-group att-v2-name">
+            <label>Name *</label>
+            <input type="text" name="name" value="{{ template_data.name or '' }}" placeholder="Enter Name" required>
+        </div>
+
+        <div class="att-v2-section-list">
+            <details class="att-v2-sec" open>
+                <summary>
+                    <div>
+                        <div class="att-v2-sec-title">Attendance Mode</div>
+                        <div class="att-v2-sec-sub">Choose whether attendance should be automatic, manual, or location based.</div>
+                    </div>
+                    <span>&#9662;</span>
+                </summary>
+                <div class="att-v2-sec-body">
+                    <div class="att-radio-list">
+                        <label class="att-radio-item">
+                            <input type="radio" name="attendance_mode" value="mark_present_default" {% if template_data.attendance_mode == 'mark_present_default' %}checked{% endif %}>
+                            <div>
+                                <b>Mark Present by Default</b>
+                                <span>Default auto present, can be changed manually.</span>
+                            </div>
+                        </label>
+                        <label class="att-radio-item">
+                            <input type="radio" name="attendance_mode" value="manual_attendance" {% if template_data.attendance_mode == 'manual_attendance' %}checked{% endif %}>
+                            <div>
+                                <b>Manual Attendance</b>
+                                <span>Attendance is neutral by default, should be marked manually.</span>
+                            </div>
+                        </label>
+                        <label class="att-radio-item">
+                            <input type="radio" name="attendance_mode" value="location_based" {% if template_data.attendance_mode == 'location_based' %}checked{% endif %}>
+                            <div>
+                                <b>Location Based</b>
+                                <span>Staff can mark attendance. Location is captured automatically.</span>
+                            </div>
+                        </label>
+                        <label class="att-radio-item">
+                            <input type="radio" name="attendance_mode" value="selfie_location_based" {% if template_data.attendance_mode == 'selfie_location_based' %}checked{% endif %}>
+                            <div>
+                                <b>Selfie &amp; Location Based</b>
+                                <span>Staff can mark attendance with selfie and location capture.</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </details>
+
+            <details class="att-v2-sec" open>
+                <summary>
+                    <div>
+                        <div class="att-v2-sec-title">Attendance on Holidays</div>
+                        <div class="att-v2-sec-sub">Configure attendance behavior on paid holidays.</div>
+                    </div>
+                    <span>&#9662;</span>
+                </summary>
+                <div class="att-v2-sec-body">
+                    <div class="att-radio-list">
+                        <label class="att-radio-item">
+                            <input type="radio" name="holiday_rule" value="no_paid_holiday_attendance" {% if template_data.holiday_rule == 'no_paid_holiday_attendance' %}checked{% endif %}>
+                            <div>
+                                <b>Do NOT allow attendance on paid holidays</b>
+                                <span>Staff cannot mark attendance on paid holidays.</span>
+                            </div>
+                        </label>
+                        <label class="att-radio-item">
+                            <input type="radio" name="holiday_rule" value="comp_off" {% if template_data.holiday_rule == 'comp_off' %}checked{% endif %}>
+                            <div>
+                                <b>Comp Off</b>
+                                <span>Allow comp-off credit when staff works on holiday.</span>
+                            </div>
+                        </label>
+                        <label class="att-radio-item">
+                            <input type="radio" name="holiday_rule" value="allow_paid_holiday_attendance" {% if template_data.holiday_rule == 'allow_paid_holiday_attendance' %}checked{% endif %}>
+                            <div>
+                                <b>Allow attendance on paid holidays</b>
+                                <span>Staff can mark attendance on paid holidays.</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </details>
+
+            <details class="att-v2-sec" open>
+                <summary>
+                    <div>
+                        <div class="att-v2-sec-title">Track In &amp; Out Time</div>
+                        <div class="att-v2-sec-sub">Track punch in/out and multiple punches in one day.</div>
+                    </div>
+                    <span>&#9662;</span>
+                </summary>
+                <div class="att-v2-sec-body">
+                    <div class="att-toggle-row">
+                        <div>
+                            <b>Track In &amp; Out Time</b>
+                            <span>Track in and out time of your staff.</span>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" name="track_in_out_enabled" value="1" {% if template_data.track_in_out_enabled %}checked{% endif %}>
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="att-toggle-row">
+                        <div>
+                            <b>No attendance without punch-out</b>
+                            <span>Punch out is required to mark attendance.</span>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" name="no_attendance_without_punch_out" value="1" {% if template_data.no_attendance_without_punch_out %}checked{% endif %}>
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="att-toggle-row">
+                        <div>
+                            <b>Allow Multiple Punches</b>
+                            <span>Allow staff to check in multiple times within a shift.</span>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" name="allow_multiple_punches" value="1" {% if template_data.allow_multiple_punches %}checked{% endif %}>
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </details>
+
+            <details class="att-v2-sec" open>
+                <summary>
+                    <div>
+                        <div class="att-v2-sec-title">Auto Approve Attendance Items</div>
+                        <div class="att-v2-sec-sub">Automatically approve attendance after N days.</div>
+                    </div>
+                    <span>&#9662;</span>
+                </summary>
+                <div class="att-v2-sec-body">
+                    <div class="att-toggle-row">
+                        <div>
+                            <b>Enable Auto Approval</b>
+                            <span>Auto approve attendance items after the configured days.</span>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" name="auto_approval_enabled" value="1" {% if template_data.auto_approval_enabled %}checked{% endif %}>
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
+                    <div class="form-group att-inline-field">
+                        <label>Auto approve after (days)</label>
+                        <input type="number" min="1" max="365" name="auto_approve_after_days" value="{{ template_data.auto_approve_after_days or 3 }}">
+                    </div>
+                </div>
+            </details>
+
+            <details class="att-v2-sec" open>
+                <summary>
+                    <div>
+                        <div class="att-v2-sec-title">Mark Absent on Previous Days</div>
+                        <div class="att-v2-sec-sub">Mark absent if there is no attendance action for previous days.</div>
+                    </div>
+                    <span>&#9662;</span>
+                </summary>
+                <div class="att-v2-sec-body">
+                    <div class="att-toggle-row">
+                        <div>
+                            <b>Mark Absent on Previous Days</b>
+                            <span>Enable this feature to auto mark absent on previous days.</span>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" name="mark_absent_previous_days_enabled" value="1" {% if template_data.mark_absent_previous_days_enabled %}checked{% endif %}>
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
+                    <div class="form-group att-inline-field">
+                        <label>Mark absent after (days)</label>
+                        <input type="number" min="1" max="365" name="mark_absent_after_days" value="{{ template_data.mark_absent_after_days or 2 }}">
+                    </div>
+                    <div class="att-note-box">
+                        <ul>
+                            <li>Old staff attendance with no action on that day will be marked as absent.</li>
+                            <li>Attendance for recent days can be excluded by increasing this value.</li>
+                        </ul>
+                    </div>
+                </div>
+            </details>
+
+            <details class="att-v2-sec" open>
+                <summary>
+                    <div>
+                        <div class="att-v2-sec-title">Effective Working Hours</div>
+                        <div class="att-v2-sec-sub">Configure effective working-hours rule for attendance calculation.</div>
+                    </div>
+                    <span>&#9662;</span>
+                </summary>
+                <div class="att-v2-sec-body">
+                    <div class="form-group att-inline-field">
+                        <label>Set Rule</label>
+                        <select name="effective_working_hours_rule">
+                            <option value="do_not_show" {% if template_data.effective_working_hours_rule == 'do_not_show' %}selected{% endif %}>Do not show</option>
+                            <option value="full_day" {% if template_data.effective_working_hours_rule == 'full_day' %}selected{% endif %}>Full day threshold</option>
+                            <option value="half_day" {% if template_data.effective_working_hours_rule == 'half_day' %}selected{% endif %}>Half day threshold</option>
+                            <option value="custom" {% if template_data.effective_working_hours_rule == 'custom' %}selected{% endif %}>Custom rule</option>
+                        </select>
+                    </div>
+                </div>
+            </details>
+        </div>
+
+        <div class="att-save-bar">
+            <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+    </form>
+</div>
+{% endblock %}
