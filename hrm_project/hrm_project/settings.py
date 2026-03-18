@@ -114,7 +114,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'core.middleware.ClientExecutionKeyMiddleware',
+    # 'core.middleware.ClientExecutionKeyMiddleware',
     'core.middleware.DemoModeMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -270,6 +270,9 @@ USE_X_FORWARDED_HOST = True
 SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', not DEBUG)
 CSRF_COOKIE_SECURE = _env_bool('CSRF_COOKIE_SECURE', not DEBUG)
 SECURE_SSL_REDIRECT = _env_bool('SECURE_SSL_REDIRECT', False)
+APP_URL_PREFIX = '/' + str(os.getenv('APP_URL_PREFIX', 'hrm')).strip().strip('/')
+if APP_URL_PREFIX == '/':
+    APP_URL_PREFIX = ''
 BACKEND_API_URL = os.getenv('BACKEND_API_URL', 'http://127.0.0.1:8000')
 USE_INTERNAL_API = _env_bool('USE_INTERNAL_API', True)
 CLIENT_EXECUTION_SECRET_KEY = str(os.getenv('CLIENT_EXECUTION_SECRET_KEY', '')).strip()

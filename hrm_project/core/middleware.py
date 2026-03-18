@@ -2,21 +2,34 @@ from django.conf import settings
 from django.http import JsonResponse
 from django.shortcuts import redirect
 
+APP_PREFIX = str(getattr(settings, 'APP_URL_PREFIX', '') or '').rstrip('/')
+APP_PREFIX_WITH_SLASH = f'{APP_PREFIX}/' if APP_PREFIX else '/'
+
+
+def _prefixed(path):
+    clean = '/' + str(path or '').strip().lstrip('/')
+    if APP_PREFIX and clean.startswith(APP_PREFIX_WITH_SLASH):
+        return clean
+    if APP_PREFIX:
+        return f'{APP_PREFIX}{clean}'
+    return clean
+
+
 # URLs that do NOT require authentication
-PUBLIC_URLS = ['/login/', '/logout/', '/forgot-password/', '/reset-password/']
+PUBLIC_URLS = [_prefixed('/login/'), _prefixed('/logout/'), _prefixed('/forgot-password/'), _prefixed('/reset-password/')]
 PUBLIC_PREFIXES = (
-    '/api/',
+    _prefixed('/api/'),
     '/admin/',
     '/static/',
     '/media/',
-    '/document-upload/',
+    _prefixed('/document-upload/'),
     '/favicon.ico',
 )
 DEMO_ALLOWED_PATHS = (
-    '/login/',
-    '/logout/',
-    '/api/token/',
-    '/api/token/refresh/',
+    _prefixed('/login/'),
+    _prefixed('/logout/'),
+    _prefixed('/api/token/'),
+    _prefixed('/api/token/refresh/'),
     '/admin/login/',
 )
 
@@ -44,8 +57,8 @@ class AuthRequiredMiddleware:
             if (
                 role == 'admin'
                 and not org_setup_done
-                and not path.startswith('/onboarding/setup-org/')
-                and not path.startswith('/logout/')
+                and not path.startswith(_prefixed('/onboarding/setup-org/'))
+                and not path.startswith(_prefixed('/logout/'))
             ):
                 return redirect('org_setup_onboarding')
         return self.get_response(request)
@@ -69,7 +82,7 @@ class DemoModeMiddleware:
 
         message = 'Demo mode is enabled. This action is disabled on the live demo server.'
 
-        if path.startswith('/api/'):
+        if path.startswith(_prefixed('/api/')):
             return JsonResponse({'detail': message}, status=403)
 
         if '_messages' not in request.session:

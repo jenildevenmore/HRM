@@ -64,19 +64,21 @@ router.register("activity-logs", ActivityLogViewSet, basename="activity-logs")
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
 
+app_route_prefix = f"{settings.APP_URL_PREFIX.strip('/')}/" if settings.APP_URL_PREFIX else ''
+
 urlpatterns = [
 
     path('admin/', admin.site.urls),
 
-    path('api/leave-balance/', LeaveBalanceView.as_view()),
-    path('api/payroll-report/', PayrollReportView.as_view()),
-    path('api/document-upload/<uuid:token>/', PublicDocumentUploadView.as_view()),
-    path('api/attendance/auto-clockout/run/', AutoClockoutRunView.as_view()),
-    path('api/', include(router.urls)),
+    path(f'{app_route_prefix}api/leave-balance/', LeaveBalanceView.as_view()),
+    path(f'{app_route_prefix}api/payroll-report/', PayrollReportView.as_view()),
+    path(f'{app_route_prefix}api/document-upload/<uuid:token>/', PublicDocumentUploadView.as_view()),
+    path(f'{app_route_prefix}api/attendance/auto-clockout/run/', AutoClockoutRunView.as_view()),
+    path(f'{app_route_prefix}api/', include(router.urls)),
 
-    path('api/token/', CustomTokenObtainPairView.as_view()),
-    path('api/token/refresh/', TokenRefreshView.as_view()),
-    path('', include('core.urls')),
+    path(f'{app_route_prefix}api/token/', CustomTokenObtainPairView.as_view()),
+    path(f'{app_route_prefix}api/token/refresh/', TokenRefreshView.as_view()),
+    path(app_route_prefix, include('core.urls')),
 
 ]
 

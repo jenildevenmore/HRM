@@ -85,15 +85,16 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             return
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
+        app_prefix = str(getattr(settings, 'APP_URL_PREFIX', '') or '').rstrip('/')
         configured = list(getattr(settings, 'FRONTEND_BASE_URLS', []) or [])
         if configured:
-            frontend_base = str(configured[0]).rstrip('/')
+            frontend_base = f"{str(configured[0]).rstrip('/')}{app_prefix}"
         else:
-            frontend_base = self.request.build_absolute_uri('/').rstrip('/')
+            frontend_base = self.request.build_absolute_uri(f'{app_prefix}/').rstrip('/')
         if not frontend_base:
-            frontend_base = str(getattr(settings, 'FRONTEND_BASE_URL', '') or '').strip().rstrip('/')
+            frontend_base = f"{str(getattr(settings, 'FRONTEND_BASE_URL', '') or '').strip().rstrip('/')}{app_prefix}"
         if not frontend_base:
-            frontend_base = 'http://127.0.0.1:8000'
+            frontend_base = f'http://127.0.0.1:8000{app_prefix}'
         reset_link = f'{frontend_base}/reset-password/?uid={uid}&token={token}'
 
         send_branded_email(
