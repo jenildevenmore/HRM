@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.conf import settings
 
 from clients.models import Client
 
@@ -102,7 +103,8 @@ class DocumentUploadRequestSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         if not request:
             return ''
-        return request.build_absolute_uri(f'/document-upload/{obj.token}/')
+        app_prefix = str(getattr(settings, 'APP_URL_PREFIX', '') or '').rstrip('/')
+        return request.build_absolute_uri(f'{app_prefix}/document-upload/{obj.token}/')
 
     def validate(self, attrs):
         title = str(attrs.get('title') or '').strip()

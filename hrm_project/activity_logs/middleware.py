@@ -1,3 +1,5 @@
+from django.conf import settings
+
 from activity_logs.models import ActivityLog
 import json
 
@@ -12,16 +14,17 @@ class ActivityLogMiddleware:
         '/media/',
         '/favicon.ico',
     )
-    SKIP_PATHS = {
-        '/api/token/',
-        '/api/token/refresh/',
-        '/api/accounts/me/',
-        '/api/activity-logs/',
-        '/activity-logs/click/',
-    }
 
     def __init__(self, get_response):
         self.get_response = get_response
+        self.app_prefix = str(getattr(settings, 'APP_URL_PREFIX', '') or '').rstrip('/')
+        self.skip_paths = {
+            self._prefix('/api/token/'),
+            self._prefix('/api/token/refresh/'),
+            self._prefix('/api/accounts/me/'),
+            self._prefix('/api/activity-logs/'),
+            self._prefix('/activity-logs/click/'),
+        }
 
     def __call__(self, request):
         payload_data = self._extract_request_payload(request)
@@ -38,7 +41,7 @@ class ActivityLogMiddleware:
         path = request.path or ''
         if any(path.startswith(prefix) for prefix in self.SKIP_PREFIXES):
             return
-        if path in self.SKIP_PATHS:
+        if path in self.skip_paths:
             return
 
         user = getattr(request, 'user', None)
@@ -46,7 +49,7 @@ class ActivityLogMiddleware:
             return
 
         method = (request.method or '').upper()
-        is_api = path.startswith('/api/')
+        is_api = path.startswith(self._prefix('/api/'))
         if method in ('HEAD', 'OPTIONS'):
             return
 
@@ -110,6 +113,10 @@ class ActivityLogMiddleware:
 
     def _infer_module(self, path):
         clean = (path or '/').strip('/').split('/')
+        if self.app_prefix:
+            prefix_part = self.app_prefix.strip('/')
+            if clean and clean[0] == prefix_part:
+                clean = clean[1:]
         if not clean:
             return 'dashboard'
         if clean[0] == 'api' and len(clean) > 1:
@@ -149,11 +156,23 @@ class ActivityLogMiddleware:
 
     def _extract_resource_id(self, path):
         parts = [p for p in str(path or '').strip('/').split('/') if p]
+        if self.app_prefix:
+            prefix_part = self.app_prefix.strip('/')
+            if parts and parts[0] == prefix_part:
+                parts = parts[1:]
         if len(parts) >= 3 and parts[0] == 'api':
             return parts[2]
         if len(parts) >= 2:
             return parts[1]
         return ''
+
+    def _prefix(self, path):
+        clean = '/' + str(path or '').strip().lstrip('/')
+        if self.app_prefix and clean.startswith(f'{self.app_prefix}/'):
+            return clean
+        if self.app_prefix:
+            return f'{self.app_prefix}{clean}'
+        return clean
 
     def _build_metadata(self, action, client_id, module, path, resource_id, payload_data):
         metadata = {}

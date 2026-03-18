@@ -37,6 +37,7 @@ from core.forms import (
 
 API = settings.BACKEND_API_URL
 API_TIMEOUT = int(getattr(settings, 'API_TIMEOUT', 10))
+APP_PREFIX = str(getattr(settings, 'APP_URL_PREFIX', '') or '').rstrip('/')
 
 ADDON_KEYS = {
     'custom_fields',
@@ -179,9 +180,12 @@ def _to_internal_path(path):
     if raw.startswith('http://') or raw.startswith('https://'):
         parsed = urlparse(raw)
         suffix = f'?{parsed.query}' if parsed.query else ''
-        return f'{parsed.path}{suffix}'
+        raw = f'{parsed.path}{suffix}'
     if not raw.startswith('/'):
-        return f'/{raw}'
+        raw = f'/{raw}'
+    if APP_PREFIX and raw.startswith('/') and not raw.startswith(f'{APP_PREFIX}/') and raw != APP_PREFIX:
+        if raw.startswith(('/api/', '/login/', '/logout/', '/forgot-password/', '/reset-password/', '/document-upload/', '/onboarding/', '/employees/', '/clients/', '/policy/', '/documents/', '/settings/', '/attendance-template-v2/', '/permissions/', '/roles/', '/leaves/', '/payroll/', '/import-export/', '/activity-logs/', '/holidays/', '/shifts/', '/banks/', '/custom-fields/', '/dynamic-models/', '/dynamic-entities/')) or raw == '/':
+            return f'{APP_PREFIX}{raw}'
     return raw
 
 
@@ -2973,7 +2977,15 @@ def client_create(request):
                     }
                     reg_resp = _api_post(request, '/api/accounts/register/', register_payload)
                     if reg_resp.status_code == 201:
-                        _flash(request, 'Client and client admin created successfully!', 'success')
+                        plain_key = str(created_client.get('execution_secret_key_plain') or '').strip()
+                        if plain_key:
+                            _flash(
+                                request,
+                                f'Client and client admin created successfully! Add this one-time activation key to server .env: CLIENT_EXECUTION_SECRET_KEY={plain_key}',
+                                'success',
+                            )
+                        else:
+                            _flash(request, 'Client and client admin created successfully!', 'success')
                         return redirect('client_list')
 
                     # Roll back client if admin-user creation fails
@@ -5556,6 +5568,10 @@ def activity_log_list(request):
 
 def _activity_log_module_from_path(path):
     clean = str(path or '/').strip('/').split('/')
+    if APP_PREFIX:
+        prefix_part = APP_PREFIX.strip('/')
+        if clean and clean[0] == prefix_part:
+            clean = clean[1:]
     if not clean or not clean[0]:
         return 'dashboard'
     if clean[0] == 'api' and len(clean) > 1:

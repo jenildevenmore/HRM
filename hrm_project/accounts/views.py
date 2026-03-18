@@ -19,16 +19,17 @@ from core.mailers import send_branded_email
 
 
 def _frontend_base_url(request):
+    app_prefix = str(getattr(settings, 'APP_URL_PREFIX', '') or '').rstrip('/')
     configured = list(getattr(settings, 'FRONTEND_BASE_URLS', []) or [])
     if configured:
-        return str(configured[0]).rstrip('/')
+        return f"{str(configured[0]).rstrip('/')}{app_prefix}"
     single = str(getattr(settings, 'FRONTEND_BASE_URL', '') or '').strip().rstrip('/')
     if single:
-        return single
-    built = request.build_absolute_uri('/').rstrip('/')
+        return f'{single}{app_prefix}'
+    built = request.build_absolute_uri(f'{app_prefix}/').rstrip('/')
     if built:
         return built
-    return 'http://127.0.0.1:8000'
+    return f'http://127.0.0.1:8000{app_prefix}'
 
 
 class UserProfileViewSet(viewsets.ModelViewSet):
