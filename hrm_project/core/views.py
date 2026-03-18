@@ -5657,9 +5657,8 @@ def custom_field_list(request):
     return render(request, 'custom_fields/list.html', {
         'custom_fields': custom_fields,
         'messages': messages,
-        'username': request.session.get('username', ''),
-        'role': role,
         'show_client_model': show_client_model,
+        **_get_context(request),
     })
 
 
@@ -5703,9 +5702,8 @@ def custom_field_create(request):
                             'form': form,
                             'errors': errors,
                             'messages': messages,
-                            'username': request.session.get('username', ''),
-                            'role': role,
                             'show_client_model': show_client_model,
+                            **_get_context(request),
                         })
                     data['client'] = client_id
                     
@@ -5726,9 +5724,8 @@ def custom_field_create(request):
         'form': form,
         'errors': errors,
         'messages': messages,
-        'username': request.session.get('username', ''),
-        'role': role,
         'show_client_model': show_client_model,
+        **_get_context(request),
     })
 
 
@@ -5758,7 +5755,7 @@ def custom_field_edit(request, pk):
         return render(request, 'custom_fields/edit.html', {
             'errors': ['Backend server unreachable.'],
             'messages': messages,
-            'username': request.session.get('username', ''),
+            **_get_context(request),
         })
 
     if request.method == 'POST':
@@ -5778,9 +5775,8 @@ def custom_field_edit(request, pk):
                         'custom_field': cf_data,
                         'errors': errors,
                         'messages': messages,
-                        'username': request.session.get('username', ''),
-                        'role': role,
                         'show_client_model': show_client_model,
+                        **_get_context(request),
                     })
 
                 client_id = request.session.get('client_id') or cf_data.get('client')
@@ -5813,9 +5809,8 @@ def custom_field_edit(request, pk):
         'custom_field': cf_data,
         'errors': errors,
         'messages': messages,
-        'username': request.session.get('username', ''),
-        'role': role,
         'show_client_model': show_client_model,
+        **_get_context(request),
     })
 
 
