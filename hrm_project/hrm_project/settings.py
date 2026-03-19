@@ -276,7 +276,7 @@ if APP_URL_PREFIX == '/':
 BACKEND_API_URL = os.getenv('BACKEND_API_URL', 'http://127.0.0.1:8000')
 USE_INTERNAL_API = _env_bool('USE_INTERNAL_API', True)
 CLIENT_EXECUTION_SECRET_KEY = str(os.getenv('CLIENT_EXECUTION_SECRET_KEY', '')).strip()
-
+FORCE_SCRIPT_NAME = '/hrm'
 FRONTEND_BASE_URLS = [
     url.strip().rstrip('/')
     for url in os.getenv(
