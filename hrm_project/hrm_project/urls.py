@@ -36,6 +36,7 @@ from documents.views import DocumentViewSet, DocumentUploadRequestViewSet, Publi
 from activity_logs.views import ActivityLogViewSet
 from shifts.views import ShiftViewSet
 from banks.views import BankAccountViewSet
+from hrm_project import views as license_views
 
 router = DefaultRouter()
 
@@ -69,6 +70,9 @@ app_route_prefix = f"{settings.APP_URL_PREFIX.strip('/')}/" if settings.APP_URL_
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path(f'{app_route_prefix}license/activate/', license_views.license_activation_view, name='license_activation'),
+    path(f'{app_route_prefix}api/license/activate/', license_views.license_activate_api, name='license_activate_api'),
+    path(f'{app_route_prefix}api/license/status/', license_views.license_status_api, name='license_status_api'),
 
     path(f'{app_route_prefix}api/leave-balance/', LeaveBalanceView.as_view()),
     path(f'{app_route_prefix}api/payroll-report/', PayrollReportView.as_view()),

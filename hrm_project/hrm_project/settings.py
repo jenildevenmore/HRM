@@ -114,6 +114,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'hrm_project.middleware.LicenseValidationMiddleware',
     # 'core.middleware.ClientExecutionKeyMiddleware',
     'core.middleware.DemoModeMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -276,6 +277,17 @@ if APP_URL_PREFIX == '/':
 BACKEND_API_URL = os.getenv('BACKEND_API_URL', 'http://127.0.0.1:8000')
 USE_INTERNAL_API = _env_bool('USE_INTERNAL_API', True)
 CLIENT_EXECUTION_SECRET_KEY = str(os.getenv('CLIENT_EXECUTION_SECRET_KEY', '')).strip()
+LICENSE_SERVER_ACTIVATION_URL = str(os.getenv('LICENSE_SERVER_ACTIVATION_URL', '')).strip()
+LICENSE_SERVER_REVALIDATION_URL = str(os.getenv('LICENSE_SERVER_REVALIDATION_URL', '')).strip()
+LICENSE_API_TIMEOUT = int(os.getenv('LICENSE_API_TIMEOUT', '10'))
+LICENSE_STORAGE_PATH = str(os.getenv('LICENSE_STORAGE_PATH', BASE_DIR / '.license_token')).strip()
+LICENSE_JWT_SECRET_KEY = str(os.getenv('LICENSE_JWT_SECRET_KEY', SECRET_KEY)).strip() or SECRET_KEY
+LICENSE_JWT_PUBLIC_KEY = str(os.getenv('LICENSE_JWT_PUBLIC_KEY', '')).strip()
+LICENSE_JWT_ALGORITHMS = _env_csv('LICENSE_JWT_ALGORITHMS', 'HS256')
+LICENSE_JWT_AUDIENCE = str(os.getenv('LICENSE_JWT_AUDIENCE', '')).strip()
+LICENSE_JWT_ISSUER = str(os.getenv('LICENSE_JWT_ISSUER', '')).strip()
+LICENSE_REVALIDATE_INTERVAL_SECONDS = int(os.getenv('LICENSE_REVALIDATE_INTERVAL_SECONDS', '14400'))
+LICENSE_SERVER_GRACE_PERIOD_SECONDS = int(os.getenv('LICENSE_SERVER_GRACE_PERIOD_SECONDS', '86400'))
 FORCE_SCRIPT_NAME = '/hrm'
 FRONTEND_BASE_URLS = [
     url.strip().rstrip('/')
