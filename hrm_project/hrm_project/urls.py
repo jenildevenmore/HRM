@@ -17,6 +17,7 @@ Including another URLconf
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
+from django.shortcuts import redirect
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView, TokenObtainPairView
@@ -67,7 +68,6 @@ class CustomTokenObtainPairView(TokenObtainPairView):
 app_route_prefix = f"{settings.APP_URL_PREFIX.strip('/')}/" if settings.APP_URL_PREFIX else ''
 
 urlpatterns = [
-
     path('admin/', admin.site.urls),
 
     path(f'{app_route_prefix}api/leave-balance/', LeaveBalanceView.as_view()),
@@ -81,6 +81,9 @@ urlpatterns = [
     path(app_route_prefix, include('core.urls')),
 
 ]
+
+if app_route_prefix:
+    urlpatterns.insert(0, path('', lambda request: redirect(f'/{app_route_prefix}')))
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

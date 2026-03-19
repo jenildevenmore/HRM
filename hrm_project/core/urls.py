@@ -10,7 +10,7 @@ urlpatterns = [
     path('onboarding/setup-org/', views.org_setup_onboarding, name='org_setup_onboarding'),
 
     # Dashboard
-    path('', views.dashboard, name='dashboard'),
+    path('', views.root_page, name='dashboard'),
     path('policy/', views.policy_page, name='policy_page'),
     path('policy/<int:pk>/delete/', views.policy_delete, name='policy_delete'),
     path('documents/', views.document_list, name='document_list'),

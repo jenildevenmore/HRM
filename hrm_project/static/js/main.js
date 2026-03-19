@@ -49,22 +49,19 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-// Keep browser URL fixed at "/" while preserving form targets for each page.
 document.addEventListener('DOMContentLoaded', () => {
   const currentPath = window.location.pathname;
-  const currentSearch = window.location.search;
+  const currentSearch = window.location.search || '';
   const currentUrl = `${currentPath}${currentSearch}`;
+
+  document.cookie = `masked_path=${encodeURIComponent(currentUrl)}; path=/; SameSite=Lax`;
 
   if (currentPath === '/') {
     return;
   }
 
-  document.querySelectorAll('form:not([action])').forEach((form) => {
-    form.setAttribute('action', currentUrl);
-  });
-
   window.history.replaceState(
-    { ...(window.history.state || {}), maskedPath: currentPath },
+    { ...(window.history.state || {}), maskedPath: currentUrl },
     '',
     '/'
   );

@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 from django.conf import settings
 from django.shortcuts import render, redirect
 from django.http import HttpResponse, JsonResponse
-from django.urls import reverse
+from django.urls import reverse, resolve, Resolver404
 from django.views.decorators.http import require_POST
 from django.core.files.storage import default_storage
 from django.core.validators import validate_email
@@ -38,6 +38,8 @@ from core.forms import (
 API = settings.BACKEND_API_URL
 API_TIMEOUT = int(getattr(settings, 'API_TIMEOUT', 10))
 APP_PREFIX = str(getattr(settings, 'APP_URL_PREFIX', '') or '').rstrip('/')
+MASKED_PATH_COOKIE = 'masked_path'
+MASKED_PATH_BLOCKED_PREFIXES = ('/api/', '/admin/', '/static/', '/media/')
 
 ADDON_KEYS = {
     'custom_fields',
@@ -260,6 +262,52 @@ def _api_get(request, path, params=None):
 def _api_post(request, path, data):
     host = request.get_host() if request else None
     return _api_request('POST', path, headers=_auth_headers(request), data=data, host=host)
+
+
+def _normalize_masked_path(raw_path):
+    value = str(raw_path or '').strip()
+    if not value:
+        return '/'
+    if value.startswith('http://') or value.startswith('https://'):
+        parsed = urlparse(value)
+        value = parsed.path or '/'
+    if '?' in value:
+        value = value.split('?', 1)[0]
+    if not value.startswith('/'):
+        value = f'/{value}'
+    if value == '':
+        value = '/'
+    return value
+
+
+def _can_dispatch_masked_path(path):
+    normalized = _normalize_masked_path(path)
+    if normalized == '/':
+        return False
+    if any(normalized.startswith(prefix) for prefix in MASKED_PATH_BLOCKED_PREFIXES):
+        return False
+    return True
+
+
+def root_page(request):
+    masked_path = request.COOKIES.get(MASKED_PATH_COOKIE, '')
+    normalized = _normalize_masked_path(masked_path)
+
+    if _can_dispatch_masked_path(normalized):
+        try:
+            match = resolve(normalized)
+        except Resolver404:
+            match = None
+
+        if match and match.func is not root_page:
+            request.path = normalized
+            request.path_info = normalized
+            request.META['PATH_INFO'] = normalized
+            request.META['REQUEST_URI'] = normalized
+            request.resolver_match = match
+            return match.func(request, *match.args, **match.kwargs)
+
+    return dashboard(request)
 
 
 def _api_put(request, path, data):

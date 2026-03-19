@@ -270,7 +270,7 @@ USE_X_FORWARDED_HOST = True
 SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', not DEBUG)
 CSRF_COOKIE_SECURE = _env_bool('CSRF_COOKIE_SECURE', not DEBUG)
 SECURE_SSL_REDIRECT = _env_bool('SECURE_SSL_REDIRECT', False)
-APP_URL_PREFIX = '/' + str(os.getenv('APP_URL_PREFIX', 'hrm')).strip().strip('/')
+APP_URL_PREFIX = '/' + str(os.getenv('APP_URL_PREFIX', '')).strip().strip('/')
 if APP_URL_PREFIX == '/':
     APP_URL_PREFIX = ''
 BACKEND_API_URL = os.getenv('BACKEND_API_URL', 'http://127.0.0.1:8000')
