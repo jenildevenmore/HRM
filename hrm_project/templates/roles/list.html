@@ -34,6 +34,27 @@
         <p style="margin:4px 0 12px;color:var(--text-muted);">
             Base role is auto-detected from role name (contains "HR" or "Manager"; otherwise Employee).
         </p>
+        {% if role_module_options %}
+        <div class="form-section" style="margin-bottom:14px;">
+            <h4 class="section-title" style="margin-bottom:8px;">Module Access</h4>
+            <p style="margin:0 0 10px;color:var(--text-muted);">Choose which modules should be visible for this role.</p>
+            <div class="addon-grid">
+                {% for item in role_module_options %}
+                <label class="addon-item">
+                    <input
+                        type="checkbox"
+                        name="selected_modules"
+                        value="{{ item.key }}"
+                        data-module-toggle="true"
+                        data-module-permission="{{ item.permission or '' }}"
+                        data-module-addon="{{ item.addon or '' }}"
+                    >
+                    <span>{{ item.label }}</span>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
         <div class="form-actions">
             <button type="submit" class="btn btn-primary">Create Role</button>
         </div>
@@ -105,6 +126,29 @@
             <p style="margin:4px 0 12px;color:var(--text-muted);">
                 Detected base role: {{ role.base_role|upper }}
             </p>
+            {% if role_module_options %}
+            <div class="form-section" style="margin-bottom:14px;">
+                <h4 class="section-title" style="margin-bottom:8px;">Module Access</h4>
+                <p style="margin:0 0 10px;color:var(--text-muted);">Choose which modules should be visible for this role.</p>
+                <div class="addon-grid">
+                    {% for item in role_module_options %}
+                    <label class="addon-item">
+                        <input
+                            class="role-edit-field"
+                            type="checkbox"
+                            name="selected_modules"
+                            value="{{ item.key }}"
+                            data-module-toggle="true"
+                            data-module-permission="{{ item.permission or '' }}"
+                            data-module-addon="{{ item.addon or '' }}"
+                            {% if item.key in (role.selected_modules or []) %}checked{% endif %}
+                        >
+                        <span>{{ item.label }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
             {% if permission_options %}
             <div class="permission-sections-grid" style="margin-top:14px;">
                 {% for section in permission_options %}
@@ -282,6 +326,33 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (body) { body.style.display = 'grid'; }
             }
         });
+    });
+
+    function syncModuleAccess(form) {
+        var moduleToggles = Array.prototype.slice.call(form.querySelectorAll('input[data-module-toggle="true"]'));
+        moduleToggles.forEach(function (toggle) {
+            function applyModuleState() {
+                var permissionKey = toggle.getAttribute('data-module-permission');
+                var addonKey = toggle.getAttribute('data-module-addon');
+                if (permissionKey) {
+                    Array.prototype.slice.call(form.querySelectorAll('input[name="module_permissions"][value="' + permissionKey + '"]')).forEach(function (input) {
+                        input.checked = toggle.checked;
+                    });
+                }
+                if (addonKey) {
+                    Array.prototype.slice.call(form.querySelectorAll('input[name="enabled_addons"][value="' + addonKey + '"]')).forEach(function (input) {
+                        input.checked = toggle.checked;
+                    });
+                }
+            }
+
+            toggle.addEventListener('change', applyModuleState);
+            applyModuleState();
+        });
+    }
+
+    Array.prototype.slice.call(document.querySelectorAll('form')).forEach(function (form) {
+        syncModuleAccess(form);
     });
 });
 </script>

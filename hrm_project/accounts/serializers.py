@@ -218,13 +218,31 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             group_permissions = normalize_permission_keys(profile.permission_group.module_permissions or []) if profile.permission_group else []
             client_addons = normalize_addon_keys((profile.client.enabled_addons if profile.client else []) or [])
             group_addons = normalize_addon_keys(profile.permission_group.enabled_addons or []) if profile.permission_group else []
+            user_permissions = normalize_permission_keys(profile.module_permissions or [])
             user_addons = normalize_addon_keys(profile.enabled_addons or [])
+            employee_row = (
+                Employee.objects.select_related('client_role')
+                .filter(
+                    client_id=profile.client_id,
+                    email__iexact=(user.email or ''),
+                )
+                .only('id', 'role', 'client_role__module_permissions', 'client_role__enabled_addons')
+                .first()
+            )
+            role_permissions = normalize_permission_keys(
+                (employee_row.client_role.module_permissions if employee_row and employee_row.client_role else []) or []
+            )
+            role_addons = normalize_addon_keys(
+                (employee_row.client_role.enabled_addons if employee_row and employee_row.client_role else []) or []
+            )
             data['module_permissions'] = (
                 list(STATIC_PERMISSION_KEYS)
-                if profile.role == 'admin' else (group_permissions or normalize_permission_keys(profile.module_permissions or []))
+                if profile.role == 'admin' else (group_permissions or role_permissions or user_permissions)
             )
             if profile.role == 'admin':
                 data['enabled_addons'] = client_addons
+            elif role_addons:
+                data['enabled_addons'] = [a for a in role_addons if a in client_addons]
             elif user_addons:
                 data['enabled_addons'] = [a for a in user_addons if a in client_addons]
             elif group_addons:
@@ -232,10 +250,6 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             else:
                 data['enabled_addons'] = client_addons
             data['permission_group'] = profile.permission_group_id
-            employee_row = Employee.objects.filter(
-                client_id=profile.client_id,
-                email__iexact=(user.email or ''),
-            ).only('id', 'role').first()
             data['employee_id'] = employee_row.id if employee_row else None
             data['employee_role'] = employee_row.role if employee_row else ''
         except UserProfile.DoesNotExist:
