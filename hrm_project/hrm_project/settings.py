@@ -74,12 +74,12 @@ DEMO_MODE = _env_bool('DEMO_MODE', False)
 
 ALLOWED_HOSTS = _env_csv(
     'DJANGO_ALLOWED_HOSTS',
-    '127.0.0.1,localhost,192.168.1.66',
+    '127.0.0.1,localhost,192.168.1.66,178.16.139.235',
 )
 
 CSRF_TRUSTED_ORIGINS = _env_csv(
     'DJANGO_CSRF_TRUSTED_ORIGINS',
-    'http://127.0.0.1:8000,http://127.0.0.1:8001,http://localhost:8000,http://localhost:8001,http://192.168.1.66:8000,http://192.168.1.66:8001,https://jenilevenmore.pythonanywhere.com'
+    'http://127.0.0.1:8000,http://127.0.0.1:8001,http://localhost:8000,http://localhost:8001,http://192.168.1.66:8000,http://192.168.1.66:8001,https://jenilevenmore.pythonanywhere.com,http://178.16.139.235'
 )
 
 
