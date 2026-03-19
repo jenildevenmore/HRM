@@ -2,6 +2,9 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
+from django.utils import timezone
+from accounts.models import UserProfile
+from employees.models import Employee
 from .models import Client, ClientRole
 from .serializers import ClientSerializer, ClientRoleSerializer
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -102,6 +105,28 @@ class ClientRoleViewSet(viewsets.ModelViewSet):
     serializer_class = ClientRoleSerializer
     permission_classes = [IsAuthenticated]
 
+    def _sync_employee_profiles_for_role(self, role_obj):
+        employee_rows = Employee.objects.filter(
+            client_role=role_obj,
+            client_id=role_obj.client_id,
+        ).values('client_id', 'email')
+
+        role_permissions = list(role_obj.module_permissions or [])
+        role_addons = list(role_obj.enabled_addons or [])
+
+        for employee in employee_rows:
+            email = str(employee.get('email') or '').strip()
+            if not email:
+                continue
+            UserProfile.objects.filter(
+                client_id=employee['client_id'],
+                user__email__iexact=email,
+            ).update(
+                module_permissions=role_permissions,
+                enabled_addons=role_addons,
+                updated_at=timezone.now(),
+            )
+
     def _is_superadmin(self):
         user = self.request.user
         if user.is_superuser:
@@ -169,4 +194,8 @@ class ClientRoleViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         return super().destroy(request, *args, **kwargs)
+
+    def perform_update(self, serializer):
+        role_obj = serializer.save()
+        self._sync_employee_profiles_for_role(role_obj)
 

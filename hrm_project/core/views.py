@@ -118,6 +118,21 @@ ADDON_VIEW_PERMISSION_MAP = {
     'documents': 'documents.view',
     'import_export': 'import_export.view',
 }
+ROLE_MODULE_OPTIONS = [
+    {'key': 'employees', 'label': 'Employees', 'permission': 'employees.view'},
+    {'key': 'attendance', 'label': 'Attendance', 'permission': 'attendance.view', 'addon': 'attendance'},
+    {'key': 'leave_management', 'label': 'Leave Management', 'permission': 'leaves.view', 'addon': 'leave_management'},
+    {'key': 'holidays', 'label': 'Holidays', 'permission': 'holidays.view', 'addon': 'holidays'},
+    {'key': 'shift_management', 'label': 'Shift Management', 'permission': 'shifts.view', 'addon': 'shift_management'},
+    {'key': 'bank_management', 'label': 'Bank Management', 'permission': 'bank.view', 'addon': 'bank_management'},
+    {'key': 'policy', 'label': 'Policy', 'permission': 'policy.view', 'addon': 'policy'},
+    {'key': 'documents', 'label': 'Documents', 'permission': 'documents.view', 'addon': 'documents'},
+    {'key': 'import_export', 'label': 'Import / Export', 'permission': 'import_export.view', 'addon': 'import_export'},
+    {'key': 'custom_fields', 'label': 'Custom Fields', 'permission': 'custom_fields.view', 'addon': 'custom_fields'},
+    {'key': 'dynamic_models', 'label': 'Dynamic Models', 'permission': 'dynamic_models.view', 'addon': 'dynamic_models'},
+    {'key': 'activity_logs', 'label': 'Activity Logs', 'permission': 'activity_logs.view', 'addon': 'activity_logs'},
+    {'key': 'payroll', 'label': 'Payroll', 'addon': 'payroll'},
+]
 
 SIDEBAR_LOGO_MODULES = [
     {'key': 'dashboard', 'label': 'Dashboard'},
@@ -492,6 +507,39 @@ def _merge_view_permissions_from_addons(module_permissions, enabled_addons):
         if addon_key in addon_set and permission_key not in merged:
             merged.append(permission_key)
     return merged
+
+
+def _apply_role_module_access(selected_modules, module_permissions, enabled_addons):
+    selected = {str(item).strip() for item in (selected_modules or []) if str(item).strip()}
+    merged_permissions = list(_normalize_module_permissions(module_permissions))
+    merged_addons = list(_normalize_enabled_addons(enabled_addons))
+
+    for option in ROLE_MODULE_OPTIONS:
+        if option['key'] not in selected:
+            continue
+        permission_key = option.get('permission')
+        addon_key = option.get('addon')
+        if permission_key and permission_key not in merged_permissions:
+            merged_permissions.append(permission_key)
+        if addon_key and addon_key not in merged_addons:
+            merged_addons.append(addon_key)
+
+    return _normalize_module_permissions(merged_permissions), _normalize_enabled_addons(merged_addons)
+
+
+def _selected_role_modules(module_permissions, enabled_addons):
+    permission_set = set(_normalize_module_permissions(module_permissions))
+    addon_set = set(_normalize_enabled_addons(enabled_addons))
+    selected = []
+    for option in ROLE_MODULE_OPTIONS:
+        permission_key = option.get('permission')
+        addon_key = option.get('addon')
+        if permission_key and permission_key in permission_set:
+            selected.append(option['key'])
+            continue
+        if addon_key and addon_key in addon_set:
+            selected.append(option['key'])
+    return selected
 
 
 def _load_client_addons(request, access_token=None, client_id=None):
@@ -3127,6 +3175,12 @@ def role_list(request):
             'module_permissions': [str(p).strip() for p in request.POST.getlist('module_permissions') if str(p).strip()],
             'enabled_addons': _normalize_enabled_addons(request.POST.getlist('enabled_addons')),
         }
+        selected_modules = [str(m).strip() for m in request.POST.getlist('selected_modules') if str(m).strip()]
+        payload['module_permissions'], payload['enabled_addons'] = _apply_role_module_access(
+            selected_modules,
+            payload['module_permissions'],
+            payload['enabled_addons'],
+        )
         slug_value = (request.POST.get('slug') or '').strip()
         if slug_value:
             payload['slug'] = slug_value
@@ -3171,6 +3225,11 @@ def role_list(request):
         if roles_resp.status_code == 200:
             payload = roles_resp.json()
             roles = payload.get('results', payload) if isinstance(payload, dict) else payload
+            for role in roles:
+                role['selected_modules'] = _selected_role_modules(
+                    role.get('module_permissions') or [],
+                    role.get('enabled_addons') or [],
+                )
 
         if target_client_id:
             client_resp = _api_get(request, f'/api/clients/{target_client_id}/')
@@ -3188,6 +3247,7 @@ def role_list(request):
         'client_info': client_info,
         'permission_options': permission_options,
         'addon_options': ADDON_OPTIONS,
+        'role_module_options': ROLE_MODULE_OPTIONS,
         'target_client_id': target_client_id,
         'errors': errors,
         'messages': messages,
