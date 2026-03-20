@@ -10,7 +10,7 @@
             style="font-size:56px;font-weight:800;background:var(--accent-grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">
             403</h1>
         <p style="font-size:18px;color:var(--text-muted);margin:12px 0 28px;">You don't have permission to access this page.</p>
-        <a href="{{ url(home_url_name or 'dashboard') }}" class="btn btn-primary">Go Back</a>
+        <a href="{{ home_url or url(home_url_name or 'dashboard') }}" class="btn btn-primary">Go Back</a>
     </div>
 </div>
 {% endblock %}
