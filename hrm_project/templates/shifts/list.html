@@ -3,6 +3,148 @@
 {% block title %}Shifts - HRM System{% endblock %}
 
 {% block content %}
+<style>
+    .analog-time-picker { position: relative; }
+    .analog-time-trigger {
+        width: 100%;
+        min-height: 42px;
+        padding: 10px 14px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--bg-card);
+        color: var(--text);
+        text-align: left;
+        cursor: pointer;
+        font: inherit;
+    }
+    .analog-time-trigger.is-empty { color: var(--text-muted); }
+    .analog-time-popover {
+        position: absolute;
+        top: calc(100% + 10px);
+        left: 0;
+        z-index: 30;
+        width: min(320px, 92vw);
+        padding: 16px;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: var(--bg-2);
+        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
+        display: none;
+    }
+    .analog-time-picker.is-open .analog-time-popover { display: block; }
+    .analog-time-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 14px;
+        gap: 12px;
+    }
+    .analog-time-stage {
+        display: inline-flex;
+        gap: 8px;
+        padding: 4px;
+        border-radius: 999px;
+        background: rgba(99, 102, 241, 0.08);
+    }
+    .analog-time-stage button,
+    .analog-time-meridiem button {
+        border: 0;
+        border-radius: 999px;
+        padding: 8px 12px;
+        background: transparent;
+        color: var(--text-muted);
+        cursor: pointer;
+        font: inherit;
+    }
+    .analog-time-stage button.active,
+    .analog-time-meridiem button.active {
+        background: var(--accent);
+        color: #fff;
+    }
+    .analog-time-meridiem {
+        display: inline-flex;
+        gap: 6px;
+        padding: 4px;
+        border-radius: 999px;
+        background: rgba(15, 23, 42, 0.06);
+    }
+    .analog-clock {
+        position: relative;
+        width: 240px;
+        height: 240px;
+        margin: 0 auto 16px;
+        border-radius: 50%;
+        background:
+            radial-gradient(circle at center, rgba(99, 102, 241, 0.12) 0, rgba(99, 102, 241, 0.12) 20px, transparent 21px),
+            linear-gradient(145deg, rgba(255,255,255,0.98), rgba(241,245,249,0.92));
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        box-shadow: inset 0 1px 10px rgba(255,255,255,0.6);
+    }
+    .analog-clock-hand {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 2px;
+        height: 82px;
+        background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 42%, white 58%));
+        transform-origin: center bottom;
+        transform: translate(-50%, -100%) rotate(0deg);
+        border-radius: 999px;
+        z-index: 1;
+    }
+    .analog-clock-center {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 14px;
+        height: 14px;
+        margin-left: -7px;
+        margin-top: -7px;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.14);
+        z-index: 3;
+    }
+    .analog-clock-option {
+        position: absolute;
+        width: 38px;
+        height: 38px;
+        margin-left: -19px;
+        margin-top: -19px;
+        border: 0;
+        border-radius: 50%;
+        background: transparent;
+        color: var(--text);
+        cursor: pointer;
+        font: inherit;
+        font-weight: 600;
+        z-index: 2;
+    }
+    .analog-clock-option.active {
+        background: var(--accent);
+        color: #fff;
+        box-shadow: 0 10px 18px rgba(99, 102, 241, 0.26);
+    }
+    .analog-time-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+    }
+    .analog-time-readout {
+        font-size: 1rem;
+        font-weight: 700;
+        color: var(--text);
+    }
+    .analog-time-actions {
+        display: flex;
+        gap: 8px;
+    }
+    @media (max-width: 640px) {
+        .analog-time-popover { width: min(290px, 92vw); }
+        .analog-clock { width: 220px; height: 220px; }
+    }
+</style>
 <div class="breadcrumb">
     <span class="current">Shifts</span>
 </div>
@@ -67,11 +209,63 @@
         <div class="form-row">
             <div class="form-group">
                 <label>Start Time *</label>
-                <input type="time" name="start_time" value="" required>
+                <div class="analog-time-picker" data-time-picker>
+                    <input type="hidden" name="start_time" value="" required>
+                    <button type="button" class="analog-time-trigger is-empty" data-time-trigger>Select start time</button>
+                    <div class="analog-time-popover">
+                        <div class="analog-time-head">
+                            <div class="analog-time-stage">
+                                <button type="button" data-time-stage="hour" class="active">Hour</button>
+                                <button type="button" data-time-stage="minute">Minute</button>
+                            </div>
+                            <div class="analog-time-meridiem">
+                                <button type="button" data-time-meridiem="AM" class="active">AM</button>
+                                <button type="button" data-time-meridiem="PM">PM</button>
+                            </div>
+                        </div>
+                        <div class="analog-clock" data-time-clock>
+                            <div class="analog-clock-hand" data-time-hand></div>
+                            <div class="analog-clock-center"></div>
+                        </div>
+                        <div class="analog-time-footer">
+                            <div class="analog-time-readout" data-time-readout>12:00 AM</div>
+                            <div class="analog-time-actions">
+                                <button type="button" class="btn btn-secondary btn-sm" data-time-clear>Clear</button>
+                                <button type="button" class="btn btn-primary btn-sm" data-time-done>Done</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="form-group">
                 <label>End Time *</label>
-                <input type="time" name="end_time" value="" required>
+                <div class="analog-time-picker" data-time-picker>
+                    <input type="hidden" name="end_time" value="" required>
+                    <button type="button" class="analog-time-trigger is-empty" data-time-trigger>Select end time</button>
+                    <div class="analog-time-popover">
+                        <div class="analog-time-head">
+                            <div class="analog-time-stage">
+                                <button type="button" data-time-stage="hour" class="active">Hour</button>
+                                <button type="button" data-time-stage="minute">Minute</button>
+                            </div>
+                            <div class="analog-time-meridiem">
+                                <button type="button" data-time-meridiem="AM" class="active">AM</button>
+                                <button type="button" data-time-meridiem="PM">PM</button>
+                            </div>
+                        </div>
+                        <div class="analog-clock" data-time-clock>
+                            <div class="analog-clock-hand" data-time-hand></div>
+                            <div class="analog-clock-center"></div>
+                        </div>
+                        <div class="analog-time-footer">
+                            <div class="analog-time-readout" data-time-readout>12:00 AM</div>
+                            <div class="analog-time-actions">
+                                <button type="button" class="btn btn-secondary btn-sm" data-time-clear>Clear</button>
+                                <button type="button" class="btn btn-primary btn-sm" data-time-done>Done</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
         <div class="form-row">
@@ -192,11 +386,63 @@
             <div class="form-row">
                 <div class="form-group">
                     <label>Start Time *</label>
-                    <input type="time" name="start_time" id="shiftEditStartTime" required>
+                    <div class="analog-time-picker" data-time-picker>
+                        <input type="hidden" name="start_time" id="shiftEditStartTime" required>
+                        <button type="button" class="analog-time-trigger is-empty" data-time-trigger>Select start time</button>
+                        <div class="analog-time-popover">
+                            <div class="analog-time-head">
+                                <div class="analog-time-stage">
+                                    <button type="button" data-time-stage="hour" class="active">Hour</button>
+                                    <button type="button" data-time-stage="minute">Minute</button>
+                                </div>
+                                <div class="analog-time-meridiem">
+                                    <button type="button" data-time-meridiem="AM" class="active">AM</button>
+                                    <button type="button" data-time-meridiem="PM">PM</button>
+                                </div>
+                            </div>
+                            <div class="analog-clock" data-time-clock>
+                                <div class="analog-clock-hand" data-time-hand></div>
+                                <div class="analog-clock-center"></div>
+                            </div>
+                            <div class="analog-time-footer">
+                                <div class="analog-time-readout" data-time-readout>12:00 AM</div>
+                                <div class="analog-time-actions">
+                                    <button type="button" class="btn btn-secondary btn-sm" data-time-clear>Clear</button>
+                                    <button type="button" class="btn btn-primary btn-sm" data-time-done>Done</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>End Time *</label>
-                    <input type="time" name="end_time" id="shiftEditEndTime" required>
+                    <div class="analog-time-picker" data-time-picker>
+                        <input type="hidden" name="end_time" id="shiftEditEndTime" required>
+                        <button type="button" class="analog-time-trigger is-empty" data-time-trigger>Select end time</button>
+                        <div class="analog-time-popover">
+                            <div class="analog-time-head">
+                                <div class="analog-time-stage">
+                                    <button type="button" data-time-stage="hour" class="active">Hour</button>
+                                    <button type="button" data-time-stage="minute">Minute</button>
+                                </div>
+                                <div class="analog-time-meridiem">
+                                    <button type="button" data-time-meridiem="AM" class="active">AM</button>
+                                    <button type="button" data-time-meridiem="PM">PM</button>
+                                </div>
+                            </div>
+                            <div class="analog-clock" data-time-clock>
+                                <div class="analog-clock-hand" data-time-hand></div>
+                                <div class="analog-clock-center"></div>
+                            </div>
+                            <div class="analog-time-footer">
+                                <div class="analog-time-readout" data-time-readout>12:00 AM</div>
+                                <div class="analog-time-actions">
+                                    <button type="button" class="btn btn-secondary btn-sm" data-time-clear>Clear</button>
+                                    <button type="button" class="btn btn-primary btn-sm" data-time-done>Done</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="form-row">
@@ -234,6 +480,171 @@
 {% endif %}
 
 <script>
+(function () {
+    const hourOptions = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+    const minuteOptions = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'];
+
+    function parseTime(value) {
+        const raw = String(value || '').trim();
+        if (!raw || raw.indexOf(':') === -1) {
+            return { hour12: 12, minute: '00', meridiem: 'AM', hasValue: false };
+        }
+        const parts = raw.split(':');
+        const hour24 = Number(parts[0]);
+        const minute = String(parts[1] || '00').padStart(2, '0');
+        const meridiem = hour24 >= 12 ? 'PM' : 'AM';
+        const hour12 = (hour24 % 12) || 12;
+        return { hour12: hour12, minute: minute, meridiem: meridiem, hasValue: true };
+    }
+
+    function formatHiddenValue(state) {
+        let hour24 = state.hour12 % 12;
+        if (state.meridiem === 'PM') {
+            hour24 += 12;
+        }
+        return String(hour24).padStart(2, '0') + ':' + state.minute;
+    }
+
+    function formatDisplayValue(state) {
+        return String(state.hour12).padStart(2, '0') + ':' + state.minute + ' ' + state.meridiem;
+    }
+
+    function positionOption(button, index, radius) {
+        const angle = ((index * 30) - 90) * (Math.PI / 180);
+        button.style.left = '50%';
+        button.style.top = '50%';
+        button.style.transform = 'translate(' + (Math.cos(angle) * radius) + 'px, ' + (Math.sin(angle) * radius) + 'px)';
+    }
+
+    function renderClock(picker) {
+        const clock = picker.querySelector('[data-time-clock]');
+        const hand = picker.querySelector('[data-time-hand]');
+        const readout = picker.querySelector('[data-time-readout]');
+        const trigger = picker.querySelector('[data-time-trigger]');
+        const hidden = picker.querySelector('input[type="hidden"]');
+        const stage = picker.dataset.stage || 'hour';
+        const state = picker._timeState;
+
+        Array.prototype.slice.call(clock.querySelectorAll('.analog-clock-option')).forEach(function (node) {
+            node.remove();
+        });
+
+        const values = stage === 'hour' ? hourOptions : minuteOptions;
+        values.forEach(function (value, index) {
+            const option = document.createElement('button');
+            option.type = 'button';
+            option.className = 'analog-clock-option';
+            option.textContent = value;
+            option.dataset.value = value;
+            if ((stage === 'hour' && Number(value) === Number(state.hour12)) || (stage === 'minute' && String(value) === state.minute)) {
+                option.classList.add('active');
+            }
+            positionOption(option, index, 88);
+            option.addEventListener('click', function () {
+                if (stage === 'hour') {
+                    state.hour12 = Number(value);
+                    picker.dataset.stage = 'minute';
+                } else {
+                    state.minute = String(value).padStart(2, '0');
+                }
+                syncPicker(picker);
+                if (stage === 'hour') {
+                    renderClock(picker);
+                }
+            });
+            clock.appendChild(option);
+        });
+
+        const activeIndex = values.findIndex(function (value) {
+            return stage === 'hour'
+                ? Number(value) === Number(state.hour12)
+                : String(value) === state.minute;
+        });
+        const rotation = ((activeIndex >= 0 ? activeIndex : 0) * 30);
+        hand.style.transform = 'translate(-50%, -100%) rotate(' + rotation + 'deg)';
+
+        Array.prototype.slice.call(picker.querySelectorAll('[data-time-stage]')).forEach(function (btn) {
+            btn.classList.toggle('active', btn.getAttribute('data-time-stage') === stage);
+        });
+        Array.prototype.slice.call(picker.querySelectorAll('[data-time-meridiem]')).forEach(function (btn) {
+            btn.classList.toggle('active', btn.getAttribute('data-time-meridiem') === state.meridiem);
+        });
+
+        const hasValue = Boolean(hidden.value);
+        readout.textContent = formatDisplayValue(state);
+        trigger.textContent = hasValue ? formatDisplayValue(state) : 'Select time';
+        trigger.classList.toggle('is-empty', !hasValue);
+    }
+
+    function syncPicker(picker) {
+        const hidden = picker.querySelector('input[type="hidden"]');
+        hidden.value = formatHiddenValue(picker._timeState);
+        renderClock(picker);
+    }
+
+    function setPickerValue(picker, value) {
+        picker._timeState = parseTime(value);
+        picker.dataset.stage = 'hour';
+        const hidden = picker.querySelector('input[type="hidden"]');
+        hidden.value = picker._timeState.hasValue ? String(value || '').slice(0, 5) : '';
+        renderClock(picker);
+    }
+
+    function closeAllPickers(exceptPicker) {
+        Array.prototype.slice.call(document.querySelectorAll('[data-time-picker]')).forEach(function (picker) {
+            if (picker !== exceptPicker) {
+                picker.classList.remove('is-open');
+            }
+        });
+    }
+
+    Array.prototype.slice.call(document.querySelectorAll('[data-time-picker]')).forEach(function (picker) {
+        const hidden = picker.querySelector('input[type="hidden"]');
+        picker._setValue = function (value) {
+            setPickerValue(picker, value);
+        };
+        setPickerValue(picker, hidden.value);
+
+        picker.querySelector('[data-time-trigger]').addEventListener('click', function () {
+            const willOpen = !picker.classList.contains('is-open');
+            closeAllPickers(picker);
+            picker.classList.toggle('is-open', willOpen);
+        });
+
+        Array.prototype.slice.call(picker.querySelectorAll('[data-time-stage]')).forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                picker.dataset.stage = btn.getAttribute('data-time-stage');
+                renderClock(picker);
+            });
+        });
+
+        Array.prototype.slice.call(picker.querySelectorAll('[data-time-meridiem]')).forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                picker._timeState.meridiem = btn.getAttribute('data-time-meridiem');
+                syncPicker(picker);
+            });
+        });
+
+        picker.querySelector('[data-time-clear]').addEventListener('click', function () {
+            picker._timeState = parseTime('');
+            hidden.value = '';
+            picker.dataset.stage = 'hour';
+            renderClock(picker);
+        });
+
+        picker.querySelector('[data-time-done]').addEventListener('click', function () {
+            picker.classList.remove('is-open');
+        });
+    });
+
+    document.addEventListener('click', function (event) {
+        const activePicker = event.target.closest('[data-time-picker]');
+        if (!activePicker) {
+            closeAllPickers(null);
+        }
+    });
+})();
+
 (function () {
     const sectionButtons = Array.from(document.querySelectorAll('.shift-section-btn'));
     const searchCard = document.getElementById('shifts-search-card');
@@ -282,6 +693,13 @@
         document.getElementById('shiftEditWeeklyOff').value = btn.getAttribute('data-weekly-off') || '';
         document.getElementById('shiftEditIsNightShift').value = btn.getAttribute('data-is-night-shift') || 'false';
         document.getElementById('shiftEditIsActive').value = btn.getAttribute('data-is-active') || 'true';
+        Array.prototype.slice.call(modal.querySelectorAll('[data-time-picker]')).forEach(function (picker) {
+            const hidden = picker.querySelector('input[type="hidden"]');
+            if (typeof picker._setValue === 'function') {
+                picker._setValue(hidden.value);
+            }
+            picker.classList.remove('is-open');
+        });
     }
 
     function openModal(btn) {
