@@ -1297,14 +1297,7 @@ def _handle_unauthorized(resp, request):
 
 
 def _is_org_setup_pending_from_settings(role, app_settings):
-    if role != 'admin':
-        return False
-    if not isinstance(app_settings, dict):
-        return True
-    onboarding = app_settings.get('onboarding')
-    if not isinstance(onboarding, dict):
-        return True
-    return not bool(onboarding.get('org_setup_completed'))
+    return False
 
 
 def _derive_policy_from_onboarding(app_settings, year=None, month=None):
@@ -1575,96 +1568,7 @@ def logout_view(request):
 # ─────────────────────────────────────────────────────────────────
 
 def org_setup_onboarding(request):
-    if not request.session.get('access_token'):
-        return redirect('login')
-
-    role = request.session.get('role')
-    if role != 'admin':
-        return redirect('dashboard')
-
-    app_settings = request.session.get('app_settings')
-    if not isinstance(app_settings, dict):
-        app_settings = {}
-    if not _is_org_setup_pending_from_settings(role, app_settings):
-        return redirect('dashboard')
-
-    errors = []
-    selected_mode = ((app_settings.get('onboarding') or {}).get('payable_days_mode') or 'calendar_month').strip()
-    default_hours = int((app_settings.get('onboarding') or {}).get('default_shift_hours') or 8)
-    default_minutes = int((app_settings.get('onboarding') or {}).get('default_shift_minutes') or 0)
-
-    if request.method == 'POST':
-        selected_mode = (request.POST.get('payable_days_mode') or 'calendar_month').strip()
-        try:
-            default_hours = int((request.POST.get('default_shift_hours') or '8').strip())
-        except (TypeError, ValueError):
-            default_hours = 8
-        try:
-            default_minutes = int((request.POST.get('default_shift_minutes') or '0').strip())
-        except (TypeError, ValueError):
-            default_minutes = 0
-
-        allowed_modes = {'calendar_month', 'every_30', 'every_28', 'every_26', 'exclude_weekly_offs'}
-        if selected_mode not in allowed_modes:
-            errors.append('Invalid payable days option selected.')
-        if default_hours < 0 or default_hours > 24:
-            errors.append('Shift hours must be between 0 and 24.')
-        if default_minutes < 0 or default_minutes > 59:
-            errors.append('Shift minutes must be between 0 and 59.')
-
-        if not errors:
-            onboarding_settings = dict(app_settings.get('onboarding') or {})
-            onboarding_settings.update({
-                'org_setup_completed': True,
-                'payable_days_mode': selected_mode,
-                'default_shift_hours': default_hours,
-                'default_shift_minutes': default_minutes,
-                'completed_at': timezone.now().isoformat(),
-            })
-
-            payload_settings = dict(app_settings)
-            payload_settings['onboarding'] = onboarding_settings
-
-            try:
-                save_resp = _api_post(request, '/api/clients/settings/', {'app_settings': payload_settings})
-                redir = _handle_unauthorized(save_resp, request)
-                if redir:
-                    return redir
-                if save_resp.status_code == 200:
-                    saved_settings = save_resp.json() if isinstance(save_resp.json(), dict) else payload_settings
-                    request.session['app_settings'] = saved_settings
-                    request.session.modified = True
-
-                    # Optional payroll policy sync from onboarding selection.
-                    payroll_payload = _derive_policy_from_onboarding(saved_settings)
-                    try:
-                        existing_resp = _api_get(request, '/api/payroll-policy/')
-                        if payroll_payload and existing_resp.status_code == 200:
-                            existing_payload = existing_resp.json()
-                            existing_rows = (
-                                existing_payload.get('results', existing_payload)
-                                if isinstance(existing_payload, dict) else existing_payload
-                            )
-                            if existing_rows:
-                                _api_put(request, f"/api/payroll-policy/{existing_rows[0].get('id')}/", payroll_payload)
-                            else:
-                                _api_post(request, '/api/payroll-policy/', payroll_payload)
-                    except requests.exceptions.ConnectionError:
-                        pass
-
-                    _flash(request, 'Organization setup completed.', 'success')
-                    return redirect('dashboard')
-                errors = _error_list_from_response(save_resp, 'Failed to save organization setup.')
-            except requests.exceptions.ConnectionError:
-                errors = ['Backend server unreachable.']
-
-    return render(request, 'onboarding/org_setup.html', {
-        'errors': errors,
-        'selected_mode': selected_mode,
-        'default_hours': f'{default_hours:02d}',
-        'default_minutes': f'{default_minutes:02d}',
-        **_get_context(request),
-    })
+    return render(request, 'errors/404.html', status=404)
 
 
 def attendance_template_v2(request):
