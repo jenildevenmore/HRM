@@ -121,11 +121,15 @@ def resolve_profile_access(profile, user=None):
         resolved_permissions = list(STATIC_PERMISSION_KEYS)
         resolved_addons = client_addons
     else:
-        resolved_permissions = normalize_permission_keys(
-            group_permissions + role_permissions + user_permissions
-        )
-        merged_addons = normalize_addon_keys(group_addons + role_addons + user_addons)
-        resolved_addons = [addon for addon in merged_addons if addon in client_addons] if merged_addons else client_addons
+        if employee_row and employee_row.client_role:
+            resolved_permissions = role_permissions
+            resolved_addons = [addon for addon in role_addons if addon in client_addons] if role_addons else []
+        elif group_permissions or group_addons:
+            resolved_permissions = group_permissions
+            resolved_addons = [addon for addon in group_addons if addon in client_addons] if group_addons else []
+        else:
+            resolved_permissions = user_permissions
+            resolved_addons = [addon for addon in user_addons if addon in client_addons] if user_addons else client_addons
 
     return {
         'module_permissions': resolved_permissions,

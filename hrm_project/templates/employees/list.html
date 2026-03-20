@@ -238,12 +238,16 @@
                 <td>
                     <div style="display:flex;gap:8px;">
                         <a href="{{ url('employee_detail', args=[emp.id]) }}" class="btn btn-secondary btn-sm">View</a>
+                        {% if can_edit_employee %}
                         <a href="{{ url('employee_edit', args=[emp.id]) }}" class="btn btn-secondary btn-sm">Edit</a>
+                        {% endif %}
+                        {% if can_delete_employee %}
                         <form id="del-emp-{{ emp.id }}" method="post" action="{{ url('employee_delete', args=[emp.id]) }}" style="display:inline;">
                             {{ csrf_input }}
                             <button type="button" class="btn btn-danger btn-sm"
                                 onclick="confirmDelete('del-emp-{{ emp.id }}', '{{ emp.first_name }} {{ emp.last_name }}')">Delete</button>
                         </form>
+                        {% endif %}
                     </div>
                 </td>
             </tr>

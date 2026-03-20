@@ -573,6 +573,56 @@ def _default_route_name(request):
     return 'dashboard'
 
 
+def _default_redirect_response(request):
+    route_name = _default_route_name(request)
+    if route_name != 'dashboard':
+        return redirect(route_name)
+
+    role = request.session.get('role', 'employee')
+    module_permissions = _normalize_module_permissions(request.session.get('module_permissions', []))
+    enabled_addons = _normalize_enabled_addons(request.session.get('enabled_addons', []))
+    can_view_attendance = (
+        role in ('superadmin', 'admin')
+        or ('attendance' in enabled_addons and 'attendance.view' in module_permissions)
+    )
+    can_view_dynamic_entities = (
+        role == 'superadmin'
+        or ('dynamic_models' in enabled_addons and any(p.startswith('dynamic_model.') and p.endswith('.view') for p in module_permissions))
+    )
+
+    if request.session.get('access_token') and (can_view_attendance or can_view_dynamic_entities):
+        try:
+            resp = _api_get(request, '/api/dynamic-models/')
+            if resp.status_code == 200:
+                payload = resp.json()
+                rows = payload.get('results', payload) if isinstance(payload, dict) else payload
+                if can_view_attendance:
+                    attendance_model = next((m for m in rows or [] if str(m.get('slug', '')).lower() == 'attendance'), None)
+                    if attendance_model and attendance_model.get('id'):
+                        return redirect('dynamic_entity_list', model_id=attendance_model.get('id'))
+                if can_view_dynamic_entities:
+                    allowed_model = next(
+                        (
+                            m for m in rows or []
+                            if f"dynamic_model.{m.get('id')}.view" in module_permissions
+                        ),
+                        None,
+                    )
+                    if allowed_model and allowed_model.get('id'):
+                        return redirect('dynamic_entity_list', model_id=allowed_model.get('id'))
+        except requests.exceptions.RequestException:
+            pass
+
+    return redirect('dashboard')
+
+
+def _default_home_url(request):
+    try:
+        return _default_redirect_response(request).url
+    except Exception:
+        return reverse('dashboard')
+
+
 def _load_client_addons(request, access_token=None, client_id=None):
     target_client_id = client_id or request.session.get('client_id')
     if not target_client_id:
@@ -767,6 +817,7 @@ def _get_context(request):
         'app_settings': app_settings,
         'nav_dynamic_models': nav_dynamic_models,
         'home_url_name': _default_route_name(request),
+        'home_url': _default_home_url(request),
     }
 
 
@@ -858,14 +909,14 @@ def _require_module_permission(request, permission_key):
     if _has_module_permission(request, permission_key):
         return None
     _flash(request, 'You do not have permission to access this module.', 'error')
-    return redirect(_default_route_name(request))
+    return _default_redirect_response(request)
 
 
 def _require_addon(request, addon_key):
     if _has_addon(request, addon_key):
         return None
     _flash(request, 'This feature is disabled for your client. Ask superadmin to enable it.', 'error')
-    return redirect(_default_route_name(request))
+    return _default_redirect_response(request)
 
 
 def _attendance_feature_flags(request):
@@ -1447,7 +1498,7 @@ def login_view(request):
                         request.session.get('app_settings'),
                     ):
                         return redirect('org_setup_onboarding')
-                    return redirect(_default_route_name(request))
+                    return _default_redirect_response(request)
                 else:
                     error = 'Invalid username or password.'
             except requests.exceptions.RequestException:
@@ -1701,6 +1752,9 @@ def attendance_template_v2(request):
 
 def dashboard(request):
     if request.session.get('role') not in ('superadmin', 'admin') and not _has_module_permission(request, 'dashboard.view'):
+        fallback_response = _default_redirect_response(request)
+        if str(getattr(fallback_response, 'url', '') or '').rstrip('/') not in ('', '/'):
+            return fallback_response
         return render(request, 'errors/403.html', {
             'messages': _pop_messages(request),
             **_get_context(request),
@@ -3519,6 +3573,14 @@ def employee_list(request):
         request.session.get('role') in ('superadmin', 'admin')
         or 'employees.create' in (request.session.get('module_permissions') or [])
     )
+    can_edit_employee = (
+        request.session.get('role') in ('superadmin', 'admin')
+        or 'employees.edit' in (request.session.get('module_permissions') or [])
+    )
+    can_delete_employee = (
+        request.session.get('role') in ('superadmin', 'admin')
+        or 'employees.delete' in (request.session.get('module_permissions') or [])
+    )
 
     create_form = EmployeeForm()
     create_errors = []
@@ -3689,6 +3751,8 @@ def employee_list(request):
         'selected_role': selected_role,
         'role_filter_options': client_roles,
         'can_create_employee': can_create_employee,
+        'can_edit_employee': can_edit_employee,
+        'can_delete_employee': can_delete_employee,
         'show_employee_section': show_employee_section,
         'create_form': create_form,
         'create_errors': create_errors,
@@ -6689,7 +6753,7 @@ def dynamic_entity_list(request, model_id):
                     ['attendance.view', 'attendance.create', 'attendance.edit', 'attendance.delete'],
                 ):
                     _flash(request, 'You do not have permission to access this module.', 'error')
-                    return redirect('dashboard')
+                    return _default_redirect_response(request)
             else:
                 permission_redirect = _require_module_permission(request, f'dynamic_model.{model_id}.view')
                 if permission_redirect:

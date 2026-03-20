@@ -50,7 +50,26 @@ class AuthRequiredMiddleware:
         if not is_public_path:
             if not request.session.get('access_token'):
                 return redirect('login')
-        return self.get_response(request)
+        response = self.get_response(request)
+
+        if (
+            getattr(response, 'status_code', None) == 403
+            and request.method == 'GET'
+            and request.session.get('access_token')
+            and not path.startswith(_prefixed('/api/'))
+        ):
+            try:
+                from core.views import _default_redirect_response
+
+                fallback_response = _default_redirect_response(request)
+                current_path = path.rstrip('/') or '/'
+                fallback_path = str(getattr(fallback_response, 'url', '') or '').rstrip('/') or '/'
+                if fallback_path and current_path != fallback_path:
+                    return fallback_response
+            except Exception:
+                return response
+
+        return response
 
 class DemoModeMiddleware:
     """Prevent write operations when DEMO_MODE is enabled."""
