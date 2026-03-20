@@ -306,6 +306,15 @@ class UserProfileViewSet(viewsets.ModelViewSet):
 
         static_groups = [
             {
+                'title': 'Dashboard',
+                'permissions': [
+                    {'key': 'dashboard.view', 'label': 'Can view Dashboard'},
+                    {'key': 'dashboard.create', 'label': 'Can create Dashboard'},
+                    {'key': 'dashboard.edit', 'label': 'Can edit Dashboard'},
+                    {'key': 'dashboard.delete', 'label': 'Can delete Dashboard'},
+                ],
+            },
+            {
                 'title': 'Employees',
                 'permissions': [
                     {'key': 'employees.view', 'label': 'Can view Employees'},

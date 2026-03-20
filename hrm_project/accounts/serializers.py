@@ -8,6 +8,7 @@ from employees.models import Employee
 
 
 STATIC_PERMISSION_KEYS = {
+    'dashboard.view', 'dashboard.create', 'dashboard.edit', 'dashboard.delete',
     'employees.view', 'employees.create', 'employees.edit', 'employees.delete',
     'attendance.view', 'attendance.create', 'attendance.edit', 'attendance.delete',
     'leaves.view', 'leaves.create', 'leaves.edit', 'leaves.delete', 'leaves.approve',
@@ -23,6 +24,7 @@ STATIC_PERMISSION_KEYS = {
 }
 
 LEGACY_PERMISSION_MAP = {
+    'dashboard': ['dashboard.view', 'dashboard.create', 'dashboard.edit', 'dashboard.delete'],
     'employees': ['employees.view', 'employees.create', 'employees.edit', 'employees.delete'],
     'attendance': ['attendance.view', 'attendance.create', 'attendance.edit', 'attendance.delete'],
     'leaves': ['leaves.view', 'leaves.create', 'leaves.edit', 'leaves.delete', 'leaves.approve'],
@@ -92,6 +94,47 @@ def normalize_permission_keys(values):
     return cleaned
 
 
+def resolve_profile_access(profile, user=None):
+    user_obj = user or getattr(profile, 'user', None)
+    group_permissions = normalize_permission_keys(profile.permission_group.module_permissions or []) if profile.permission_group else []
+    group_addons = normalize_addon_keys(profile.permission_group.enabled_addons or []) if profile.permission_group else []
+    user_permissions = normalize_permission_keys(profile.module_permissions or [])
+    user_addons = normalize_addon_keys(profile.enabled_addons or [])
+    client_addons = normalize_addon_keys((profile.client.enabled_addons if profile.client else []) or [])
+    employee_row = (
+        Employee.objects.select_related('client_role')
+        .filter(
+            client_id=profile.client_id,
+            email__iexact=((getattr(user_obj, 'email', '') or '')),
+        )
+        .only('id', 'role', 'client_role__module_permissions', 'client_role__enabled_addons')
+        .first()
+    )
+    role_permissions = normalize_permission_keys(
+        (employee_row.client_role.module_permissions if employee_row and employee_row.client_role else []) or []
+    )
+    role_addons = normalize_addon_keys(
+        (employee_row.client_role.enabled_addons if employee_row and employee_row.client_role else []) or []
+    )
+
+    if profile.role == 'admin':
+        resolved_permissions = list(STATIC_PERMISSION_KEYS)
+        resolved_addons = client_addons
+    else:
+        resolved_permissions = normalize_permission_keys(
+            group_permissions + role_permissions + user_permissions
+        )
+        merged_addons = normalize_addon_keys(group_addons + role_addons + user_addons)
+        resolved_addons = [addon for addon in merged_addons if addon in client_addons] if merged_addons else client_addons
+
+    return {
+        'module_permissions': resolved_permissions,
+        'enabled_addons': resolved_addons,
+        'employee_id': employee_row.id if employee_row else None,
+        'employee_role': employee_row.role if employee_row else '',
+    }
+
+
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
@@ -101,6 +144,8 @@ class UserSerializer(serializers.ModelSerializer):
 class UserProfileSerializer(serializers.ModelSerializer):
     user = UserSerializer()
     role_display = serializers.CharField(source='get_role_display', read_only=True)
+    employee_id = serializers.SerializerMethodField()
+    employee_role = serializers.SerializerMethodField()
     module_permissions = serializers.ListField(
         child=serializers.CharField(),
         required=False,
@@ -115,7 +160,8 @@ class UserProfileSerializer(serializers.ModelSerializer):
         model = UserProfile
         fields = (
             'id', 'user', 'client', 'role', 'role_display',
-            'module_permissions', 'enabled_addons', 'permission_group', 'permission_group_name', 'created_at'
+            'module_permissions', 'enabled_addons', 'permission_group', 'permission_group_name',
+            'employee_id', 'employee_role', 'created_at'
         )
         read_only_fields = ('id', 'created_at')
 
@@ -124,6 +170,40 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
     def validate_enabled_addons(self, value):
         return normalize_addon_keys(value)
+
+    def get_employee_id(self, obj):
+        employee = self._get_employee_row(obj)
+        return employee.id if employee else None
+
+    def get_employee_role(self, obj):
+        employee = self._get_employee_row(obj)
+        return employee.role if employee else ''
+
+    def _get_employee_row(self, obj):
+        cache_attr = '_cached_employee_row'
+        cached = getattr(obj, cache_attr, None)
+        if cached is not None:
+            return cached
+
+        employee = (
+            Employee.objects.filter(
+                client_id=obj.client_id,
+                email__iexact=(obj.user.email or ''),
+            )
+            .only('id', 'role')
+            .first()
+        )
+        setattr(obj, cache_attr, employee or False)
+        return employee
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        resolved = resolve_profile_access(instance)
+        data['module_permissions'] = resolved['module_permissions']
+        data['enabled_addons'] = resolved['enabled_addons']
+        data['employee_id'] = resolved['employee_id']
+        data['employee_role'] = resolved['employee_role']
+        return data
 
 
 class ClientPermissionGroupSerializer(serializers.ModelSerializer):
@@ -215,43 +295,12 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             data['user_id'] = user.id
             data['username'] = user.username
             data['user_email'] = user.email
-            group_permissions = normalize_permission_keys(profile.permission_group.module_permissions or []) if profile.permission_group else []
-            client_addons = normalize_addon_keys((profile.client.enabled_addons if profile.client else []) or [])
-            group_addons = normalize_addon_keys(profile.permission_group.enabled_addons or []) if profile.permission_group else []
-            user_permissions = normalize_permission_keys(profile.module_permissions or [])
-            user_addons = normalize_addon_keys(profile.enabled_addons or [])
-            employee_row = (
-                Employee.objects.select_related('client_role')
-                .filter(
-                    client_id=profile.client_id,
-                    email__iexact=(user.email or ''),
-                )
-                .only('id', 'role', 'client_role__module_permissions', 'client_role__enabled_addons')
-                .first()
-            )
-            role_permissions = normalize_permission_keys(
-                (employee_row.client_role.module_permissions if employee_row and employee_row.client_role else []) or []
-            )
-            role_addons = normalize_addon_keys(
-                (employee_row.client_role.enabled_addons if employee_row and employee_row.client_role else []) or []
-            )
-            data['module_permissions'] = (
-                list(STATIC_PERMISSION_KEYS)
-                if profile.role == 'admin' else (group_permissions or role_permissions or user_permissions)
-            )
-            if profile.role == 'admin':
-                data['enabled_addons'] = client_addons
-            elif role_addons:
-                data['enabled_addons'] = [a for a in role_addons if a in client_addons]
-            elif user_addons:
-                data['enabled_addons'] = [a for a in user_addons if a in client_addons]
-            elif group_addons:
-                data['enabled_addons'] = [a for a in group_addons if a in client_addons]
-            else:
-                data['enabled_addons'] = client_addons
+            resolved_access = resolve_profile_access(profile, user=user)
+            data['module_permissions'] = resolved_access['module_permissions']
+            data['enabled_addons'] = resolved_access['enabled_addons']
             data['permission_group'] = profile.permission_group_id
-            data['employee_id'] = employee_row.id if employee_row else None
-            data['employee_role'] = employee_row.role if employee_row else ''
+            data['employee_id'] = resolved_access['employee_id']
+            data['employee_role'] = resolved_access['employee_role']
         except UserProfile.DoesNotExist:
             # Allow Django superusers even if profile row is missing.
             if login_mode == 'superadmin' and user.is_superuser:
