@@ -77,6 +77,7 @@ ADDON_OPTIONS = [
 ]
 
 STATIC_PERMISSION_KEYS = {
+    'dashboard.view', 'dashboard.create', 'dashboard.edit', 'dashboard.delete',
     'employees.view', 'employees.create', 'employees.edit', 'employees.delete',
     'attendance.view', 'attendance.create', 'attendance.edit', 'attendance.delete',
     'leaves.view', 'leaves.create', 'leaves.edit', 'leaves.delete', 'leaves.approve',
@@ -92,6 +93,7 @@ STATIC_PERMISSION_KEYS = {
 }
 
 LEGACY_PERMISSION_MAP = {
+    'dashboard': ['dashboard.view', 'dashboard.create', 'dashboard.edit', 'dashboard.delete'],
     'employees': ['employees.view', 'employees.create', 'employees.edit', 'employees.delete'],
     'attendance': ['attendance.view', 'attendance.create', 'attendance.edit', 'attendance.delete'],
     'leaves': ['leaves.view', 'leaves.create', 'leaves.edit', 'leaves.delete', 'leaves.approve'],
@@ -119,6 +121,7 @@ ADDON_VIEW_PERMISSION_MAP = {
     'import_export': 'import_export.view',
 }
 ROLE_MODULE_OPTIONS = [
+    {'key': 'dashboard', 'label': 'Dashboard', 'permission': 'dashboard.view'},
     {'key': 'employees', 'label': 'Employees', 'permission': 'employees.view'},
     {'key': 'attendance', 'label': 'Attendance', 'permission': 'attendance.view', 'addon': 'attendance'},
     {'key': 'leave_management', 'label': 'Leave Management', 'permission': 'leaves.view', 'addon': 'leave_management'},
@@ -542,6 +545,34 @@ def _selected_role_modules(module_permissions, enabled_addons):
     return selected
 
 
+def _default_route_name(request):
+    role = request.session.get('role', 'employee')
+    if role in ('superadmin', 'admin'):
+        return 'dashboard'
+
+    route_checks = [
+        ('dashboard', lambda: _has_module_permission(request, 'dashboard.view')),
+        ('employee_list', lambda: _has_module_permission(request, 'employees.view')),
+        ('leave_list', lambda: _has_addon(request, 'leave_management') and _has_module_permission(request, 'leaves.view')),
+        ('holiday_list', lambda: _has_addon(request, 'holidays') and _has_module_permission(request, 'holidays.view')),
+        ('shift_list', lambda: _has_addon(request, 'shift_management') and _has_module_permission(request, 'shifts.view')),
+        ('bank_list', lambda: _has_addon(request, 'bank_management') and _has_module_permission(request, 'bank.view')),
+        ('policy_page', lambda: _has_addon(request, 'policy') and _has_module_permission(request, 'policy.view')),
+        ('document_list', lambda: _has_addon(request, 'documents') and _has_module_permission(request, 'documents.view')),
+        ('import_export_page', lambda: _has_addon(request, 'import_export') and _has_module_permission(request, 'import_export.view')),
+        ('activity_log_list', lambda: _has_addon(request, 'activity_logs') and _has_module_permission(request, 'activity_logs.view')),
+        ('custom_field_list', lambda: _has_addon(request, 'custom_fields') and _has_module_permission(request, 'custom_fields.view')),
+        ('dynamic_model_list', lambda: _has_addon(request, 'dynamic_models') and _has_module_permission(request, 'dynamic_models.view')),
+    ]
+    for route_name, checker in route_checks:
+        try:
+            if checker():
+                return route_name
+        except Exception:
+            continue
+    return 'dashboard'
+
+
 def _load_client_addons(request, access_token=None, client_id=None):
     target_client_id = client_id or request.session.get('client_id')
     if not target_client_id:
@@ -651,6 +682,7 @@ def _load_auto_clockout_alerts(request, limit=8):
 
 def _get_context(request):
     """Return common context data for all views"""
+    _ensure_current_user_access(request)
     role = request.session.get('role', 'employee')
     module_permissions = _normalize_module_permissions(request.session.get('module_permissions', []))
     request.session['module_permissions'] = module_permissions
@@ -734,10 +766,74 @@ def _get_context(request):
         'enabled_addons': enabled_addons,
         'app_settings': app_settings,
         'nav_dynamic_models': nav_dynamic_models,
+        'home_url_name': _default_route_name(request),
     }
 
 
+def _ensure_current_user_access(request):
+    if getattr(request, '_current_user_access_synced', False):
+        return
+
+    request._current_user_access_synced = True
+    if not request.session.get('access_token'):
+        return
+
+    role = request.session.get('role', 'employee')
+    if role in ('superadmin', 'admin'):
+        return
+
+    if _use_internal_api():
+        try:
+            from accounts.models import UserProfile
+            from accounts.serializers import resolve_profile_access
+
+            profile = (
+                UserProfile.objects.select_related('user', 'client', 'permission_group')
+                .filter(user_id=request.session.get('user_id'))
+                .first()
+            )
+            if profile:
+                resolved = resolve_profile_access(profile, user=profile.user)
+                request.session['role'] = profile.role or role
+                request.session['client_id'] = profile.client_id
+                request.session['user_email'] = getattr(profile.user, 'email', '') or request.session.get('user_email', '')
+                request.session['employee_id'] = resolved['employee_id']
+                request.session['employee_role'] = resolved['employee_role']
+                request.session['module_permissions'] = _normalize_module_permissions(
+                    resolved['module_permissions']
+                )
+                request.session['enabled_addons'] = _normalize_enabled_addons(
+                    resolved['enabled_addons']
+                )
+                request.session.modified = True
+                return
+        except Exception:
+            pass
+
+    try:
+        resp = _api_get(request, '/api/accounts/me/')
+        if resp.status_code != 200:
+            return
+        payload = resp.json() if callable(getattr(resp, 'json', None)) else {}
+        if not isinstance(payload, dict):
+            return
+
+        request.session['role'] = payload.get('role', role) or role
+        request.session['employee_id'] = payload.get('employee_id')
+        request.session['employee_role'] = payload.get('employee_role', '')
+        request.session['module_permissions'] = _normalize_module_permissions(
+            payload.get('module_permissions', request.session.get('module_permissions', []))
+        )
+        request.session['enabled_addons'] = _normalize_enabled_addons(
+            payload.get('enabled_addons', request.session.get('enabled_addons', []))
+        )
+        request.session.modified = True
+    except requests.exceptions.RequestException:
+        return
+
+
 def _has_addon(request, addon_key):
+    _ensure_current_user_access(request)
     role = request.session.get('role', 'employee')
     if role == 'superadmin':
         return True
@@ -746,6 +842,7 @@ def _has_addon(request, addon_key):
 
 
 def _has_module_permission(request, permission_key):
+    _ensure_current_user_access(request)
     role = request.session.get('role', 'employee')
     if role in ('superadmin', 'admin'):
         return True
@@ -761,14 +858,14 @@ def _require_module_permission(request, permission_key):
     if _has_module_permission(request, permission_key):
         return None
     _flash(request, 'You do not have permission to access this module.', 'error')
-    return redirect('dashboard')
+    return redirect(_default_route_name(request))
 
 
 def _require_addon(request, addon_key):
     if _has_addon(request, addon_key):
         return None
     _flash(request, 'This feature is disabled for your client. Ask superadmin to enable it.', 'error')
-    return redirect('dashboard')
+    return redirect(_default_route_name(request))
 
 
 def _attendance_feature_flags(request):
@@ -1357,7 +1454,7 @@ def login_view(request):
                         request.session.get('app_settings'),
                     ):
                         return redirect('org_setup_onboarding')
-                    return redirect('dashboard')
+                    return redirect(_default_route_name(request))
                 else:
                     error = 'Invalid username or password.'
             except requests.exceptions.RequestException:
@@ -1699,6 +1796,12 @@ def attendance_template_v2(request):
 
 
 def dashboard(request):
+    if request.session.get('role') not in ('superadmin', 'admin') and not _has_module_permission(request, 'dashboard.view'):
+        return render(request, 'errors/403.html', {
+            'messages': _pop_messages(request),
+            **_get_context(request),
+        }, status=403)
+
     messages = _pop_messages(request)
     auto_clockout_alerts = []
     today = timezone.localdate()
@@ -1921,14 +2024,31 @@ def dashboard(request):
     except requests.exceptions.ConnectionError:
         messages.append({'message': 'Backend server unreachable.', 'level': 'error'})
 
-    quick_actions = [
-        {'label': 'Add New Employee', 'url': 'employee_create'},
-        {'label': 'Mark Attendance', 'url': 'attendance_mark'},
-        {'label': 'Apply for Leave', 'url': 'leave_create'},
-        {'label': 'Process Payroll', 'url': 'payroll_list'},
-        {'label': 'Open Documents', 'url': 'document_list'},
-        {'label': 'Import / Export', 'url': 'import_export_page'},
-    ]
+    quick_actions = []
+    if request.session.get('role') in ('superadmin', 'admin') or _has_module_permission(request, 'employees.create'):
+        quick_actions.append({'label': 'Add New Employee', 'url': 'employee_create'})
+    if (
+        request.session.get('role') in ('superadmin', 'admin')
+        or ('attendance' in (request.session.get('enabled_addons') or []) and _has_module_permission(request, 'attendance.create'))
+    ):
+        quick_actions.append({'label': 'Mark Attendance', 'url': 'attendance_mark'})
+    if (
+        request.session.get('role') in ('superadmin', 'admin')
+        or ('leave_management' in (request.session.get('enabled_addons') or []) and _has_module_permission(request, 'leaves.create'))
+    ):
+        quick_actions.append({'label': 'Apply for Leave', 'url': 'leave_create'})
+    if request.session.get('role') in ('superadmin', 'admin') or 'payroll' in (request.session.get('enabled_addons') or []):
+        quick_actions.append({'label': 'Process Payroll', 'url': 'payroll_list'})
+    if (
+        request.session.get('role') in ('superadmin', 'admin')
+        or ('documents' in (request.session.get('enabled_addons') or []) and _has_module_permission(request, 'documents.view'))
+    ):
+        quick_actions.append({'label': 'Open Documents', 'url': 'document_list'})
+    if (
+        request.session.get('role') in ('superadmin', 'admin')
+        or ('import_export' in (request.session.get('enabled_addons') or []) and _has_module_permission(request, 'import_export.view'))
+    ):
+        quick_actions.append({'label': 'Import / Export', 'url': 'import_export_page'})
 
     return render(request, 'dashboard.html', {
         'emp_count': emp_count,

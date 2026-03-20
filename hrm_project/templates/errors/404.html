@@ -1,17 +1,16 @@
 {% extends "base.html" %}
 
-{% block title %}404 Not Found — HRM System{% endblock %}
+{% block title %}404 Not Found - HRM System{% endblock %}
 
 {% block content %}
 <div style="display:flex;align-items:center;justify-content:center;height:60vh;">
     <div style="text-align:center;">
-        <div style="font-size:80px;margin-bottom:16px;">🔍</div>
+        <div style="font-size:80px;margin-bottom:16px;">Search</div>
         <h1
             style="font-size:56px;font-weight:800;background:var(--accent-grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">
             404</h1>
-        <p style="font-size:18px;color:var(--text-muted);margin:12px 0 28px;">Page not found. It may have been moved or
-            deleted.</p>
-        <a href="{{ url('dashboard') }}" class="btn btn-primary">← Back to Dashboard</a>
+        <p style="font-size:18px;color:var(--text-muted);margin:12px 0 28px;">Page not found. It may have been moved or deleted.</p>
+        <a href="{{ url(home_url_name or 'dashboard') }}" class="btn btn-primary">Go Back</a>
     </div>
 </div>
 {% endblock %}
