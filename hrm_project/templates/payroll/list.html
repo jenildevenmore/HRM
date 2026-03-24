@@ -221,6 +221,12 @@
 <div id="payroll-policy-section" class="payroll-module-section">
     <div class="card" style="margin-bottom:16px;">
         <h3 class="section-title">Payroll Policy Setup</h3>
+        {% if not has_shifts %}
+        <div class="empty-state" style="padding:20px 10px;">
+            <p>{{ payroll_shift_required_message }}</p>
+            <a href="{{ url('shift_list') }}" class="btn btn-primary">Go To Shifts</a>
+        </div>
+        {% else %}
         <form method="post">
             {{ csrf_input }}
             <input type="hidden" name="form_action" value="save_policy">
@@ -254,6 +260,7 @@
             </div>
             <button type="submit" class="btn btn-primary">Save Policy</button>
         </form>
+        {% endif %}
     </div>
 </div>
 
@@ -288,6 +295,20 @@
                 </div>
             </div>
             <div class="form-row">
+                <div class="form-group">
+                    <label>Shift</label>
+                    <select name="shift_id" id="compShiftField">
+                        <option value="">Select shift</option>
+                        {% for shift in shifts %}
+                        <option value="{{ shift.id }}">{{ shift.name }}{% if shift.code %} ({{ shift.code }}){% endif %}</option>
+                        {% endfor %}
+                    </select>
+                    <div style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap;">
+                        <a href="{{ url('shift_list') }}" class="btn btn-secondary btn-sm">Open Shift Management</a>
+                    </div>
+                </div>
+            </div>
+            <div class="form-row">
                 <div class="form-group" id="monthlySalaryGroup">
                     <label>Monthly Salary</label>
                     <input type="number" step="0.01" min="0" name="monthly_salary" id="monthlySalaryField" placeholder="Enter monthly salary">
@@ -316,6 +337,7 @@
                 <tr>
                     <th>#</th>
                     <th>Employee</th>
+                    <th>Shift</th>
                     <th>Month</th>
                     <th>Comp Basis</th>
                     <th>Monthly Salary</th>
@@ -339,6 +361,7 @@
                     <tr>
                         <td>{{ loop.index }}</td>
                         <td>{{ row.employee_name }}</td>
+                        <td>{{ row.shift_name or '-' }}</td>
                         <td>{{ row.month }}</td>
                         <td>{{ row.salary_basis|upper }}</td>
                         <td>{{ row.monthly_salary }}</td>
@@ -358,7 +381,7 @@
                     {% endfor %}
                 {% else %}
                     <tr>
-                        <td colspan="17" style="text-align:center;">No payroll data for selected month.</td>
+                        <td colspan="18" style="text-align:center;">No payroll data for selected month.</td>
                     </tr>
                 {% endif %}
             </tbody>
@@ -408,6 +431,7 @@
     const basisField = document.getElementById('compSalaryBasisField');
     const compensationIdField = document.getElementById('compensationIdField');
     const effectiveFromField = document.getElementById('effectiveFromField');
+    const shiftField = document.getElementById('compShiftField');
     const monthlySalaryField = document.getElementById('monthlySalaryField');
     const dailySalaryField = document.getElementById('dailySalaryField');
     const hourlySalaryField = document.getElementById('hourlySalaryField');
@@ -428,6 +452,7 @@
         compensationIdField.value = row ? (row.id || '') : '';
         basisField.value = row ? (row.salary_basis || 'monthly') : 'monthly';
         effectiveFromField.value = row ? (row.effective_from || '') : '';
+        shiftField.value = row && row.shift != null ? String(row.shift) : '';
         monthlySalaryField.value = row && row.monthly_salary != null ? row.monthly_salary : '';
         dailySalaryField.value = row && row.daily_salary != null ? row.daily_salary : '';
         hourlySalaryField.value = row && row.hourly_salary != null ? row.hourly_salary : '';

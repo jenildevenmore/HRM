@@ -3,6 +3,7 @@ from decimal import Decimal
 from rest_framework import serializers
 
 from clients.models import Client
+from shifts.models import Shift
 from .models import EmployeeCompensation, PayrollPolicy
 
 
@@ -79,11 +80,18 @@ class PayrollPolicySerializer(serializers.ModelSerializer):
 
 
 class EmployeeCompensationSerializer(serializers.ModelSerializer):
+    shift = serializers.PrimaryKeyRelatedField(
+        queryset=Shift.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+
     class Meta:
         model = EmployeeCompensation
         fields = (
             'id',
             'employee',
+            'shift',
             'salary_basis',
             'monthly_salary',
             'daily_salary',
@@ -110,6 +118,11 @@ class EmployeeCompensationSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
+        employee = attrs.get('employee', getattr(self.instance, 'employee', None))
+        shift = attrs.get('shift', getattr(self.instance, 'shift', None))
+        if employee and shift and employee.client_id != shift.client_id:
+            raise serializers.ValidationError({'shift': 'Shift must belong to the same client as employee.'})
+
         basis = attrs.get('salary_basis', getattr(self.instance, 'salary_basis', EmployeeCompensation.BASIS_MONTHLY))
         monthly_salary = attrs.get('monthly_salary', getattr(self.instance, 'monthly_salary', None))
         daily_salary = attrs.get('daily_salary', getattr(self.instance, 'daily_salary', None))

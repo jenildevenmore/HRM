@@ -105,7 +105,7 @@ class EmployeeCompensationViewSet(_PayrollAccessMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = EmployeeCompensation.objects.select_related('employee', 'employee__client')
+        qs = EmployeeCompensation.objects.select_related('employee', 'employee__client', 'shift')
         if self._is_superadmin():
             return qs
         client_id = self._client_id()
@@ -195,7 +195,7 @@ class PayrollReportView(_PayrollAccessMixin, APIView):
         else:
             client_id = profile.client_id
 
-        employees_qs = Employee.objects.select_related('client', 'compensation')
+        employees_qs = Employee.objects.select_related('client', 'compensation', 'compensation__shift')
         if client_id:
             employees_qs = employees_qs.filter(client_id=client_id)
 
@@ -346,6 +346,7 @@ class PayrollReportView(_PayrollAccessMixin, APIView):
             monthly_salary = Decimal(str(compensation.monthly_salary or 0)) if compensation else Decimal('0')
             daily_salary = Decimal(str(compensation.daily_salary or 0)) if compensation else Decimal('0')
             hourly_salary = Decimal(str(compensation.hourly_salary or 0)) if compensation else Decimal('0')
+            shift_name = str(getattr(getattr(compensation, 'shift', None), 'name', '') or '')
 
             if compensation_basis == EmployeeCompensation.BASIS_DAILY:
                 per_day_rate = daily_salary
@@ -373,6 +374,7 @@ class PayrollReportView(_PayrollAccessMixin, APIView):
             rows.append({
                 'employee_id': emp.id,
                 'employee_name': f'{emp.first_name} {emp.last_name}'.strip(),
+                'shift_name': shift_name,
                 'client_id': emp.client_id,
                 'month': f'{year:04d}-{month:02d}',
                 'monthly_salary': float(round(monthly_salary, 2)),

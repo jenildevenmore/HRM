@@ -5489,11 +5489,37 @@ def payroll_list(request):
     rows = []
     policy_row = None
     compensation_by_employee = {}
+    shifts = []
+    shifts_loaded = False
+    has_shifts = False
+    payroll_shift_required_message = ''
+
+    try:
+        shifts_resp = _api_get(request, '/api/shifts/')
+        redir = _handle_unauthorized(shifts_resp, request)
+        if redir:
+            return redir
+        if shifts_resp.status_code == 200:
+            shifts_payload = shifts_resp.json()
+            shifts = shifts_payload.get('results', shifts_payload) if isinstance(shifts_payload, dict) else shifts_payload
+            shifts_loaded = True
+            has_shifts = bool(shifts)
+    except requests.exceptions.ConnectionError:
+        pass
+
+    if can_manage_payroll and not has_shifts:
+        payroll_shift_required_message = 'First create at least one shift, then setup payroll policy or employee salary.'
+    if can_manage_payroll and shifts_loaded and not has_shifts:
+        _flash(request, payroll_shift_required_message, 'error')
+        return redirect(f"{reverse('shift_list')}?section=create")
 
     if request.method == 'POST' and can_manage_payroll:
         form_action = (request.POST.get('form_action') or '').strip()
         try:
             if form_action == 'save_policy':
+                if not has_shifts:
+                    errors = [payroll_shift_required_message or 'First create at least one shift, then setup payroll policy.']
+                    raise ValueError('shift_required')
                 payload = {
                     'monthly_working_days': int((request.POST.get('monthly_working_days') or '24').strip() or 24),
                     'standard_hours_per_day': (request.POST.get('standard_hours_per_day') or '8').strip() or '8',
@@ -5515,13 +5541,19 @@ def payroll_list(request):
                 errors = _error_list_from_response(save_resp, 'Failed to save payroll policy.')
 
             elif form_action == 'save_compensation':
+                if not has_shifts:
+                    errors = [payroll_shift_required_message or 'First create at least one shift, then setup employee salary.']
+                    raise ValueError('shift_required')
                 employee_id = (request.POST.get('employee_id') or '').strip()
                 salary_basis = (request.POST.get('comp_salary_basis') or 'monthly').strip() or 'monthly'
                 monthly_salary_raw = (request.POST.get('monthly_salary') or '').strip()
                 daily_salary_raw = (request.POST.get('daily_salary') or '').strip()
                 hourly_salary_raw = (request.POST.get('hourly_salary') or '').strip()
+                selected_shift_id = (request.POST.get('shift_id') or '').strip()
+
                 payload = {
                     'employee': employee_id,
+                    'shift': int(selected_shift_id) if selected_shift_id else None,
                     'salary_basis': salary_basis,
                     'monthly_salary': float(monthly_salary_raw) if monthly_salary_raw else None,
                     'daily_salary': float(daily_salary_raw) if daily_salary_raw else None,
@@ -5541,7 +5573,8 @@ def payroll_list(request):
                     return redirect('payroll_list')
                 errors = _error_list_from_response(save_resp, 'Failed to save employee salary details.')
         except (TypeError, ValueError):
-            errors = ['Please enter valid numeric values for salary and policy fields.']
+            if not errors:
+                errors = ['Please enter valid numeric values for salary and policy fields.']
         except requests.exceptions.ConnectionError:
             errors = ['Backend server unreachable.']
 
@@ -5626,7 +5659,10 @@ def payroll_list(request):
         'policy_row': policy_row,
         'compensation_by_employee': compensation_by_employee,
         'compensation_by_employee_json': json.dumps(compensation_by_employee),
+        'shifts': shifts,
         'can_manage_payroll': can_manage_payroll,
+        'has_shifts': has_shifts,
+        'payroll_shift_required_message': payroll_shift_required_message,
         'selected_year': str(selected_year),
         'selected_month': str(selected_month),
         'selected_employee': selected_employee,
