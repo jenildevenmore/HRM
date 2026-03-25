@@ -1,6 +1,9 @@
 from io import StringIO
+import datetime
 
 from django.core.management import call_command
+from django.db import transaction
+from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.filters import OrderingFilter, SearchFilter
@@ -11,7 +14,7 @@ from rest_framework import status
 from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
 
-from .models import DynamicField, DynamicModel, DynamicRecord
+from .models import AttendanceBreak, DynamicField, DynamicModel, DynamicRecord
 from .serializers import DynamicFieldSerializer, DynamicModelSerializer, DynamicRecordSerializer
 
 
@@ -99,9 +102,9 @@ class DynamicModelViewSet(TenantScopedViewSet):
             ('shift', 'Shift', 'text', False, True, ['morning', 'evening', 'night']),
             ('check_in', 'Check In', 'text', False, True, []),
             ('check_out', 'Check Out', 'text', False, True, []),
-            ('location_lat', 'Location Latitude', 'number', False, False, []),
-            ('location_lng', 'Location Longitude', 'number', False, False, []),
-            ('selfie_url', 'Selfie URL', 'text', False, False, []),
+            # ('location_lat', 'Location Latitude', 'number', False, False, []),
+            # ('location_lng', 'Location Longitude', 'number', False, False, []),
+            # ('selfie_url', 'Selfie URL', 'text', False, False, []),
             ('remarks', 'Remarks', 'text', False, True, []),
         ]
 
@@ -176,11 +179,11 @@ class DynamicRecordViewSet(TenantScopedViewSet):
 
     def get_queryset(self):
         if self._is_superadmin():
-            return DynamicRecord.objects.select_related('dynamic_model', 'dynamic_model__client')
+            return DynamicRecord.objects.select_related('dynamic_model', 'dynamic_model__client').prefetch_related('breaks')
         profile = self._profile()
         if not profile:
             return DynamicRecord.objects.none()
-        return DynamicRecord.objects.select_related('dynamic_model', 'dynamic_model__client').filter(
+        return DynamicRecord.objects.select_related('dynamic_model', 'dynamic_model__client').prefetch_related('breaks').filter(
             dynamic_model__client=profile.client
         )
 
@@ -196,12 +199,127 @@ class DynamicRecordViewSet(TenantScopedViewSet):
     def perform_create(self, serializer):
         dynamic_model = serializer.validated_data['dynamic_model']
         self._validate_model_access(dynamic_model)
-        serializer.save()
+        record = serializer.save()
+        if self._is_attendance_record(record):
+            self._sync_break_models_from_data(record)
+            self._sync_break_sessions_to_data(record)
 
     def perform_update(self, serializer):
         dynamic_model = serializer.validated_data.get('dynamic_model', serializer.instance.dynamic_model)
         self._validate_model_access(dynamic_model)
-        serializer.save()
+        record = serializer.save()
+        if self._is_attendance_record(record):
+            self._sync_break_models_from_data(record)
+            self._sync_break_sessions_to_data(record)
+
+    def _is_attendance_record(self, record):
+        return bool(record and str(record.dynamic_model.slug or '').lower() == 'attendance')
+
+    def _time_to_text(self, value):
+        if isinstance(value, datetime.time):
+            return value.strftime('%H:%M:%S')
+        return str(value or '').strip()
+
+    def _parse_break_time(self, value):
+        raw = str(value or '').strip()
+        if not raw:
+            return None
+        return datetime.time.fromisoformat(raw)
+
+    def _sync_break_sessions_to_data(self, record):
+        if not self._is_attendance_record(record):
+            return
+        sessions = []
+        for item in record.breaks.order_by('break_in', 'id'):
+            sessions.append({
+                'break_in': self._time_to_text(item.break_in),
+                'break_out': self._time_to_text(item.break_out),
+            })
+        data = dict(record.data or {})
+        data['break_sessions'] = sessions
+        record.data = data
+        record.save(update_fields=['data', 'updated_at'])
+
+    def _sync_break_models_from_data(self, record):
+        if not self._is_attendance_record(record):
+            return
+        data = record.data or {}
+        rows = data.get('break_sessions')
+        if not isinstance(rows, list):
+            return
+        parsed_rows = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            break_in = self._parse_break_time(row.get('break_in'))
+            break_out = self._parse_break_time(row.get('break_out'))
+            if not break_in:
+                continue
+            parsed_rows.append((break_in, break_out))
+        with transaction.atomic():
+            AttendanceBreak.objects.filter(attendance_record=record).delete()
+            AttendanceBreak.objects.bulk_create([
+                AttendanceBreak(attendance_record=record, break_in=break_in, break_out=break_out)
+                for break_in, break_out in parsed_rows
+            ])
+
+    @action(detail=True, methods=['post'], url_path='break-in')
+    def break_in(self, request, pk=None):
+        record = self.get_object()
+        if not self._is_attendance_record(record):
+            return Response({'detail': 'Break In is supported only for attendance records.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        data = record.data or {}
+        if not data.get('check_in'):
+            return Response({'detail': 'Cannot break in before punch in.'}, status=status.HTTP_400_BAD_REQUEST)
+        if data.get('check_out'):
+            return Response({'detail': 'Cannot break in after punch out.'}, status=status.HTTP_400_BAD_REQUEST)
+        if AttendanceBreak.objects.filter(attendance_record=record, break_out__isnull=True).exists():
+            return Response({'detail': 'Previous break is still active. Please break out first.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        raw_at = request.data.get('at')
+        try:
+            at_time = self._parse_break_time(raw_at) if raw_at else timezone.localtime().time().replace(microsecond=0)
+        except ValueError:
+            return Response({'detail': 'Invalid time format for "at". Use HH:MM:SS.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        AttendanceBreak.objects.create(attendance_record=record, break_in=at_time)
+        self._sync_break_sessions_to_data(record)
+        refreshed = self.get_queryset().get(pk=record.pk)
+        return Response(DynamicRecordSerializer(refreshed, context={'request': request}).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], url_path='break-out')
+    def break_out(self, request, pk=None):
+        record = self.get_object()
+        if not self._is_attendance_record(record):
+            return Response({'detail': 'Break Out is supported only for attendance records.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        data = record.data or {}
+        if not data.get('check_in'):
+            return Response({'detail': 'Cannot break out before punch in.'}, status=status.HTTP_400_BAD_REQUEST)
+        if data.get('check_out'):
+            return Response({'detail': 'Cannot break out after punch out.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        open_break = (
+            AttendanceBreak.objects
+            .filter(attendance_record=record, break_out__isnull=True)
+            .order_by('-break_in', '-id')
+            .first()
+        )
+        if not open_break:
+            return Response({'detail': 'No active break found. Please break in first.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        raw_at = request.data.get('at')
+        try:
+            at_time = self._parse_break_time(raw_at) if raw_at else timezone.localtime().time().replace(microsecond=0)
+        except ValueError:
+            return Response({'detail': 'Invalid time format for "at". Use HH:MM:SS.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        open_break.break_out = at_time
+        open_break.save(update_fields=['break_out', 'updated_at'])
+        self._sync_break_sessions_to_data(record)
+        refreshed = self.get_queryset().get(pk=record.pk)
+        return Response(DynamicRecordSerializer(refreshed, context={'request': request}).data, status=status.HTTP_200_OK)
 
 
 class AutoClockoutRunView(APIView):

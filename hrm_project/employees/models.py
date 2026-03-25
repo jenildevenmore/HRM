@@ -40,7 +40,17 @@ class Employee(models.Model):
         related_name='assigned_employees_as_manager',
     )
 
+    employee_code = models.CharField(max_length=20, unique=True, null=True, blank=True)
     joining_date = models.DateField()
+
+    def save(self, *args, **kwargs):
+        creating = self.pk is None
+        super().save(*args, **kwargs)
+        if (creating or not self.employee_code) and self.pk:
+            generated = f'EMP{self.pk:05d}'
+            if self.employee_code != generated:
+                self.employee_code = generated
+                super().save(update_fields=['employee_code'])
 
     def __str__(self):
         return self.first_name

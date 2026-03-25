@@ -35,7 +35,46 @@
         {% endif %} -->
         {% if dynamic_model.slug == 'attendance' and attendance_add_locked %}
             {% if attendance_open_record_id %}
-            <a href="{{ url('dynamic_entity_edit', args=[dynamic_model.id, attendance_open_record_id]) }}" class="btn btn-primary">Punch Out</a>
+                {% if attendance_break_tracking_enabled %}
+                    {% if attendance_open_break_active %}
+                    <form method="post" action="{{ url('dynamic_entity_punch', args=[dynamic_model.id]) }}" style="display:inline;">
+                        {{ csrf_input }}
+                        <input type="hidden" name="employee_id" value="{{ attendance_open_employee_id or '' }}">
+                        <input type="hidden" name="punch_action" value="break_out">
+                        <button type="submit" class="btn btn-secondary">Break Out</button>
+                    </form>
+                    {% elif attendance_open_break_count < attendance_break_limit %}
+                    <form method="post" action="{{ url('dynamic_entity_punch', args=[dynamic_model.id]) }}" style="display:inline;">
+                        {{ csrf_input }}
+                        <input type="hidden" name="employee_id" value="{{ attendance_open_employee_id or '' }}">
+                        <input type="hidden" name="punch_action" value="break_in">
+                        <button type="submit" class="btn btn-secondary">Break In</button>
+                    </form>
+                    {% else %}
+                    <span class="btn btn-secondary" style="opacity:0.65;cursor:not-allowed;">Break Limit Reached</span>
+                    {% endif %}
+                {% endif %}
+                {% if not attendance_break_tracking_enabled %}
+                <span class="btn btn-secondary" style="opacity:0.65;cursor:not-allowed;">Break Tracking Disabled</span>
+                {% if can_manage_attendance_template %}
+                <a href="{{ url('attendance_template_v2') }}" class="btn btn-secondary">Enable Break Tracking</a>
+                {% endif %}
+                {% endif %}
+                {% if attendance_open_can_punch_out %}
+                <form method="post" action="{{ url('dynamic_entity_punch', args=[dynamic_model.id]) }}" style="display:inline;">
+                    {{ csrf_input }}
+                    <input type="hidden" name="employee_id" value="{{ attendance_open_employee_id or '' }}">
+                    <input type="hidden" name="punch_action" value="punch_out">
+                    <button type="submit" class="btn btn-primary">Punch Out</button>
+                </form>
+                {% else %}
+                <span class="btn btn-secondary" style="opacity:0.65;cursor:not-allowed;">Punch Out Locked</span>
+                {% if attendance_open_punch_out_remaining %}
+                <span style="margin-left:8px;color:var(--text-muted);font-size:12px;">
+                    Available in {{ attendance_open_punch_out_remaining }} ({{ attendance_min_punch_out_hours }}h rule)
+                </span>
+                {% endif %}
+                {% endif %}
             {% else %}
             <span class="btn btn-secondary" style="opacity:0.65;cursor:not-allowed;">Attendance Done</span>
             {% endif %}
@@ -67,6 +106,7 @@
                 {% endfor %}
                 {% if dynamic_model.slug == 'attendance' %}
                 <th>Total Time</th>
+                <th>Break Time</th>
                 {% endif %}
                 <th>Actions</th>
             </tr>
@@ -92,11 +132,46 @@
                 {% endfor %}
                 {% if dynamic_model.slug == 'attendance' %}
                 <td>{{ r.total_time or '-' }}</td>
+                <td>{{ r.break_total_time or '00:00:00' }}</td>
                 {% endif %}
                 <td>
                     {% if dynamic_model.slug == 'attendance' %}
                         {% if r.is_open_attendance %}
-                        <a href="{{ url('dynamic_entity_edit', args=[dynamic_model.id, r.id]) }}" class="btn btn-primary btn-sm">Punch Out</a>
+                            {% if attendance_break_tracking_enabled %}
+                                {% if r.can_break_out %}
+                                <form method="post" action="{{ url('dynamic_entity_punch', args=[dynamic_model.id]) }}" style="display:inline;">
+                                    {{ csrf_input }}
+                                    <input type="hidden" name="employee_id" value="{{ r.employee }}">
+                                    <input type="hidden" name="punch_action" value="break_out">
+                                    <button type="submit" class="btn btn-secondary btn-sm">Break Out</button>
+                                </form>
+                                {% elif r.can_break_in %}
+                                <form method="post" action="{{ url('dynamic_entity_punch', args=[dynamic_model.id]) }}" style="display:inline;">
+                                    {{ csrf_input }}
+                                    <input type="hidden" name="employee_id" value="{{ r.employee }}">
+                                    <input type="hidden" name="punch_action" value="break_in">
+                                    <button type="submit" class="btn btn-secondary btn-sm">Break In</button>
+                                </form>
+                                {% endif %}
+                            {% endif %}
+                            {% if not attendance_break_tracking_enabled %}
+                            <span class="btn btn-secondary btn-sm" style="opacity:0.65;cursor:not-allowed;">Break Tracking Disabled</span>
+                            {% endif %}
+                            {% if r.can_punch_out %}
+                            <form method="post" action="{{ url('dynamic_entity_punch', args=[dynamic_model.id]) }}" style="display:inline;">
+                                {{ csrf_input }}
+                                <input type="hidden" name="employee_id" value="{{ r.employee }}">
+                                <input type="hidden" name="punch_action" value="punch_out">
+                                <button type="submit" class="btn btn-primary btn-sm">Punch Out</button>
+                            </form>
+                            {% else %}
+                            <span class="btn btn-secondary btn-sm" style="opacity:0.65;cursor:not-allowed;">Punch Out Locked</span>
+                            {% if r.punch_out_remaining %}
+                            <div style="color:var(--text-muted);font-size:11px;margin-top:4px;">
+                                Available in {{ r.punch_out_remaining }}
+                            </div>
+                            {% endif %}
+                            {% endif %}
                         {% else %}
                         <span class="btn btn-secondary btn-sm" style="opacity:0.65;cursor:not-allowed;">Completed</span>
                         {% endif %}
@@ -135,7 +210,7 @@
 <div class="confirm-overlay" id="punchModal" style="display:none;">
     <div class="confirm-dialog" style="max-width:520px;">
         <h3>Attendance Punch</h3>
-        <p>First click creates Punch In. Second click today saves Punch Out.</p>
+        <p>After Punch In, users can mark Break In/Out, and Punch Out is allowed only after {{ attendance_min_punch_out_hours }} hours.</p>
         <form method="post" action="{{ url('dynamic_entity_punch', args=[dynamic_model.id]) }}">
             {{ csrf_input }}
             <div class="form-group">

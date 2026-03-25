@@ -20,6 +20,10 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def _build_unique_username(self, employee):
+        if employee.employee_code:
+            preferred = str(employee.employee_code).strip()
+            if preferred and not User.objects.filter(username=preferred).exists():
+                return preferred
         base = (employee.email.split('@')[0] if employee.email else '').strip().lower()
         if not base:
             base = f'employee{employee.id}'
@@ -104,7 +108,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             greeting=f'Hi {user.first_name or user.username},',
             lines=[
                 'Your employee account was created.',
-                f'Username: {user.username}',
+                f'Employee ID: {employee.employee_code or employee.id}',
+                'Use this Employee ID on the login page.',
                 'Click below to set your password.',
             ],
             cta_text='Set Password',

@@ -1,6 +1,7 @@
 import re
 
 from django.conf import settings
+from django.core.mail import get_connection
 from django.core.mail import EmailMultiAlternatives
 
 
@@ -13,6 +14,24 @@ def _safe_color(value, fallback):
 
 def _settings_dict(app_settings):
     return app_settings if isinstance(app_settings, dict) else {}
+
+
+def _to_int(value, default):
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+
+
+def _to_bool(value, default=False):
+    if isinstance(value, bool):
+        return value
+    raw = str(value or '').strip().lower()
+    if raw in ('1', 'true', 'yes', 'on'):
+        return True
+    if raw in ('0', 'false', 'no', 'off'):
+        return False
+    return default
 
 
 def _branding(client=None, app_settings=None):
@@ -39,6 +58,12 @@ def _branding(client=None, app_settings=None):
         'secondary_color': _safe_color(theme.get('secondary_color'), '#a78bfa'),
         'from_email': str(email_cfg.get('from_email') or getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@example.com')).strip(),
         'reply_to_email': str(email_cfg.get('reply_to_email') or '').strip(),
+        'email_backend': str(email_cfg.get('email_backend') or getattr(settings, 'EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')).strip(),
+        'email_host': str(email_cfg.get('email_host') or getattr(settings, 'EMAIL_HOST', '')).strip(),
+        'email_port': _to_int(email_cfg.get('email_port'), int(getattr(settings, 'EMAIL_PORT', 587) or 587)),
+        'email_host_user': str(email_cfg.get('email_host_user') or getattr(settings, 'EMAIL_HOST_USER', '')).strip(),
+        'email_host_password': str(email_cfg.get('email_host_password') or getattr(settings, 'EMAIL_HOST_PASSWORD', '')).strip(),
+        'email_use_tls': _to_bool(email_cfg.get('email_use_tls'), bool(getattr(settings, 'EMAIL_USE_TLS', True))),
     }
 
 
@@ -64,6 +89,15 @@ def send_branded_email(
     cfg = _branding(client=client, app_settings=app_settings)
     from_email = cfg['from_email'] or getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@example.com')
     reply_to = [cfg['reply_to_email']] if cfg.get('reply_to_email') else None
+    connection = get_connection(
+        backend=cfg.get('email_backend') or getattr(settings, 'EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend'),
+        host=cfg.get('email_host') or getattr(settings, 'EMAIL_HOST', ''),
+        port=int(cfg.get('email_port') or getattr(settings, 'EMAIL_PORT', 587)),
+        username=cfg.get('email_host_user') or getattr(settings, 'EMAIL_HOST_USER', ''),
+        password=cfg.get('email_host_password') or getattr(settings, 'EMAIL_HOST_PASSWORD', ''),
+        use_tls=bool(cfg.get('email_use_tls')),
+        fail_silently=fail_silently,
+    )
 
     body_lines = [str(x).strip() for x in (lines or []) if str(x).strip()]
 
@@ -148,6 +182,7 @@ def send_branded_email(
         from_email=from_email,
         to=recipients,
         reply_to=reply_to,
+        connection=connection,
     )
     for attachment in (attachments or []):
         if not isinstance(attachment, (list, tuple)) or len(attachment) < 2:

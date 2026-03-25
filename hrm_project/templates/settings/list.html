@@ -28,6 +28,7 @@
         <button type="button" class="permission-group-tab-btn settings-tab" data-settings-tab="system" style="width:100%;text-align:left;margin-top:8px;">System Settings</button>
         <button type="button" class="permission-group-tab-btn settings-tab" data-settings-tab="company" style="width:100%;text-align:left;margin-top:8px;">Company Settings</button>
         <button type="button" class="permission-group-tab-btn settings-tab" data-settings-tab="offer_letter" style="width:100%;text-align:left;margin-top:8px;">Offer Letter Settings</button>
+        <button type="button" class="permission-group-tab-btn settings-tab" data-settings-tab="payslip" style="width:100%;text-align:left;margin-top:8px;">Payslip Settings</button>
         <button type="button" class="permission-group-tab-btn settings-tab" data-settings-tab="currency" style="width:100%;text-align:left;margin-top:8px;">Currency Settings</button>
         <button type="button" class="permission-group-tab-btn settings-tab" data-settings-tab="email" style="width:100%;text-align:left;margin-top:8px;">Email Settings</button>
         <button type="button" class="permission-group-tab-btn settings-tab" data-settings-tab="email_notifications" style="width:100%;text-align:left;margin-top:8px;">Email Notification Settings</button>
@@ -37,7 +38,9 @@
 
     <form method="post" id="settingsForm" enctype="multipart/form-data" data-edit-mode="{{ '1' if is_edit_mode else '0' }}" novalidate>
         {{ csrf_input }}
+        <input type="hidden" name="form_action" id="settingsFormAction" value="save">
         <div class="form-actions" style="justify-content:flex-end;margin-bottom:10px;">
+            <button type="button" id="settingsResetThemeFontBtn" class="btn btn-danger">Reset Theme & Font</button>
             <button type="button" id="settingsEditBtn" class="btn btn-secondary">Edit</button>
             <button type="button" id="settingsCancelBtn" class="btn btn-secondary is-hidden">Cancel</button>
         </div>
@@ -166,23 +169,38 @@
                 </div>
                 {% set module_icons = ui.sidebar_module_icons or {} %}
                 <h3 class="section-title" style="margin-top:8px;">Module Logos (Sidebar)</h3>
-                <input type="hidden" name="sidebar_module_icon_keys" value="{{ sidebar_module_icon_keys_csv or '' }}">
-                {% for module in sidebar_logo_modules %}
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>{{ module.label }} Logo URL</label>
-                        <input type="url" name="module_logo_{{ module.key }}_url" placeholder="https://example.com/{{ module.key }}.png" value="{{ module_icons.get(module.key) or '' }}">
-                    </div>
-                    <div class="form-group">
-                        <label>{{ module.label }} Logo File</label>
-                        <input type="file" name="module_logo_{{ module.key }}_file" accept="image/*">
-                        <label class="addon-item" style="max-width:260px;margin-top:8px;">
-                            <input type="checkbox" name="remove_module_logo_{{ module.key }}">
-                            <span>Remove {{ module.label }} logo</span>
-                        </label>
+                <div class="form-group">
+                    <button type="button" id="moduleLogoPopupBtn" class="btn btn-secondary btn-sm">Open Module Logos Popup</button>
+                    <small style="color:var(--text-muted);display:block;margin-top:8px;">Click to manage sidebar logos for each module in popup.</small>
+                </div>
+                <div id="moduleLogoEditorModal" class="offer-editor-modal" style="display:none;">
+                    <div class="offer-editor-dialog module-logo-editor-dialog">
+                        <div class="offer-editor-header">
+                            <div>
+                                <h3>Module Logos (Sidebar)</h3>
+                                <p>Update module-wise sidebar logos from this popup.</p>
+                            </div>
+                            <button type="button" id="moduleLogoEditorClose" class="btn btn-secondary btn-sm">Close</button>
+                        </div>
+                        <input type="hidden" name="sidebar_module_icon_keys" value="{{ sidebar_module_icon_keys_csv or '' }}">
+                        {% for module in sidebar_logo_modules %}
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>{{ module.label }} Logo URL</label>
+                                <input type="url" name="module_logo_{{ module.key }}_url" placeholder="https://example.com/{{ module.key }}.png" value="{{ module_icons.get(module.key) or '' }}">
+                            </div>
+                            <div class="form-group">
+                                <label>{{ module.label }} Logo File</label>
+                                <input type="file" name="module_logo_{{ module.key }}_file" accept="image/*">
+                                <label class="addon-item" style="max-width:260px;margin-top:8px;">
+                                    <input type="checkbox" name="remove_module_logo_{{ module.key }}">
+                                    <span>Remove {{ module.label }} logo</span>
+                                </label>
+                            </div>
+                        </div>
+                        {% endfor %}
                     </div>
                 </div>
-                {% endfor %}
                 <div class="form-group">
                     <label>Sidebar Style</label>
                     <div class="settings-choice-row">
@@ -405,6 +423,140 @@
             </div>
         </div>
 
+        <div class="settings-panel" data-settings-panel="payslip">
+            <h3 class="section-title">Payslip Settings</h3>
+            {% set payslip_cfg = settings_data.payslip or {} %}
+            <div class="form-group">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+                    <label style="margin-bottom:0;">Payslip Template</label>
+                    <button type="button" id="payslipTemplatePopupBtn" class="btn btn-secondary btn-sm offer-template-editor-trigger">Open Popup Editor</button>
+                </div>
+                <textarea
+                    id="payslipTemplateInput"
+                    name="payslip_template_body"
+                    rows="12"
+                    placeholder="Write your payslip template layout here..."
+                >{{ payslip_cfg.template_body or '' }}</textarea>
+                <small style="color:var(--text-muted);display:block;margin-top:6px;">
+                    Supported variables: {{ "{{employee_name}}" }}, {{ "{{employee_no}}" }}, {{ "{{joining_date}}" }}, {{ "{{designation}}" }}, {{ "{{department}}" }}, {{ "{{location}}" }}, {{ "{{effective_work_days}}" }}, {{ "{{lop}}" }}, {{ "{{bank_name}}" }}, {{ "{{bank_account_no}}" }}, {{ "{{pan_number}}" }}, {{ "{{pf_no}}" }}, {{ "{{pf_uan}}" }}, {{ "{{month_name}}" }}, {{ "{{year}}" }}, {{ "{{total_earnings}}" }}, {{ "{{total_deductions}}" }}, {{ "{{net_pay}}" }}.
+                </small>
+            </div>
+            <div class="form-group">
+                <label class="addon-item" style="max-width:330px;">
+                    <input type="checkbox" name="payslip_show_amount_words" {% if payslip_cfg.show_amount_words is not defined or payslip_cfg.show_amount_words %}checked{% endif %}>
+                    <span>Show net pay amount line in words section</span>
+                </label>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Top Margin (mm)</label>
+                    <input type="number" name="payslip_page_margin_top_mm" min="8" max="35" step="1" value="{{ payslip_layout.page_margin_top_mm|int }}">
+                </div>
+                <div class="form-group">
+                    <label>Right Margin (mm)</label>
+                    <input type="number" name="payslip_page_margin_right_mm" min="6" max="30" step="1" value="{{ payslip_layout.page_margin_right_mm|int }}">
+                </div>
+                <div class="form-group">
+                    <label>Bottom Margin (mm)</label>
+                    <input type="number" name="payslip_page_margin_bottom_mm" min="8" max="35" step="1" value="{{ payslip_layout.page_margin_bottom_mm|int }}">
+                </div>
+                <div class="form-group">
+                    <label>Left Margin (mm)</label>
+                    <input type="number" name="payslip_page_margin_left_mm" min="6" max="30" step="1" value="{{ payslip_layout.page_margin_left_mm|int }}">
+                </div>
+            </div>
+            <input type="hidden" name="payslip_earnings_components_json" id="payslipEarningsComponentsJson">
+            <input type="hidden" name="payslip_deduction_components_json" id="payslipDeductionComponentsJson">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Earnings Table Rows</label>
+                    <div id="payslipEarningsEditor" class="payslip-table-editor"></div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+                        <button type="button" id="payslipUseOfferBreakupBtn" class="btn btn-secondary btn-sm">Use Offer Breakup Data</button>
+                        <button type="button" id="payslipAddEarningRowBtn" class="btn btn-secondary btn-sm">+ Add Earning Row</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Deductions Table Rows</label>
+                    <div id="payslipDeductionsEditor" class="payslip-table-editor"></div>
+                    <button type="button" id="payslipAddDeductionRowBtn" class="btn btn-secondary btn-sm" style="margin-top:8px;">+ Add Deduction Row</button>
+                </div>
+            </div>
+            <div class="card offer-preview-card" style="margin-top:14px;">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
+                    <div>
+                        <div style="font-weight:700;">Live Payslip Preview</div>
+                        <div style="color:var(--text-muted);font-size:13px;">Preview updates while you edit payslip template.</div>
+                    </div>
+                    <span class="badge badge-number">A4 Preview</span>
+                </div>
+                <div class="offer-preview-stage">
+                    <div class="payslip-preview-sheet">
+                        <div class="payslip-preview-header">
+                            <div class="payslip-preview-company">{{ (settings_data.company.company_name if settings_data.company else '') or (settings_data.brand.brand_name if settings_data.brand else '') or 'Your Company' }}</div>
+                            <div class="payslip-preview-copy">Employee Payslip</div>
+                        </div>
+                        <div class="payslip-preview-body">
+                            <div class="payslip-preview-title" id="payslipPreviewTitle">Payslip</div>
+                            <table class="payslip-info-table">
+                                <tbody id="payslipPreviewInfoRows"></tbody>
+                            </table>
+                            <table class="payslip-salary-table">
+                                <thead>
+                                    <tr>
+                                        <th id="payslipSalaryHeader1">Earnings</th>
+                                        <th id="payslipSalaryHeader2">Actual</th>
+                                        <th id="payslipSalaryHeader3">Deductions</th>
+                                        <th id="payslipSalaryHeader4">Actual</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="payslipPreviewSalaryRows"></tbody>
+                                <tfoot>
+                                    <tr>
+                                        <td>Total Earnings: INR</td>
+                                        <td id="payslipPreviewTotalEarnings">0.00</td>
+                                        <td>Total Deductions: INR</td>
+                                        <td id="payslipPreviewTotalDeductions">0.00</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                            <div class="payslip-preview-net" id="payslipPreviewNetPay">Net Pay: INR 0.00</div>
+                            <div id="payslipPreviewParagraphs"></div>
+                            <div class="offer-preview-footer-note">This is a system generated payslip preview.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="payslipTemplateEditorModal" class="offer-editor-modal" style="display:none;">
+            <div class="offer-editor-dialog">
+                <div class="offer-editor-header">
+                    <div>
+                        <h3>Payslip Popup Editor</h3>
+                        <p>Write the full payslip template here, then apply it back to settings.</p>
+                    </div>
+                    <button type="button" id="payslipTemplateEditorClose" class="btn btn-secondary btn-sm offer-template-editor-trigger">Close</button>
+                </div>
+                <div class="offer-editor-toolbar">
+                    <span class="badge badge-number">Large Writing Space</span>
+                    <span style="color:var(--text-muted);font-size:13px;">Supported variables stay the same as the main payslip template field.</span>
+                    <button type="button" id="payslipInsertTableBtn" class="btn btn-secondary btn-sm offer-template-editor-trigger">Change Existing Table</button>
+                    <button type="button" id="payslipInsertDemoTableBtn" class="btn btn-secondary btn-sm offer-template-editor-trigger">Insert Demo Tables</button>
+                </div>
+                <div id="payslipTablePicker" class="payslip-table-picker" style="display:none;">
+                    <div class="payslip-table-picker-title">Insert Table</div>
+                    <div class="payslip-table-picker-size" id="payslipTablePickerSize">0 x 0</div>
+                    <div class="payslip-table-picker-grid" id="payslipTablePickerGrid"></div>
+                </div>
+                <textarea id="payslipTemplateEditorTextarea" class="offer-editor-textarea" placeholder="Write your company-specific payslip template here..."></textarea>
+                <div class="offer-editor-actions">
+                    <button type="button" id="payslipTemplateEditorApply" class="btn btn-primary offer-template-editor-trigger">Apply To Settings</button>
+                    <button type="button" id="payslipTemplateEditorCancel" class="btn btn-secondary offer-template-editor-trigger">Cancel</button>
+                </div>
+            </div>
+        </div>
+
         <div class="settings-panel" data-settings-panel="currency">
             <h3 class="section-title">Currency Settings</h3>
             <div class="form-row">
@@ -421,13 +573,36 @@
 
         <div class="settings-panel" data-settings-panel="email">
             <h3 class="section-title">Email Settings</h3>
+            {% set e = settings_data.email or {} %}
             <div class="form-group">
-                <label>From Email</label>
-                <input type="email" name="from_email" value="{{ (settings_data.email.from_email if settings_data.email else '') or '' }}">
+                <label>EMAIL_BACKEND</label>
+                <input type="text" name="email_backend" placeholder="django.core.mail.backends.smtp.EmailBackend" value="{{ e.email_backend or '' }}">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>EMAIL_HOST</label>
+                    <input type="text" name="email_host" placeholder="smtp.gmail.com" value="{{ e.email_host or '' }}">
+                </div>
+                <div class="form-group">
+                    <label>EMAIL_PORT</label>
+                    <input type="number" min="1" max="65535" name="email_port" placeholder="587" value="{{ e.email_port or '' }}">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>EMAIL_HOST_USER</label>
+                    <input type="text" name="email_host_user" value="{{ e.email_host_user or '' }}">
+                </div>
+                <div class="form-group">
+                    <label>EMAIL_HOST_PASSWORD</label>
+                    <input type="password" name="email_host_password" value="{{ e.email_host_password or '' }}">
+                </div>
             </div>
             <div class="form-group">
-                <label>Reply-To Email</label>
-                <input type="email" name="reply_to_email" value="{{ (settings_data.email.reply_to_email if settings_data.email else '') or '' }}">
+                <label class="addon-item" style="max-width:260px;">
+                    <input type="checkbox" name="email_use_tls" {% if e.email_use_tls %}checked{% endif %}>
+                    <span>EMAIL_USE_TLS</span>
+                </label>
             </div>
         </div>
 
@@ -438,6 +613,40 @@
                 <label class="addon-item"><input type="checkbox" name="leave_request_email" {% if n.leave_request_email %}checked{% endif %}><span>Leave request email</span></label>
                 <label class="addon-item"><input type="checkbox" name="leave_approval_email" {% if n.leave_approval_email %}checked{% endif %}><span>Leave approval email</span></label>
                 <label class="addon-item"><input type="checkbox" name="attendance_alert_email" {% if n.attendance_alert_email %}checked{% endif %}><span>Attendance alert email</span></label>
+            </div>
+            {% set et = settings_data.email_templates or {} %}
+            {% set et_leave_request = et.get('leave_request', {}) if et else {} %}
+            {% set et_leave_approval = et.get('leave_approval', {}) if et else {} %}
+            {% set et_attendance_alert = et.get('attendance_alert', {}) if et else {} %}
+            <div class="form-section" style="margin-top:14px;">
+                <h3 class="section-title">Email Templates</h3>
+                <div class="form-group">
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+                        <label style="margin-bottom:0;">Leave Request Email Template</label>
+                        <button type="button" class="btn btn-secondary btn-sm offer-template-editor-trigger email-template-popup-btn" data-email-template-key="leave_request">Open Popup Editor</button>
+                    </div>
+                    <input type="text" name="leave_request_email_subject" placeholder="Subject (example: Leave Request Submitted - employee_name)" value="{{ et_leave_request.get('subject', '') }}" style="margin-bottom:8px;">
+                    <textarea id="leaveRequestEmailTemplateInput" name="leave_request_email_template" rows="6" placeholder="Write leave request email template...">{{ et_leave_request.get('body', '') }}</textarea>
+                </div>
+                <div class="form-group">
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+                        <label style="margin-bottom:0;">Leave Approval Email Template</label>
+                        <button type="button" class="btn btn-secondary btn-sm offer-template-editor-trigger email-template-popup-btn" data-email-template-key="leave_approval">Open Popup Editor</button>
+                    </div>
+                    <input type="text" name="leave_approval_email_subject" placeholder="Subject (example: Leave Request leave_status - employee_name)" value="{{ et_leave_approval.get('subject', '') }}" style="margin-bottom:8px;">
+                    <textarea id="leaveApprovalEmailTemplateInput" name="leave_approval_email_template" rows="6" placeholder="Write leave approval email template...">{{ et_leave_approval.get('body', '') }}</textarea>
+                </div>
+                <div class="form-group">
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+                        <label style="margin-bottom:0;">Attendance Alert Email Template</label>
+                        <button type="button" class="btn btn-secondary btn-sm offer-template-editor-trigger email-template-popup-btn" data-email-template-key="attendance_alert">Open Popup Editor</button>
+                    </div>
+                    <input type="text" name="attendance_alert_email_subject" placeholder="Subject (example: Attendance Alert - employee_name - attendance_date)" value="{{ et_attendance_alert.get('subject', '') }}" style="margin-bottom:8px;">
+                    <textarea id="attendanceAlertEmailTemplateInput" name="attendance_alert_email_template" rows="6" placeholder="Write attendance alert email template...">{{ et_attendance_alert.get('body', '') }}</textarea>
+                </div>
+                <small style="color:var(--text-muted);display:block;margin-top:4px;">
+                    Supported placeholders: {{'{{employee_name}}'}}, {{'{{employee_id}}'}}, {{'{{manager_name}}'}}, {{'{{leave_type}}'}}, {{'{{leave_status}}'}}, {{'{{from_date}}'}}, {{'{{to_date}}'}}, {{'{{attendance_date}}'}}, {{'{{check_in}}'}}, {{'{{check_out}}'}}, {{'{{brand_name}}'}}.
+                </small>
             </div>
         </div>
 
@@ -470,6 +679,47 @@
         </div>
 
     </form>
+
+    <div id="emailTemplateEditorModal" class="offer-editor-modal" style="display:none;">
+        <div class="offer-editor-dialog">
+            <div class="offer-editor-header">
+                <div>
+                    <h3 id="emailTemplateEditorTitle">Email Template Editor</h3>
+                    <p>Use dynamic placeholders in body and subject.</p>
+                </div>
+                <button type="button" id="emailTemplateEditorClose" class="btn btn-secondary btn-sm offer-template-editor-trigger">Close</button>
+            </div>
+            <div class="offer-editor-toolbar">
+                <span style="color:var(--text-muted);font-size:13px;">
+                    Supported: {{'{{employee_name}}'}}, {{'{{employee_id}}'}}, {{'{{manager_name}}'}}, {{'{{leave_type}}'}}, {{'{{leave_status}}'}}, {{'{{from_date}}'}}, {{'{{to_date}}'}}, {{'{{attendance_date}}'}}, {{'{{check_in}}'}}, {{'{{check_out}}'}}, {{'{{brand_name}}'}}
+                </span>
+            </div>
+            <div class="form-group" style="margin-bottom:10px;">
+                <label>Email Subject</label>
+                <input type="text" id="emailTemplateEditorSubject" placeholder="Write email subject...">
+            </div>
+            <textarea id="emailTemplateEditorTextarea" class="offer-editor-textarea" placeholder="Write your email template body..."></textarea>
+            <div class="offer-editor-actions">
+                <button type="button" id="emailTemplateEditorApply" class="btn btn-primary offer-template-editor-trigger">Apply To Settings</button>
+                <button type="button" id="emailTemplateEditorCancel" class="btn btn-secondary offer-template-editor-trigger">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="resetThemeFontConfirmModal" class="offer-editor-modal" style="display:none;">
+        <div class="offer-editor-dialog" style="max-width:520px;">
+            <div class="offer-editor-header">
+                <div>
+                    <h3>Reset Theme &amp; Font</h3>
+                    <p>Reset only theme colors and font settings to default values?</p>
+                </div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:10px;">
+                <button type="button" id="resetThemeFontConfirmCancel" class="btn btn-secondary">Cancel</button>
+                <button type="button" id="resetThemeFontConfirmOk" class="btn btn-danger">Reset</button>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
@@ -478,20 +728,38 @@
 document.addEventListener('DOMContentLoaded', function () {
     var tabs = Array.prototype.slice.call(document.querySelectorAll('.settings-tab'));
     var panels = Array.prototype.slice.call(document.querySelectorAll('.settings-panel'));
+    var activeSettingsTabKey = 'settings_active_tab';
     function setActive(tabKey) {
+        var resetBtn = document.getElementById('settingsResetThemeFontBtn');
+        var normalized = String(tabKey || '').trim() || 'brand';
+        var tabExists = tabs.some(function (tab) {
+            return tab.getAttribute('data-settings-tab') === normalized;
+        });
+        if (!tabExists) normalized = 'brand';
         tabs.forEach(function (tab) {
-            tab.classList.toggle('active', tab.getAttribute('data-settings-tab') === tabKey);
+            tab.classList.toggle('active', tab.getAttribute('data-settings-tab') === normalized);
         });
         panels.forEach(function (panel) {
-            panel.classList.toggle('active', panel.getAttribute('data-settings-panel') === tabKey);
+            panel.classList.toggle('active', panel.getAttribute('data-settings-panel') === normalized);
         });
+        try {
+            window.sessionStorage.setItem(activeSettingsTabKey, normalized);
+        } catch (e) {}
+        if (resetBtn) {
+            resetBtn.style.display = (normalized === 'brand') ? 'inline-flex' : 'none';
+        }
     }
     tabs.forEach(function (tab) {
         tab.addEventListener('click', function () {
             setActive(tab.getAttribute('data-settings-tab'));
         });
     });
-    setActive('brand');
+    var initialTab = 'brand';
+    try {
+        var storedTab = window.sessionStorage.getItem(activeSettingsTabKey);
+        if (storedTab) initialTab = storedTab;
+    } catch (e) {}
+    setActive(initialTab);
 
     var primaryInput = document.querySelector('input[name="primary_color"]');
     var secondaryInput = document.querySelector('input[name="secondary_color"]');
@@ -501,6 +769,11 @@ document.addEventListener('DOMContentLoaded', function () {
     var bgDot = document.getElementById('backgroundColorDot');
     var root = document.documentElement;
     var settingsForm = document.getElementById('settingsForm');
+    var settingsFormActionField = document.getElementById('settingsFormAction');
+    var settingsResetThemeFontBtn = document.getElementById('settingsResetThemeFontBtn');
+    var resetThemeFontConfirmModal = document.getElementById('resetThemeFontConfirmModal');
+    var resetThemeFontConfirmOk = document.getElementById('resetThemeFontConfirmOk');
+    var resetThemeFontConfirmCancel = document.getElementById('resetThemeFontConfirmCancel');
     var editBtn = document.getElementById('settingsEditBtn');
     var cancelBtn = document.getElementById('settingsCancelBtn');
     var brandNameInput = document.querySelector('input[name="brand_name"]');
@@ -540,6 +813,52 @@ document.addEventListener('DOMContentLoaded', function () {
     var offerTemplateEditorApply = document.getElementById('offerTemplateEditorApply');
     var offerTemplateEditorCancel = document.getElementById('offerTemplateEditorCancel');
     var offerTemplateEditorClose = document.getElementById('offerTemplateEditorClose');
+    var payslipTemplateInput = document.getElementById('payslipTemplateInput');
+    var payslipPreviewTitle = document.getElementById('payslipPreviewTitle');
+    var payslipPreviewParagraphs = document.getElementById('payslipPreviewParagraphs');
+    var payslipPreviewInfoRows = document.getElementById('payslipPreviewInfoRows');
+    var payslipPreviewSalaryRows = document.getElementById('payslipPreviewSalaryRows');
+    var payslipPreviewTotalEarnings = document.getElementById('payslipPreviewTotalEarnings');
+    var payslipPreviewTotalDeductions = document.getElementById('payslipPreviewTotalDeductions');
+    var payslipPreviewNetPay = document.getElementById('payslipPreviewNetPay');
+    var payslipTemplatePopupBtn = document.getElementById('payslipTemplatePopupBtn');
+    var payslipTemplateEditorModal = document.getElementById('payslipTemplateEditorModal');
+    var payslipTemplateEditorTextarea = document.getElementById('payslipTemplateEditorTextarea');
+    var payslipTemplateEditorApply = document.getElementById('payslipTemplateEditorApply');
+    var payslipTemplateEditorCancel = document.getElementById('payslipTemplateEditorCancel');
+    var payslipTemplateEditorClose = document.getElementById('payslipTemplateEditorClose');
+    var payslipInsertTableBtn = document.getElementById('payslipInsertTableBtn');
+    var payslipTablePicker = document.getElementById('payslipTablePicker');
+    var payslipTablePickerGrid = document.getElementById('payslipTablePickerGrid');
+    var payslipTablePickerSize = document.getElementById('payslipTablePickerSize');
+    var payslipInsertDemoTableBtn = document.getElementById('payslipInsertDemoTableBtn');
+    var payslipEarningsEditor = document.getElementById('payslipEarningsEditor');
+    var payslipDeductionsEditor = document.getElementById('payslipDeductionsEditor');
+    var payslipUseOfferBreakupBtn = document.getElementById('payslipUseOfferBreakupBtn');
+    var payslipAddEarningRowBtn = document.getElementById('payslipAddEarningRowBtn');
+    var payslipAddDeductionRowBtn = document.getElementById('payslipAddDeductionRowBtn');
+    var payslipEarningsComponentsJson = document.getElementById('payslipEarningsComponentsJson');
+    var payslipDeductionComponentsJson = document.getElementById('payslipDeductionComponentsJson');
+    var payslipSalaryHeader1 = document.getElementById('payslipSalaryHeader1');
+    var payslipSalaryHeader2 = document.getElementById('payslipSalaryHeader2');
+    var payslipSalaryHeader3 = document.getElementById('payslipSalaryHeader3');
+    var payslipSalaryHeader4 = document.getElementById('payslipSalaryHeader4');
+    var initialPayslipEarnings = {{ payslip_earnings_components_json|safe }};
+    var initialPayslipDeductions = {{ payslip_deduction_components_json|safe }};
+    var initialOfferBreakupComponents = {{ offer_breakup_components_json|safe }};
+    var initialOfferBreakupAnnualIncome = Number({{ offer_breakup_annual_income|default(0) }} || 0);
+    var moduleLogoPopupBtn = document.getElementById('moduleLogoPopupBtn');
+    var moduleLogoEditorModal = document.getElementById('moduleLogoEditorModal');
+    var moduleLogoEditorClose = document.getElementById('moduleLogoEditorClose');
+    var emailTemplatePopupBtns = Array.prototype.slice.call(document.querySelectorAll('.email-template-popup-btn'));
+    var emailTemplateEditorModal = document.getElementById('emailTemplateEditorModal');
+    var emailTemplateEditorTitle = document.getElementById('emailTemplateEditorTitle');
+    var emailTemplateEditorSubject = document.getElementById('emailTemplateEditorSubject');
+    var emailTemplateEditorTextarea = document.getElementById('emailTemplateEditorTextarea');
+    var emailTemplateEditorApply = document.getElementById('emailTemplateEditorApply');
+    var emailTemplateEditorCancel = document.getElementById('emailTemplateEditorCancel');
+    var emailTemplateEditorClose = document.getElementById('emailTemplateEditorClose');
+    var currentEmailTemplateKey = '';
     var liveCustomFontLink = null;
     var initialLogoImg = sidebarLogo ? sidebarLogo.querySelector('img') : null;
     var initialLogoSrc = initialLogoImg ? initialLogoImg.getAttribute('src') : '';
@@ -578,11 +897,37 @@ document.addEventListener('DOMContentLoaded', function () {
         'Date:',
         'Signature:'
     ].join('\n');
+    var defaultPayslipTemplate = [
+        'Payslip for the month of {{month_name}} {{year}}',
+        '',
+        '[[INFO_TABLE]]',
+        'Name|{{employee_name}}|Employee No|{{employee_no}}',
+        'Joining Date|{{joining_date}}|Bank Name|{{bank_name}}',
+        'Designation|{{designation}}|Bank Account No|{{bank_account_no}}',
+        'Department|{{department}}|PAN Number|{{pan_number}}',
+        'Location|{{location}}|PF No|{{pf_no}}',
+        'Effective Work Days|{{effective_work_days}}|PF UAN|{{pf_uan}}',
+        'LOP|{{lop}}||',
+        '[[/INFO_TABLE]]',
+        '',
+        '[[SALARY_TABLE]]',
+        'Earnings|Actual|Deductions|Actual',
+        'BASIC|61875|PF|1800',
+        'HRA|24750|PROF TAX|208',
+        'SPECIAL ALLOWANCE|41594|INCOME TAX|10074',
+        'LTA|9281||',
+        '[[/SALARY_TABLE]]',
+        '',
+        'Total Earnings: INR {{total_earnings}}',
+        'Total Deductions: INR {{total_deductions}}',
+        'Net Pay: INR {{net_pay}}'
+    ].join('\n');
     var offerPreviewComponents = [
         { name: 'Basic', pct: 40 },
         { name: 'HRA', pct: 20 },
-        { name: 'Special Allowance', pct: 25 },
-        { name: 'Performance Bonus', pct: 15 }
+        { name: 'Conveyance', pct: 10 },
+        { name: 'Medical', pct: 10 },
+        { name: 'Special Allowance', pct: 20 }
     ];
 
     if (!faviconLink) {
@@ -744,6 +1089,13 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    function syncPayslipEditorValueFromField() {
+        if (payslipTemplateEditorTextarea && payslipTemplateInput) {
+            var raw = String(payslipTemplateInput.value || '').trim();
+            payslipTemplateEditorTextarea.value = raw || defaultPayslipTemplate;
+        }
+    }
+
     function openOfferTemplateEditor() {
         if (!offerTemplateEditorModal || !offerTemplateEditorTextarea) return;
         syncOfferEditorValueFromField();
@@ -765,6 +1117,471 @@ document.addEventListener('DOMContentLoaded', function () {
     function closeOfferTemplateEditor() {
         if (!offerTemplateEditorModal) return;
         offerTemplateEditorModal.style.display = 'none';
+        document.body.style.overflow = '';
+    }
+
+    function openPayslipTemplateEditor() {
+        if (!payslipTemplateEditorModal || !payslipTemplateEditorTextarea) return;
+        syncPayslipEditorValueFromField();
+        payslipTemplateEditorTextarea.disabled = !isSettingsEditing();
+        if (payslipTemplateEditorApply) {
+            payslipTemplateEditorApply.style.display = isSettingsEditing() ? 'inline-flex' : 'none';
+        }
+        payslipTemplateEditorModal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+        window.setTimeout(function () {
+            payslipTemplateEditorTextarea.focus();
+            payslipTemplateEditorTextarea.setSelectionRange(
+                payslipTemplateEditorTextarea.value.length,
+                payslipTemplateEditorTextarea.value.length
+            );
+        }, 10);
+    }
+
+    function closePayslipTemplateEditor() {
+        if (!payslipTemplateEditorModal) return;
+        payslipTemplateEditorModal.style.display = 'none';
+        document.body.style.overflow = '';
+        hidePayslipTablePicker();
+    }
+
+    function parseCustomBlock(text, startTag, endTag) {
+        var source = String(text || '');
+        var start = source.indexOf(startTag);
+        var end = source.indexOf(endTag);
+        if (start < 0 || end < 0 || end <= start) {
+            return { rows: [], text: source };
+        }
+        var inner = source.substring(start + startTag.length, end);
+        var remaining = (source.substring(0, start) + '\n' + source.substring(end + endTag.length)).trim();
+        var rows = inner.split('\n').map(function (line) {
+            return String(line || '').trim();
+        }).filter(function (line) {
+            return line;
+        }).map(function (line) {
+            return line.split('|').map(function (cell) { return String(cell || '').trim(); });
+        }).filter(function (cells) {
+            return cells.length >= 2;
+        });
+        return { rows: rows, text: remaining };
+    }
+
+    function parseAllCustomTables(text) {
+        var source = String(text || '');
+        var tables = [];
+        while (true) {
+            var start = source.indexOf('[[TABLE]]');
+            var end = source.indexOf('[[/TABLE]]');
+            if (start < 0 || end < 0 || end <= start) break;
+            var inner = source.substring(start + '[[TABLE]]'.length, end);
+            var rows = inner.split('\n').map(function (line) {
+                return String(line || '').trim();
+            }).filter(function (line) { return line; }).map(function (line) {
+                return line.split('|').map(function (cell) { return String(cell || '').trim(); });
+            }).filter(function (cells) { return cells.length; });
+            if (rows.length) tables.push(rows);
+            source = (source.substring(0, start) + '\n' + source.substring(end + '[[/TABLE]]'.length)).trim();
+        }
+        return { text: source, tables: tables };
+    }
+
+    function hidePayslipTablePicker() {
+        if (!payslipTablePicker) return;
+        payslipTablePicker.style.display = 'none';
+    }
+
+    function highlightPayslipTablePicker(rows, cols) {
+        if (!payslipTablePickerGrid) return;
+        Array.prototype.slice.call(payslipTablePickerGrid.querySelectorAll('.payslip-table-picker-cell')).forEach(function (cell) {
+            var r = parseInt(cell.getAttribute('data-row') || '0', 10);
+            var c = parseInt(cell.getAttribute('data-col') || '0', 10);
+            cell.classList.toggle('active', r <= rows && c <= cols);
+        });
+        if (payslipTablePickerSize) payslipTablePickerSize.textContent = String(rows + 1) + ' x ' + String(cols + 1);
+    }
+
+    function insertTextAtCursor(target, text) {
+        if (!target) return;
+        var start = target.selectionStart || 0;
+        var end = target.selectionEnd || 0;
+        target.value = target.value.substring(0, start) + text + target.value.substring(end);
+        var nextPos = start + text.length;
+        target.focus();
+        target.setSelectionRange(nextPos, nextPos);
+    }
+
+    function buildPlainTableTemplate(rowCount, colCount) {
+        var lines = ['[[SALARY_TABLE]]'];
+        var headers = [];
+        for (var c = 1; c <= colCount; c++) headers.push('Column ' + c);
+        lines.push(headers.join('|'));
+        for (var r = 1; r < rowCount; r++) {
+            var row = [];
+            for (var c2 = 1; c2 <= colCount; c2++) row.push('');
+            lines.push(row.join('|'));
+        }
+        lines.push('[[/SALARY_TABLE]]');
+        return '\n' + lines.join('\n') + '\n';
+    }
+
+    function initPayslipTablePicker() {
+        if (!payslipTablePickerGrid || !payslipTemplateEditorTextarea) return;
+        payslipTablePickerGrid.innerHTML = '';
+        var maxRows = 8;
+        var maxCols = 10;
+        for (var r = 0; r < maxRows; r++) {
+            for (var c = 0; c < maxCols; c++) {
+                var btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'payslip-table-picker-cell';
+                btn.setAttribute('data-row', String(r));
+                btn.setAttribute('data-col', String(c));
+                btn.addEventListener('mouseenter', (function (rowIdx, colIdx) {
+                    return function () { highlightPayslipTablePicker(rowIdx, colIdx); };
+                })(r, c));
+                btn.addEventListener('click', (function (rowIdx, colIdx) {
+                    return function () {
+                        insertTextAtCursor(
+                            payslipTemplateEditorTextarea,
+                            buildPlainTableTemplate(rowIdx + 1, colIdx + 1)
+                        );
+                        hidePayslipTablePicker();
+                        renderPayslipPreview();
+                    };
+                })(r, c));
+                payslipTablePickerGrid.appendChild(btn);
+            }
+        }
+        highlightPayslipTablePicker(0, 0);
+    }
+
+    function renderPayslipPreview() {
+        if (!payslipPreviewParagraphs || !payslipPreviewInfoRows || !payslipPreviewSalaryRows) return;
+        var templateValue = payslipTemplateInput ? (payslipTemplateInput.value || '') : '';
+        if (payslipTemplateEditorModal && payslipTemplateEditorModal.style.display === 'flex' && payslipTemplateEditorTextarea) {
+            templateValue = payslipTemplateEditorTextarea.value || '';
+        }
+        var rendered = String(templateValue || '').trim() || defaultPayslipTemplate;
+        var ctx = {
+            employee_name: 'Demo Employee',
+            employee_no: 'EMP-0001',
+            joining_date: '01 Jan 2024',
+            designation: 'Software Engineer',
+            department: 'Technology',
+            location: 'Sample City',
+            effective_work_days: '30',
+            lop: '0',
+            bank_name: 'Sample Bank',
+            bank_account_no: '00000000000001',
+            pan_number: 'ABCDE1234F',
+            pf_no: 'N/A',
+            pf_uan: '100000000001',
+            month_name: 'January',
+            year: '2026',
+            total_earnings: '137500.00',
+            total_deductions: '12082.00',
+            net_pay: '125418.00'
+        };
+        var earningsRows = collectPayslipRows(payslipEarningsEditor, initialPayslipEarnings);
+        var deductionRows = collectPayslipRows(payslipDeductionsEditor, initialPayslipDeductions);
+        Object.keys(ctx).forEach(function (key) {
+            var val = String(ctx[key] || '');
+            var pattern = new RegExp('\\{\\{\\s*' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\}\\}|\\{' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\}', 'g');
+            rendered = rendered.replace(pattern, val);
+        });
+        rendered = rendered.replace(/\{\{\s*[a-zA-Z0-9_]+\s*\}\}/g, '');
+        var infoParsed = parseCustomBlock(rendered, '[[INFO_TABLE]]', '[[/INFO_TABLE]]');
+        rendered = infoParsed.text;
+        var salaryParsed = parseCustomBlock(rendered, '[[SALARY_TABLE]]', '[[/SALARY_TABLE]]');
+        rendered = salaryParsed.text;
+        var customTablesParsed = parseAllCustomTables(rendered);
+        rendered = customTablesParsed.text;
+        if (!salaryParsed.rows.length && customTablesParsed.tables.length) {
+            salaryParsed.rows = customTablesParsed.tables[0];
+        }
+        var lines = rendered.split('\n').map(function (line) { return String(line || '').trim(); }).filter(function (line) { return line; });
+        if (payslipPreviewTitle) {
+            payslipPreviewTitle.textContent = lines[0] || ('Payslip for the month of ' + ctx.month_name + ' ' + ctx.year);
+        }
+
+        function money(n) {
+            var val = Number(n || 0);
+            return val.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+        function infoCell(label, value) {
+            return '<strong>' + escapeHtml(label) + ':</strong> ' + escapeHtml(value || '');
+        }
+        var infoRows = infoParsed.rows.length ? infoParsed.rows : [
+            ['Name', ctx.employee_name, 'Employee No', ctx.employee_no],
+            ['Joining Date', ctx.joining_date, 'Bank Name', ctx.bank_name],
+            ['Designation', ctx.designation, 'Bank Account No', ctx.bank_account_no],
+            ['Department', ctx.department, 'PAN Number', ctx.pan_number],
+            ['Location', ctx.location, 'PF No', ctx.pf_no],
+            ['Effective Work Days', ctx.effective_work_days, 'PF UAN', ctx.pf_uan],
+            ['LOP', ctx.lop, '', '']
+        ];
+        payslipPreviewInfoRows.innerHTML = infoRows.map(function (row) {
+            var c1 = row[0] || '';
+            var c2 = row[1] || '';
+            var c3 = row[2] || '';
+            var c4 = row[3] || '';
+            return '<tr>' +
+                '<td>' + infoCell(c1, c2) + '</td>' +
+                '<td>' + (c3 ? infoCell(c3, c4) : '') + '</td>' +
+            '</tr>';
+        }).join('');
+
+        var salaryRows = salaryParsed.rows.slice();
+        if (salaryRows.length && salaryRows[0].length >= 4) {
+            if (payslipSalaryHeader1) payslipSalaryHeader1.textContent = salaryRows[0][0] || 'Earnings';
+            if (payslipSalaryHeader2) payslipSalaryHeader2.textContent = salaryRows[0][1] || 'Actual';
+            if (payslipSalaryHeader3) payslipSalaryHeader3.textContent = salaryRows[0][2] || 'Deductions';
+            if (payslipSalaryHeader4) payslipSalaryHeader4.textContent = salaryRows[0][3] || 'Actual';
+            salaryRows = salaryRows.slice(1);
+        } else {
+            if (payslipSalaryHeader1) payslipSalaryHeader1.textContent = 'Earnings';
+            if (payslipSalaryHeader2) payslipSalaryHeader2.textContent = 'Actual';
+            if (payslipSalaryHeader3) payslipSalaryHeader3.textContent = 'Deductions';
+            if (payslipSalaryHeader4) payslipSalaryHeader4.textContent = 'Actual';
+        }
+
+        var maxCount = salaryRows.length ? salaryRows.length : Math.max(earningsRows.length, deductionRows.length);
+        var totalE = 0;
+        var totalD = 0;
+        payslipPreviewSalaryRows.innerHTML = '';
+        for (var i = 0; i < maxCount; i++) {
+            var e = earningsRows[i] || { name: '', amount: '' };
+            var d = deductionRows[i] || { name: '', amount: '' };
+            if (salaryRows.length && salaryRows[i]) {
+                e = { name: salaryRows[i][0] || '', amount: salaryRows[i][1] || '' };
+                d = { name: salaryRows[i][2] || '', amount: salaryRows[i][3] || '' };
+            }
+            if (e.name) totalE += Number(e.amount || 0);
+            if (d.name) totalD += Number(d.amount || 0);
+            payslipPreviewSalaryRows.innerHTML += '<tr>' +
+                '<td>' + escapeHtml(e.name || '') + '</td>' +
+                '<td style="text-align:right;">' + (e.name ? money(e.amount) : '') + '</td>' +
+                '<td>' + escapeHtml(d.name || '') + '</td>' +
+                '<td style="text-align:right;">' + (d.name ? money(d.amount) : '') + '</td>' +
+            '</tr>';
+        }
+        if (payslipPreviewTotalEarnings) payslipPreviewTotalEarnings.textContent = money(totalE);
+        if (payslipPreviewTotalDeductions) payslipPreviewTotalDeductions.textContent = money(totalD);
+        if (payslipPreviewNetPay) payslipPreviewNetPay.textContent = 'Net Pay for the month: INR ' + money(totalE - totalD);
+
+        var blocks = rendered.split(/\n\s*\n/).map(function (block) { return String(block || '').trim(); }).filter(function (block) { return block; }).slice(1);
+        payslipPreviewParagraphs.innerHTML = blocks.map(function (block) {
+            var lines = block.split('\n').map(function (line) {
+                return escapeHtml(String(line || '').trim());
+            }).filter(function (line) { return line; });
+            return '<p class="offer-preview-paragraph">' + lines.join('<br>') + '</p>';
+        }).join('');
+    }
+
+    function createPayslipRowElement(name, amount) {
+        var row = document.createElement('div');
+        row.className = 'payslip-table-row';
+        row.innerHTML =
+            '<input type="text" class="payslip-row-name" placeholder="Component">' +
+            '<input type="number" class="payslip-row-amount" min="0" step="0.01" placeholder="Amount">' +
+            '<button type="button" class="btn btn-danger btn-sm">Remove</button>';
+        var nameInput = row.querySelector('.payslip-row-name');
+        var amountInput = row.querySelector('.payslip-row-amount');
+        var removeBtn = row.querySelector('button');
+        nameInput.value = name || '';
+        amountInput.value = amount != null ? String(amount) : '';
+        nameInput.addEventListener('input', onPayslipTableChanged);
+        amountInput.addEventListener('input', onPayslipTableChanged);
+        removeBtn.addEventListener('click', function () {
+            row.remove();
+            onPayslipTableChanged();
+        });
+        return row;
+    }
+
+    function collectPayslipRows(container, fallbackRows) {
+        if (!container) return Array.isArray(fallbackRows) ? fallbackRows : [];
+        var rows = Array.prototype.slice.call(container.querySelectorAll('.payslip-table-row')).map(function (row) {
+            return {
+                name: (row.querySelector('.payslip-row-name').value || '').trim(),
+                amount: Number(row.querySelector('.payslip-row-amount').value || 0)
+            };
+        }).filter(function (row) { return row.name; });
+        if (rows.length) return rows;
+        return Array.isArray(fallbackRows) ? fallbackRows : [];
+    }
+
+    function syncPayslipRowsToHidden() {
+        if (payslipEarningsComponentsJson) {
+            payslipEarningsComponentsJson.value = JSON.stringify(collectPayslipRows(payslipEarningsEditor, initialPayslipEarnings));
+        }
+        if (payslipDeductionComponentsJson) {
+            payslipDeductionComponentsJson.value = JSON.stringify(collectPayslipRows(payslipDeductionsEditor, initialPayslipDeductions));
+        }
+    }
+
+    function onPayslipTableChanged() {
+        syncPayslipRowsToHidden();
+        renderPayslipPreview();
+    }
+
+    function getOfferBreakupSnapshot() {
+        var snapshot = {
+            annual_income: Number(initialOfferBreakupAnnualIncome || 0),
+            components: Array.isArray(initialOfferBreakupComponents) ? initialOfferBreakupComponents.slice() : []
+        };
+
+        try {
+            var cached = window.localStorage.getItem('hrm_offer_breakup_last');
+            if (cached) {
+                var parsed = JSON.parse(cached);
+                if (parsed && typeof parsed === 'object') {
+                    var annual = Number(parsed.annual_income || 0);
+                    var components = Array.isArray(parsed.components) ? parsed.components : [];
+                    if (annual > 0 && components.length) {
+                        snapshot.annual_income = annual;
+                        snapshot.components = components;
+                    }
+                }
+            }
+        } catch (e) {}
+
+        snapshot.components = snapshot.components.map(function (item) {
+            return {
+                name: String((item && item.name) || '').trim(),
+                pct: Number((item && item.pct) || 0)
+            };
+        }).filter(function (item) {
+            return item.name;
+        });
+        return snapshot;
+    }
+
+    function syncPayslipEarningsFromOfferBreakup() {
+        if (!payslipEarningsEditor) return;
+        var snapshot = getOfferBreakupSnapshot();
+        var rows = snapshot.components;
+        var annualCtc = snapshot.annual_income > 0 ? snapshot.annual_income : 0;
+        if (!rows.length || annualCtc <= 0) {
+            window.alert('No existing Offer Letter breakup data found. Please create it first in Offer Letter Salary Breakup Builder.');
+            return;
+        }
+        payslipEarningsEditor.innerHTML = '';
+        rows.forEach(function (item) {
+            var pct = Number(item.pct || 0);
+            var monthly = ((annualCtc * pct) / 100) / 12;
+            payslipEarningsEditor.appendChild(
+                createPayslipRowElement(item.name || '', monthly.toFixed(2))
+            );
+        });
+        onPayslipTableChanged();
+    }
+
+    function initPayslipTableEditors() {
+        if (payslipEarningsEditor && Array.isArray(initialPayslipEarnings)) {
+            payslipEarningsEditor.innerHTML = '';
+            initialPayslipEarnings.forEach(function (row) {
+                var name = String((row && row.name) || '').trim();
+                if (!name) return;
+                payslipEarningsEditor.appendChild(createPayslipRowElement(name, row.amount));
+            });
+            if (!payslipEarningsEditor.children.length) {
+                var snapshot = getOfferBreakupSnapshot();
+                if (snapshot.components.length && snapshot.annual_income > 0) {
+                    snapshot.components.forEach(function (item) {
+                        var pct = Number(item.pct || 0);
+                        var monthly = ((snapshot.annual_income * pct) / 100) / 12;
+                        payslipEarningsEditor.appendChild(createPayslipRowElement(item.name || '', monthly.toFixed(2)));
+                    });
+                }
+            }
+        }
+        if (payslipDeductionsEditor && Array.isArray(initialPayslipDeductions)) {
+            payslipDeductionsEditor.innerHTML = '';
+            initialPayslipDeductions.forEach(function (row) {
+                var name = String((row && row.name) || '').trim();
+                if (!name) return;
+                payslipDeductionsEditor.appendChild(createPayslipRowElement(name, row.amount));
+            });
+        }
+        syncPayslipRowsToHidden();
+    }
+
+    function openModuleLogoEditor() {
+        if (!moduleLogoEditorModal) return;
+        moduleLogoEditorModal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeModuleLogoEditor() {
+        if (!moduleLogoEditorModal) return;
+        moduleLogoEditorModal.style.display = 'none';
+        document.body.style.overflow = '';
+    }
+
+    function getEmailTemplateConfig(templateKey) {
+        var map = {
+            leave_request: {
+                title: 'Leave Request Email Template',
+                subjectField: document.querySelector('input[name="leave_request_email_subject"]'),
+                bodyField: document.getElementById('leaveRequestEmailTemplateInput')
+            },
+            leave_approval: {
+                title: 'Leave Approval Email Template',
+                subjectField: document.querySelector('input[name="leave_approval_email_subject"]'),
+                bodyField: document.getElementById('leaveApprovalEmailTemplateInput')
+            },
+            attendance_alert: {
+                title: 'Attendance Alert Email Template',
+                subjectField: document.querySelector('input[name="attendance_alert_email_subject"]'),
+                bodyField: document.getElementById('attendanceAlertEmailTemplateInput')
+            }
+        };
+        return map[String(templateKey || '').trim()] || null;
+    }
+
+    function openEmailTemplateEditor(templateKey) {
+        if (!emailTemplateEditorModal || !emailTemplateEditorTextarea || !emailTemplateEditorSubject) return;
+        var cfg = getEmailTemplateConfig(templateKey);
+        if (!cfg || !cfg.bodyField || !cfg.subjectField) return;
+        currentEmailTemplateKey = String(templateKey || '').trim();
+        emailTemplateEditorTitle.textContent = cfg.title || 'Email Template Editor';
+        emailTemplateEditorSubject.value = cfg.subjectField.value || '';
+        emailTemplateEditorTextarea.value = cfg.bodyField.value || '';
+        var canEdit = isSettingsEditing();
+        emailTemplateEditorSubject.disabled = !canEdit;
+        emailTemplateEditorTextarea.disabled = !canEdit;
+        if (emailTemplateEditorApply) {
+            emailTemplateEditorApply.style.display = canEdit ? 'inline-flex' : 'none';
+        }
+        emailTemplateEditorModal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeEmailTemplateEditor() {
+        if (!emailTemplateEditorModal) return;
+        emailTemplateEditorModal.style.display = 'none';
+        document.body.style.overflow = '';
+        currentEmailTemplateKey = '';
+    }
+
+    function applyEmailTemplateEditor() {
+        var cfg = getEmailTemplateConfig(currentEmailTemplateKey);
+        if (!cfg || !cfg.bodyField || !cfg.subjectField || !emailTemplateEditorTextarea || !emailTemplateEditorSubject) return;
+        cfg.subjectField.value = emailTemplateEditorSubject.value || '';
+        cfg.bodyField.value = emailTemplateEditorTextarea.value || '';
+        closeEmailTemplateEditor();
+    }
+
+    function openResetThemeFontConfirm() {
+        if (!resetThemeFontConfirmModal) return;
+        resetThemeFontConfirmModal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeResetThemeFontConfirm() {
+        if (!resetThemeFontConfirmModal) return;
+        resetThemeFontConfirmModal.style.display = 'none';
         document.body.style.overflow = '';
     }
 
@@ -1112,9 +1929,132 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
     }
+    if (payslipTemplateInput) {
+        payslipTemplateInput.addEventListener('input', renderPayslipPreview);
+        payslipTemplateInput.addEventListener('change', renderPayslipPreview);
+    }
+    if (payslipTemplatePopupBtn) {
+        payslipTemplatePopupBtn.addEventListener('click', openPayslipTemplateEditor);
+    }
+    if (payslipTemplateEditorClose) {
+        payslipTemplateEditorClose.addEventListener('click', closePayslipTemplateEditor);
+    }
+    if (payslipTemplateEditorCancel) {
+        payslipTemplateEditorCancel.addEventListener('click', function () {
+            syncPayslipEditorValueFromField();
+            closePayslipTemplateEditor();
+        });
+    }
+    if (payslipTemplateEditorApply) {
+        payslipTemplateEditorApply.addEventListener('click', function () {
+            if (!payslipTemplateInput || !payslipTemplateEditorTextarea) return;
+            payslipTemplateInput.value = payslipTemplateEditorTextarea.value || '';
+            renderPayslipPreview();
+            closePayslipTemplateEditor();
+        });
+    }
+    if (payslipTemplateEditorTextarea) {
+        payslipTemplateEditorTextarea.addEventListener('input', renderPayslipPreview);
+    }
+    if (payslipInsertTableBtn && payslipTablePicker) {
+        payslipInsertTableBtn.addEventListener('click', function () {
+            var visible = payslipTablePicker.style.display === 'block';
+            payslipTablePicker.style.display = visible ? 'none' : 'block';
+        });
+    }
+    initPayslipTablePicker();
+    if (payslipInsertDemoTableBtn && payslipTemplateEditorTextarea) {
+        payslipInsertDemoTableBtn.addEventListener('click', function () {
+            payslipTemplateEditorTextarea.value = defaultPayslipTemplate;
+            renderPayslipPreview();
+        });
+    }
+    if (payslipTemplateEditorModal) {
+        payslipTemplateEditorModal.addEventListener('click', function (event) {
+            if (event.target === payslipTemplateEditorModal) {
+                closePayslipTemplateEditor();
+                return;
+            }
+            if (
+                payslipTablePicker
+                && payslipTablePicker.style.display === 'block'
+                && !payslipTablePicker.contains(event.target)
+                && event.target !== payslipInsertTableBtn
+            ) {
+                hidePayslipTablePicker();
+            }
+        });
+    }
+    if (payslipAddEarningRowBtn && payslipEarningsEditor) {
+        payslipAddEarningRowBtn.addEventListener('click', function () {
+            payslipEarningsEditor.appendChild(createPayslipRowElement('', ''));
+            onPayslipTableChanged();
+        });
+    }
+    if (payslipUseOfferBreakupBtn) {
+        payslipUseOfferBreakupBtn.addEventListener('click', function () {
+            syncPayslipEarningsFromOfferBreakup();
+        });
+    }
+    if (payslipAddDeductionRowBtn && payslipDeductionsEditor) {
+        payslipAddDeductionRowBtn.addEventListener('click', function () {
+            payslipDeductionsEditor.appendChild(createPayslipRowElement('', ''));
+            onPayslipTableChanged();
+        });
+    }
+    if (moduleLogoPopupBtn) {
+        moduleLogoPopupBtn.addEventListener('click', openModuleLogoEditor);
+    }
+    if (moduleLogoEditorClose) {
+        moduleLogoEditorClose.addEventListener('click', closeModuleLogoEditor);
+    }
+    if (moduleLogoEditorModal) {
+        moduleLogoEditorModal.addEventListener('click', function (event) {
+            if (event.target === moduleLogoEditorModal) {
+                closeModuleLogoEditor();
+            }
+        });
+    }
+    emailTemplatePopupBtns.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            openEmailTemplateEditor(btn.getAttribute('data-email-template-key'));
+        });
+    });
+    if (emailTemplateEditorClose) {
+        emailTemplateEditorClose.addEventListener('click', closeEmailTemplateEditor);
+    }
+    if (emailTemplateEditorCancel) {
+        emailTemplateEditorCancel.addEventListener('click', closeEmailTemplateEditor);
+    }
+    if (emailTemplateEditorApply) {
+        emailTemplateEditorApply.addEventListener('click', applyEmailTemplateEditor);
+    }
+    if (emailTemplateEditorModal) {
+        emailTemplateEditorModal.addEventListener('click', function (event) {
+            if (event.target === emailTemplateEditorModal) {
+                closeEmailTemplateEditor();
+            }
+        });
+    }
     document.addEventListener('keydown', function (event) {
         if (event.key === 'Escape' && offerTemplateEditorModal && offerTemplateEditorModal.style.display === 'flex') {
             closeOfferTemplateEditor();
+            return;
+        }
+        if (event.key === 'Escape' && payslipTemplateEditorModal && payslipTemplateEditorModal.style.display === 'flex') {
+            closePayslipTemplateEditor();
+            return;
+        }
+        if (event.key === 'Escape' && emailTemplateEditorModal && emailTemplateEditorModal.style.display === 'flex') {
+            closeEmailTemplateEditor();
+            return;
+        }
+        if (event.key === 'Escape' && moduleLogoEditorModal && moduleLogoEditorModal.style.display === 'flex') {
+            closeModuleLogoEditor();
+            return;
+        }
+        if (event.key === 'Escape' && resetThemeFontConfirmModal && resetThemeFontConfirmModal.style.display === 'flex') {
+            closeResetThemeFontConfirm();
         }
     });
 
@@ -1125,7 +2065,10 @@ document.addEventListener('DOMContentLoaded', function () {
     applyUiLayoutPreview();
     applyLiveBrandPreview();
     syncOfferEditorValueFromField();
+    syncPayslipEditorValueFromField();
+    initPayslipTableEditors();
     renderOfferLetterPreview();
+    renderPayslipPreview();
 
     if (editBtn) {
         editBtn.addEventListener('click', function () {
@@ -1135,12 +2078,36 @@ document.addEventListener('DOMContentLoaded', function () {
                 setEditMode(true);
                 return;
             }
+            if (settingsFormActionField) settingsFormActionField.value = 'save';
             settingsForm.submit();
+        });
+    }
+    if (settingsResetThemeFontBtn && settingsForm) {
+        settingsResetThemeFontBtn.addEventListener('click', function () {
+            openResetThemeFontConfirm();
+        });
+    }
+    if (resetThemeFontConfirmCancel) {
+        resetThemeFontConfirmCancel.addEventListener('click', closeResetThemeFontConfirm);
+    }
+    if (resetThemeFontConfirmOk && settingsForm) {
+        resetThemeFontConfirmOk.addEventListener('click', function () {
+            if (settingsFormActionField) settingsFormActionField.value = 'reset_theme_font';
+            closeResetThemeFontConfirm();
+            settingsForm.submit();
+        });
+    }
+    if (resetThemeFontConfirmModal) {
+        resetThemeFontConfirmModal.addEventListener('click', function (event) {
+            if (event.target === resetThemeFontConfirmModal) {
+                closeResetThemeFontConfirm();
+            }
         });
     }
     if (cancelBtn && settingsForm) {
         cancelBtn.addEventListener('click', function () {
             settingsForm.reset();
+            if (settingsFormActionField) settingsFormActionField.value = 'save';
             syncColorDots();
             applyThemePreview();
             applyFontPreview();
@@ -1148,8 +2115,14 @@ document.addEventListener('DOMContentLoaded', function () {
             applyUiLayoutPreview();
             applyLiveBrandPreview();
             syncOfferEditorValueFromField();
+            syncPayslipEditorValueFromField();
+            initPayslipTableEditors();
             renderOfferLetterPreview();
+            renderPayslipPreview();
             closeOfferTemplateEditor();
+            closePayslipTemplateEditor();
+            closeEmailTemplateEditor();
+            closeModuleLogoEditor();
             setEditMode(false);
         });
     }
@@ -1234,6 +2207,9 @@ document.addEventListener('DOMContentLoaded', function () {
     border: 1px solid var(--border);
     box-shadow: 0 32px 90px rgba(0, 0, 0, 0.45);
 }
+.module-logo-editor-dialog {
+    width: min(1200px, 100%);
+}
 .offer-editor-header {
     display: flex;
     align-items: flex-start;
@@ -1286,6 +2262,131 @@ document.addEventListener('DOMContentLoaded', function () {
     border-radius: 12px;
     box-shadow: 0 28px 80px rgba(15, 23, 42, 0.28);
     overflow: hidden;
+}
+.payslip-preview-sheet {
+    width: min(100%, 680px);
+    min-height: 560px;
+    background: #ffffff;
+    color: #111827;
+    border-radius: 12px;
+    box-shadow: 0 28px 80px rgba(15, 23, 42, 0.28);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+.payslip-preview-header {
+    background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+    color: #ffffff;
+    padding: 18px 22px;
+}
+.payslip-preview-company {
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.2;
+}
+.payslip-preview-copy {
+    margin-top: 4px;
+    font-size: 12px;
+    opacity: 0.92;
+}
+.payslip-preview-body {
+    padding: 16px 22px 22px 22px;
+}
+.payslip-preview-title {
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 10px;
+}
+.payslip-info-table,
+.payslip-salary-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-bottom: 10px;
+}
+.payslip-info-table td,
+.payslip-salary-table th,
+.payslip-salary-table td {
+    border: 1px solid #111827;
+    padding: 6px 8px;
+    vertical-align: top;
+}
+.payslip-salary-table thead th {
+    background: #f3f4f6;
+    font-weight: 700;
+}
+.payslip-salary-table tfoot td {
+    font-weight: 700;
+}
+.payslip-preview-net {
+    font-size: 13px;
+    font-weight: 700;
+    margin: 10px 0 6px 0;
+}
+.payslip-table-editor {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px;
+    display: grid;
+    gap: 8px;
+    background: rgba(255,255,255,0.01);
+}
+.payslip-table-row {
+    display: grid;
+    grid-template-columns: 1fr 160px auto;
+    gap: 8px;
+}
+.payslip-custom-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0;
+    font-size: 11px;
+}
+.payslip-custom-table th,
+.payslip-custom-table td {
+    border: 1px solid #111827;
+    padding: 5px 7px;
+}
+.payslip-custom-table th {
+    background: #f3f4f6;
+    font-weight: 700;
+}
+.payslip-table-picker {
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px;
+    background: var(--bg-card);
+    margin-bottom: 10px;
+    width: 360px;
+    max-width: 100%;
+}
+.payslip-table-picker-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-muted);
+}
+.payslip-table-picker-size {
+    font-size: 12px;
+    margin: 4px 0 8px;
+    color: var(--text);
+}
+.payslip-table-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    gap: 4px;
+}
+.payslip-table-picker-cell {
+    width: 100%;
+    height: 20px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: #ffffff;
+    padding: 0;
+}
+.payslip-table-picker-cell.active {
+    background: #c7d2fe;
+    border-color: #6366f1;
 }
 .offer-preview-header {
     position: absolute;
