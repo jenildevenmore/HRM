@@ -2,7 +2,7 @@ import datetime
 
 from rest_framework import serializers
 
-from .models import DynamicField, DynamicModel, DynamicRecord
+from .models import AttendanceBreak, DynamicField, DynamicModel, DynamicRecord
 
 
 class DynamicModelSerializer(serializers.ModelSerializer):
@@ -39,9 +39,11 @@ class DynamicFieldSerializer(serializers.ModelSerializer):
 
 
 class DynamicRecordSerializer(serializers.ModelSerializer):
+    breaks = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = DynamicRecord
-        fields = ('id', 'dynamic_model', 'employee', 'data', 'created_at', 'updated_at')
+        fields = ('id', 'dynamic_model', 'employee', 'data', 'breaks', 'created_at', 'updated_at')
         read_only_fields = ('id', 'created_at', 'updated_at')
 
     def validate(self, attrs):
@@ -91,6 +93,7 @@ class DynamicRecordSerializer(serializers.ModelSerializer):
         check_out_existing = existing_data.get('check_out') if isinstance(existing_data, dict) else None
         check_in_new = merged_data.get('check_in')
         check_out_new = merged_data.get('check_out')
+        break_sessions = merged_data.get('break_sessions')
 
         if self.instance and check_in_existing and check_in_new and str(check_in_new) != str(check_in_existing):
             raise serializers.ValidationError({'data': {'check_in': 'Punch-in can be saved only once per day.'}})
@@ -98,11 +101,49 @@ class DynamicRecordSerializer(serializers.ModelSerializer):
         if self.instance and check_out_existing and check_out_new and str(check_out_new) != str(check_out_existing):
             raise serializers.ValidationError({'data': {'check_out': 'Punch-out can be saved only once per day.'}})
 
+        if break_sessions not in (None, ''):
+            if not check_in_new:
+                raise serializers.ValidationError({'data': {'break_sessions': 'Breaks require punch-in first.'}})
+            if not isinstance(break_sessions, list):
+                raise serializers.ValidationError({'data': {'break_sessions': 'break_sessions must be a list.'}})
+            open_breaks = 0
+            for row in break_sessions:
+                if not isinstance(row, dict):
+                    raise serializers.ValidationError({'data': {'break_sessions': 'Each break row must be an object.'}})
+                break_in = str(row.get('break_in') or '').strip()
+                break_out = str(row.get('break_out') or '').strip()
+                if not break_in:
+                    raise serializers.ValidationError({'data': {'break_sessions': 'break_in is required for each break row.'}})
+                if break_in and not break_out:
+                    open_breaks += 1
+                if break_in and break_out:
+                    try:
+                        datetime.time.fromisoformat(break_in)
+                        datetime.time.fromisoformat(break_out)
+                    except ValueError:
+                        raise serializers.ValidationError(
+                            {'data': {'break_sessions': 'break_in/break_out must be in HH:MM:SS format.'}}
+                        )
+            if open_breaks > 1:
+                raise serializers.ValidationError({'data': {'break_sessions': 'Only one active break is allowed.'}})
+            if check_out_new and open_breaks:
+                raise serializers.ValidationError(
+                    {'data': {'check_out': 'Cannot punch out while a break is active. Please break out first.'}}
+                )
+
+        if self.instance and check_out_new:
+            if AttendanceBreak.objects.filter(attendance_record=self.instance, break_out__isnull=True).exists():
+                raise serializers.ValidationError(
+                    {'data': {'check_out': 'Cannot punch out while a break is active. Please break out first.'}}
+                )
+
     def _validate_data(self, dynamic_model, data, partial=False):
         fields = list(dynamic_model.fields.all())
         field_map = {f.key: f for f in fields}
+        is_attendance = str(dynamic_model.slug or '').lower() == 'attendance'
+        allowed_extra_keys = {'break_sessions'} if is_attendance else set()
 
-        unknown_keys = sorted(set(data.keys()) - set(field_map.keys()))
+        unknown_keys = sorted(set(data.keys()) - set(field_map.keys()) - allowed_extra_keys)
         if unknown_keys:
             raise serializers.ValidationError({'data': f'Unknown keys: {", ".join(unknown_keys)}'})
 
@@ -132,6 +173,9 @@ class DynamicRecordSerializer(serializers.ModelSerializer):
 
         if errors:
             raise serializers.ValidationError({'data': errors})
+
+        if is_attendance and 'break_sessions' in data:
+            cleaned['break_sessions'] = data.get('break_sessions')
 
         return cleaned
 
@@ -176,3 +220,30 @@ class DynamicRecordSerializer(serializers.ModelSerializer):
                 return False, None, 'Must be a valid file path or URL.'
             return True, as_text, ''
         return False, None, 'Unsupported field type.'
+
+    def get_breaks(self, obj):
+        if str(obj.dynamic_model.slug or '').lower() != 'attendance':
+            return []
+        rows = obj.breaks.all()
+        return [
+            {
+                'id': b.id,
+                'break_in': b.break_in.strftime('%H:%M:%S') if b.break_in else '',
+                'break_out': b.break_out.strftime('%H:%M:%S') if b.break_out else '',
+            }
+            for b in rows
+        ]
+
+    def to_representation(self, instance):
+        rep = super().to_representation(instance)
+        if str(instance.dynamic_model.slug or '').lower() != 'attendance':
+            return rep
+        data = rep.get('data') if isinstance(rep.get('data'), dict) else {}
+        breaks = rep.get('breaks') or []
+        data['break_sessions'] = [
+            {'break_in': str(b.get('break_in') or ''), 'break_out': str(b.get('break_out') or '')}
+            for b in breaks
+            if str(b.get('break_in') or '').strip()
+        ]
+        rep['data'] = data
+        return rep

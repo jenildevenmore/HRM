@@ -24,6 +24,7 @@
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
         <button type="button" class="btn btn-secondary doc-section-btn" data-target="section-create">Create Document</button>
         <button type="button" class="btn btn-secondary doc-section-btn" data-target="section-offer">Offer Letter Builder</button>
+        <button type="button" class="btn btn-secondary doc-section-btn" data-target="section-payslip">Payslip Builder</button>
         <button type="button" class="btn btn-secondary doc-section-btn" data-target="section-public">Public Upload Links</button>
         <button type="button" class="btn btn-secondary doc-section-btn" data-target="section-list">Documents List</button>
     </div>
@@ -68,11 +69,14 @@
 {% if role in ['superadmin', 'admin'] or 'documents.create' in module_permissions %}
 <div class="form-card" style="max-width:1100px;margin-bottom:20px;">
     <h3 class="section-title">Create Document</h3>
-    <form method="post" enctype="multipart/form-data">
+    <form method="post" enctype="multipart/form-data" id="docCreateForm">
         {{ csrf_input }}
         <input type="hidden" name="action" value="save_document">
         <input type="hidden" name="edit_id" value="">
         <input type="hidden" name="existing_file_url" value="">
+        <input type="hidden" name="offer_snapshot_state" id="offerSnapshotStateHidden">
+        <input type="hidden" name="offer_snapshot_annual_income" id="offerSnapshotAnnualIncomeHidden">
+        <input type="hidden" name="offer_snapshot_components_json" id="offerSnapshotComponentsJsonHidden">
 
         <div class="form-row">
             <div class="form-group">
@@ -230,6 +234,201 @@
             <button type="submit" class="btn btn-primary">Generate PDF & Send Email</button>
         </div>
     </form>
+</div>
+{% endif %}
+</div>
+
+<div id="section-payslip" class="doc-section">
+{% if role in ['superadmin', 'admin'] or 'documents.create' in module_permissions %}
+<div class="form-card" style="max-width:1100px;margin-bottom:20px;">
+    <h3 class="section-title">Payslip Builder</h3>
+    <p class="section-subtitle">Create a payslip layout with earnings and deductions, then generate and email PDF.</p>
+
+    <form method="post" id="payslipSendForm">
+        {{ csrf_input }}
+        <input type="hidden" name="action" id="payslipActionInput" value="send_payslip_pdf">
+        <input type="hidden" name="payslip_earnings_json" id="payslipEarningsJsonHidden">
+        <input type="hidden" name="payslip_deductions_json" id="payslipDeductionsJsonHidden">
+        <input type="hidden" name="payslip_custom_fields_json" id="payslipCustomFieldsJsonHidden">
+        <datalist id="payslipAllowanceOptions"></datalist>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label>Employee Name *</label>
+                <input type="text" name="payslip_employee_name" id="payslipEmployeeName" value="{{ payslip_form.payslip_employee_name or '' }}" required>
+            </div>
+            <div class="form-group">
+                <label>Recipient Email *</label>
+                <input type="email" name="payslip_recipient_email" id="payslipRecipientEmail" value="{{ payslip_form.payslip_recipient_email or '' }}" required>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Month *</label>
+                <input type="text" name="payslip_month_name" id="payslipMonthName" value="{{ payslip_form.payslip_month_name or '' }}" placeholder="e.g. September" required>
+            </div>
+            <div class="form-group">
+                <label>Year *</label>
+                <input type="number" name="payslip_year" id="payslipYear" value="{{ payslip_form.payslip_year or '' }}" min="2000" max="2100" required>
+            </div>
+            <div class="form-group">
+                <label>Monthly Salary Base *</label>
+                <input type="number" name="payslip_monthly_salary" id="payslipMonthlySalary" value="{{ payslip_form.payslip_monthly_salary or '' }}" min="0" step="0.01" placeholder="e.g. 137500">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group"><label>Employee No</label><input type="text" name="payslip_employee_no" value="{{ payslip_form.payslip_employee_no or '' }}"></div>
+            <div class="form-group"><label>Joining Date</label><input type="text" name="payslip_joining_date" value="{{ payslip_form.payslip_joining_date or '' }}" placeholder="e.g. 06 Nov 2023"></div>
+            <div class="form-group"><label>Designation</label><input type="text" name="payslip_designation" value="{{ payslip_form.payslip_designation or '' }}"></div>
+        </div>
+        <div class="form-row">
+            <div class="form-group"><label>Department</label><input type="text" name="payslip_department" value="{{ payslip_form.payslip_department or '' }}"></div>
+            <div class="form-group"><label>Location</label><input type="text" name="payslip_location" value="{{ payslip_form.payslip_location or '' }}"></div>
+            <div class="form-group"><label>Effective Work Days</label><input type="number" name="payslip_effective_work_days" value="{{ payslip_form.payslip_effective_work_days or '' }}" min="0" step="0.01"></div>
+            <div class="form-group"><label>LOP</label><input type="number" name="payslip_lop" value="{{ payslip_form.payslip_lop or '' }}" min="0" step="0.01"></div>
+        </div>
+        <div class="form-row">
+            <div class="form-group"><label>Bank Name</label><input type="text" name="payslip_bank_name" value="{{ payslip_form.payslip_bank_name or '' }}"></div>
+            <div class="form-group"><label>Bank Account No</label><input type="text" name="payslip_bank_account_no" value="{{ payslip_form.payslip_bank_account_no or '' }}"></div>
+            <div class="form-group"><label>PAN Number</label><input type="text" name="payslip_pan_number" value="{{ payslip_form.payslip_pan_number or '' }}"></div>
+        </div>
+        <div class="form-row">
+            <div class="form-group"><label>PF No</label><input type="text" name="payslip_pf_no" value="{{ payslip_form.payslip_pf_no or '' }}"></div>
+            <div class="form-group"><label>PF UAN</label><input type="text" name="payslip_pf_uan" value="{{ payslip_form.payslip_pf_uan or '' }}"></div>
+        </div>
+        <div class="form-group">
+            <label>Show Fields In Payslip</label>
+            {% set payslip_field_options = [
+                ('employee_name', 'Employee Name'),
+                ('employee_email', 'Employee Email'),
+                ('employee_no', 'Employee No'),
+                ('role', 'Role'),
+                ('joining_date', 'Joining Date'),
+                ('designation', 'Designation'),
+                ('department', 'Department'),
+                ('manager_name', 'Manager Name'),
+                ('hr_name', 'HR Name'),
+                ('location', 'Location'),
+                ('effective_work_days', 'Effective Work Days'),
+                ('lop', 'LOP'),
+                ('bank_name', 'Bank Name'),
+                ('account_holder_name', 'Account Holder Name'),
+                ('bank_account_no', 'Bank Account No'),
+                ('ifsc_code', 'IFSC Code'),
+                ('branch_name', 'Branch Name'),
+                ('upi_id', 'UPI ID'),
+                ('pan_number', 'PAN Number'),
+                ('pf_no', 'PF No'),
+                ('pf_uan', 'PF UAN')
+            ] %}
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;border:1px solid var(--border);border-radius:10px;padding:10px;background:rgba(255,255,255,0.01);">
+                {% for field_key, field_label in payslip_field_options %}
+                <label class="addon-item">
+                    <input type="checkbox" name="payslip_visible_fields" value="{{ field_key }}" {% if field_key in payslip_visible_fields_selected %}checked{% endif %}>
+                    <span>{{ field_label }}</span>
+                </label>
+                {% endfor %}
+            </div>
+            <div style="color:var(--text-muted);font-size:13px;margin-top:6px;">Uncheck any field you do not want to show in the payslip.</div>
+        </div>
+        <div class="form-group">
+            <label>Custom Fields</label>
+            <div id="payslipCustomFieldsWrap" style="border:1px solid var(--border);border-radius:10px;padding:10px;background:rgba(255,255,255,0.01);display:grid;gap:8px;"></div>
+            <button type="button" id="payslipAddCustomFieldBtn" class="btn btn-secondary btn-sm" style="margin-top:10px;">+ Add Custom Field</button>
+            <div style="color:var(--text-muted);font-size:13px;margin-top:6px;">These custom fields will be included in the payslip details section.</div>
+        </div>
+
+        <div class="form-group">
+            <label>Earnings</label>
+            <div style="color:var(--text-muted);font-size:12px;margin-bottom:6px;">Enter percentage (%) of Monthly Salary Base.</div>
+            <div id="payslipEarningsWrap" style="border:1px solid var(--border);border-radius:10px;padding:10px;background:rgba(255,255,255,0.01);display:grid;gap:8px;"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+                <button type="button" id="payslipUseOfferPercentBtn" class="btn btn-secondary btn-sm">Use Offer Allowance %</button>
+                <button type="button" id="payslipAddEarningBtn" class="btn btn-secondary btn-sm">+ Add Earning</button>
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Deductions</label>
+            <div style="color:var(--text-muted);font-size:12px;margin-bottom:6px;">For each row choose `Rs` (fixed) or `%` (percentage of Monthly Salary Base).</div>
+            <div id="payslipDeductionsWrap" style="border:1px solid var(--border);border-radius:10px;padding:10px;background:rgba(255,255,255,0.01);display:grid;gap:8px;"></div>
+            <button type="button" id="payslipAddDeductionBtn" class="btn btn-secondary btn-sm" style="margin-top:10px;">+ Add Deduction</button>
+        </div>
+
+        <div class="table-wrapper" style="margin-top:14px;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Total Earnings</th>
+                        <th>Total Deductions</th>
+                        <th>Net Pay</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td id="payslipTotalEarnings">0.00</td>
+                        <td id="payslipTotalDeductions">0.00</td>
+                        <td id="payslipNetPay">0.00</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="form-actions">
+            <button type="button" id="payslipBulkPreviewBtn" class="btn btn-secondary">Preview Bulk Payslips</button>
+            <button type="button" id="payslipBulkSendBtn" class="btn btn-secondary">Send Payslips To All (Auto Payroll)</button>
+            <button type="submit" class="btn btn-primary">Generate Payslip PDF & Send Email</button>
+        </div>
+    </form>
+    <div class="confirm-overlay" id="payslipBulkConfirmOverlay" style="display:none;">
+        <div class="confirm-dialog" style="max-width:520px;">
+            <h3>Confirm Bulk Send</h3>
+            <p>Send payslips to all employees for selected month/year using payroll data?</p>
+            <div class="confirm-actions">
+                <button type="button" id="payslipBulkConfirmOk" class="btn btn-primary">OK</button>
+                <button type="button" id="payslipBulkConfirmCancel" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+    {% if payslip_bulk_preview_rows %}
+    <div class="card" style="margin-top:14px;">
+        <h4 style="margin:0 0 10px 0;">Bulk Payslip Preview ({{ payslip_bulk_preview_summary.month_name }} {{ payslip_bulk_preview_summary.year }})</h4>
+        <div style="color:var(--text-muted);font-size:13px;margin-bottom:10px;">
+            Total: {{ payslip_bulk_preview_summary.total or 0 }} |
+            Ready: {{ payslip_bulk_preview_summary.ready or 0 }} |
+            Skipped: {{ payslip_bulk_preview_summary.skipped or 0 }}
+        </div>
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Employee</th>
+                        <th>Email</th>
+                        <th>Payroll Base</th>
+                        <th>Total Earnings</th>
+                        <th>Total Deductions</th>
+                        <th>Net Pay</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in payslip_bulk_preview_rows %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ r.employee_name }}</td>
+                        <td>{{ r.email or '-' }}</td>
+                        <td>{{ r.monthly_base }}</td>
+                        <td>{{ r.total_earnings }}</td>
+                        <td>{{ r.total_deductions }}</td>
+                        <td><strong>{{ r.net_pay }}</strong></td>
+                        <td>{{ r.status }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
 </div>
 {% endif %}
 </div>
@@ -634,6 +833,7 @@
     const sections = {
         'section-create': document.getElementById('section-create'),
         'section-offer': document.getElementById('section-offer'),
+        'section-payslip': document.getElementById('section-payslip'),
         'section-public': document.getElementById('section-public'),
         'section-list': document.getElementById('section-list'),
     };
@@ -655,8 +855,9 @@
     }
     window.showDocumentSection = showSection;
 
+    const forcedSection = '{{ documents_initial_section or "" }}';
     const hasEditButtons = document.querySelector('.doc-edit-btn');
-    showSection(hasEditButtons ? 'section-list' : 'section-public');
+    showSection(forcedSection || (hasEditButtons ? 'section-list' : 'section-public'));
 
     sectionButtons.forEach(function (btn) {
         btn.addEventListener('click', function () {
@@ -676,6 +877,10 @@
     const totalAnnualEl = document.getElementById('offerTotalAnnual');
     const totalMonthlyEl = document.getElementById('offerTotalMonthly');
     const useBtn = document.getElementById('offerUseInCreateBtn');
+    const docCreateForm = document.getElementById('docCreateForm');
+    const offerSnapshotStateHidden = document.getElementById('offerSnapshotStateHidden');
+    const offerSnapshotAnnualIncomeHidden = document.getElementById('offerSnapshotAnnualIncomeHidden');
+    const offerSnapshotComponentsJsonHidden = document.getElementById('offerSnapshotComponentsJsonHidden');
     const sendForm = document.getElementById('offerSendForm');
     const stateHidden = document.getElementById('offerStateHidden');
     const annualHidden = document.getElementById('offerAnnualIncomeHidden');
@@ -788,6 +993,7 @@
         totalPctEl.textContent = totalPct.toFixed(2) + '%';
         totalAnnualEl.textContent = money(totalAnnual);
         totalMonthlyEl.textContent = money(totalAnnual / 12);
+        saveOfferBreakupSnapshot();
     }
 
     function collectComponents() {
@@ -799,6 +1005,24 @@
         }).filter(function (row) {
             return row.name && row.pct >= 0;
         });
+    }
+
+    function saveOfferBreakupSnapshot() {
+        try {
+            window.localStorage.setItem('hrm_offer_breakup_last', JSON.stringify({
+                state: stateEl.value || '',
+                annual_income: Number(annualEl.value || 0),
+                components: collectComponents(),
+                updated_at: new Date().toISOString()
+            }));
+        } catch (e) {}
+    }
+
+    function syncOfferSnapshotFields() {
+        const components = collectComponents();
+        if (offerSnapshotStateHidden) offerSnapshotStateHidden.value = stateEl.value || '';
+        if (offerSnapshotAnnualIncomeHidden) offerSnapshotAnnualIncomeHidden.value = annualEl.value || '';
+        if (offerSnapshotComponentsJsonHidden) offerSnapshotComponentsJsonHidden.value = JSON.stringify(components);
     }
 
     addBtn.addEventListener('click', function () {
@@ -844,8 +1068,15 @@
         if (titleInput && !titleInput.value) titleInput.value = 'Offer Letter - Salary Breakup';
         if (categoryInput && !categoryInput.value) categoryInput.value = 'Offer Letter';
         if (notesInput) notesInput.value = lines.join('\n');
+        syncOfferSnapshotFields();
         if (typeof window.showDocumentSection === 'function') window.showDocumentSection('section-create');
     });
+
+    if (docCreateForm) {
+        docCreateForm.addEventListener('submit', function () {
+            syncOfferSnapshotFields();
+        });
+    }
 
     if (sendForm) {
         sendForm.addEventListener('submit', function () {
@@ -856,6 +1087,379 @@
     }
 
     renderComponents(defaultsByState[stateEl.value] || defaultsByState.other);
+})();
+
+(function () {
+    const form = document.getElementById('payslipSendForm');
+    const earningsWrap = document.getElementById('payslipEarningsWrap');
+    const deductionsWrap = document.getElementById('payslipDeductionsWrap');
+    const addEarningBtn = document.getElementById('payslipAddEarningBtn');
+    const addDeductionBtn = document.getElementById('payslipAddDeductionBtn');
+    const useOfferPercentBtn = document.getElementById('payslipUseOfferPercentBtn');
+    const addCustomFieldBtn = document.getElementById('payslipAddCustomFieldBtn');
+    const payslipBulkPreviewBtn = document.getElementById('payslipBulkPreviewBtn');
+    const payslipActionInput = document.getElementById('payslipActionInput');
+    const payslipBulkSendBtn = document.getElementById('payslipBulkSendBtn');
+    const earningsHidden = document.getElementById('payslipEarningsJsonHidden');
+    const deductionsHidden = document.getElementById('payslipDeductionsJsonHidden');
+    const customFieldsHidden = document.getElementById('payslipCustomFieldsJsonHidden');
+    const customFieldsWrap = document.getElementById('payslipCustomFieldsWrap');
+    const totalEarningsEl = document.getElementById('payslipTotalEarnings');
+    const totalDeductionsEl = document.getElementById('payslipTotalDeductions');
+    const netPayEl = document.getElementById('payslipNetPay');
+    const monthNameEl = document.getElementById('payslipMonthName');
+    const yearEl = document.getElementById('payslipYear');
+    const allowanceOptionsList = document.getElementById('payslipAllowanceOptions');
+    const monthlySalaryEl = document.getElementById('payslipMonthlySalary');
+    const bulkConfirmOverlay = document.getElementById('payslipBulkConfirmOverlay');
+    const bulkConfirmOkBtn = document.getElementById('payslipBulkConfirmOk');
+    const bulkConfirmCancelBtn = document.getElementById('payslipBulkConfirmCancel');
+    if (!form || !earningsWrap || !deductionsWrap || !addEarningBtn || !addDeductionBtn || !customFieldsWrap || !addCustomFieldBtn) return;
+
+    function money(v) {
+        const n = Number(v || 0);
+        return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function addRow(container, name, value, mode) {
+        const row = document.createElement('div');
+        row.className = 'payslip-comp-row';
+        row.style.display = 'grid';
+        row.style.gridTemplateColumns = '1fr 260px auto';
+        row.style.gap = '8px';
+        const isEarningRow = container === earningsWrap;
+        const secondCellHtml = isEarningRow
+            ? (
+                '<div style="display:flex;align-items:center;gap:6px;">' +
+                    '<input type="number" class="payslip-comp-value" min="0" step="0.01" placeholder="Percentage">' +
+                    '<span style="min-width:24px;text-align:center;color:var(--text-muted);font-weight:700;">%</span>' +
+                '</div>'
+            )
+            : (
+                '<div style="display:flex;align-items:center;gap:6px;">' +
+                    '<select class="payslip-deduction-mode" style="max-width:80px;">' +
+                        '<option value="amount">Rs</option>' +
+                        '<option value="pct">%</option>' +
+                    '</select>' +
+                    '<input type="number" class="payslip-comp-value" min="0" step="0.01" placeholder="Value">' +
+                '</div>'
+            );
+        row.innerHTML =
+            '<input type="text" class="payslip-comp-name" placeholder="Component name" ' + (isEarningRow ? 'list="payslipAllowanceOptions"' : '') + '>' +
+            secondCellHtml +
+            '<button type="button" class="btn btn-danger btn-sm">Remove</button>';
+        const nameInput = row.querySelector('.payslip-comp-name');
+        const valueInput = row.querySelector('.payslip-comp-value');
+        const deductionMode = row.querySelector('.payslip-deduction-mode');
+        const removeBtn = row.querySelector('button');
+        nameInput.value = name || '';
+        valueInput.value = value != null ? String(value) : '';
+        if (deductionMode) deductionMode.value = (mode === 'pct' ? 'pct' : 'amount');
+        nameInput.addEventListener('input', recalc);
+        valueInput.addEventListener('input', recalc);
+        if (deductionMode) deductionMode.addEventListener('change', recalc);
+        removeBtn.addEventListener('click', function () {
+            row.remove();
+            recalc();
+        });
+        container.appendChild(row);
+    }
+
+    function getOfferAllowanceNames() {
+        let names = [];
+        const liveRows = Array.from(document.querySelectorAll('#offerComponentsWrap .offer-comp-row'));
+        if (liveRows.length) {
+            names = liveRows.map(function (row) {
+                return (row.querySelector('.offer-comp-name') ? row.querySelector('.offer-comp-name').value : '').trim();
+            }).filter(function (v) { return v; });
+        }
+        if (!names.length) {
+            try {
+                const cached = JSON.parse(window.localStorage.getItem('hrm_offer_breakup_last') || '{}');
+                if (Array.isArray(cached.components)) {
+                    names = cached.components.map(function (c) { return String((c && c.name) || '').trim(); }).filter(function (v) { return v; });
+                }
+            } catch (e) {}
+        }
+        if (!names.length && earningsWrap) {
+            names = Array.from(earningsWrap.querySelectorAll('.payslip-comp-name')).map(function (el) {
+                return String(el.value || '').trim();
+            }).filter(function (v) { return v; });
+        }
+        if (!names.length) {
+            names = ['BASIC', 'HRA', 'SPECIAL ALLOWANCE', 'LTA'];
+        }
+        const seen = {};
+        return names.filter(function (name) {
+            const k = name.toLowerCase();
+            if (seen[k]) return false;
+            seen[k] = true;
+            return true;
+        });
+    }
+
+    function refreshPayslipAllowanceOptions() {
+        if (!allowanceOptionsList) return;
+        const names = getOfferAllowanceNames();
+        allowanceOptionsList.innerHTML = names.map(function (name) {
+            return '<option value="' + name.replace(/"/g, '&quot;') + '"></option>';
+        }).join('');
+    }
+
+    function collectRows(container) {
+        const isEarning = container === earningsWrap;
+        return Array.from(container.querySelectorAll('.payslip-comp-row')).map(function (row) {
+            const raw = Number(row.querySelector('.payslip-comp-value').value || 0);
+            const modeEl = row.querySelector('.payslip-deduction-mode');
+            const mode = modeEl ? String(modeEl.value || 'amount') : (isEarning ? 'pct' : 'amount');
+            return {
+                name: (row.querySelector('.payslip-comp-name').value || '').trim(),
+                mode: mode,
+                amount: (isEarning || mode === 'pct') ? 0 : raw,
+                pct: (isEarning || mode === 'pct') ? raw : null
+            };
+        }).filter(function (item) {
+            return item.name;
+        });
+    }
+
+    function getOfferBreakupForPayslip() {
+        let annual = 0;
+        let components = [];
+
+        const annualEl = document.getElementById('offerAnnualIncome');
+        const compRows = Array.from(document.querySelectorAll('#offerComponentsWrap .offer-comp-row'));
+        if (annualEl && compRows.length) {
+            annual = Number(annualEl.value || 0);
+            components = compRows.map(function (row) {
+                return {
+                    name: (row.querySelector('.offer-comp-name') ? row.querySelector('.offer-comp-name').value : '').trim(),
+                    pct: Number(row.querySelector('.offer-comp-pct') ? row.querySelector('.offer-comp-pct').value : 0)
+                };
+            }).filter(function (row) {
+                return row.name;
+            });
+        }
+
+        if (!(annual > 0 && components.length)) {
+            try {
+                const cached = JSON.parse(window.localStorage.getItem('hrm_offer_breakup_last') || '{}');
+                annual = Number(cached.annual_income || 0);
+                components = Array.isArray(cached.components) ? cached.components.map(function (row) {
+                    return {
+                        name: String((row && row.name) || '').trim(),
+                        pct: Number((row && row.pct) || 0)
+                    };
+                }).filter(function (row) { return row.name; }) : [];
+            } catch (e) {}
+        }
+
+        if (!(annual > 0 && components.length)) {
+            return null;
+        }
+        return { annual: annual, components: components };
+    }
+
+    function applyOfferBreakupToPayslipEarnings() {
+        const offerData = getOfferBreakupForPayslip();
+        if (!offerData) return false;
+        earningsWrap.innerHTML = '';
+        if (monthlySalaryEl) {
+            monthlySalaryEl.value = (offerData.annual / 12).toFixed(2);
+        }
+        offerData.components.forEach(function (item) {
+            addRow(earningsWrap, item.name, Number(item.pct || 0).toFixed(2));
+        });
+        recalc();
+        return true;
+    }
+
+    function addCustomFieldRow(label, value) {
+        const row = document.createElement('div');
+        row.className = 'payslip-custom-field-row';
+        row.style.display = 'grid';
+        row.style.gridTemplateColumns = '1fr 1fr auto';
+        row.style.gap = '8px';
+        row.innerHTML =
+            '<input type="text" class="payslip-custom-label" placeholder="Field label (e.g. Passport No)">' +
+            '<input type="text" class="payslip-custom-value" placeholder="Field value">' +
+            '<button type="button" class="btn btn-danger btn-sm">Remove</button>';
+        const labelInput = row.querySelector('.payslip-custom-label');
+        const valueInput = row.querySelector('.payslip-custom-value');
+        const removeBtn = row.querySelector('button');
+        labelInput.value = label || '';
+        valueInput.value = value || '';
+        labelInput.addEventListener('input', syncCustomFieldsToHidden);
+        valueInput.addEventListener('input', syncCustomFieldsToHidden);
+        removeBtn.addEventListener('click', function () {
+            row.remove();
+            syncCustomFieldsToHidden();
+        });
+        customFieldsWrap.appendChild(row);
+    }
+
+    function collectCustomFields() {
+        return Array.from(customFieldsWrap.querySelectorAll('.payslip-custom-field-row')).map(function (row) {
+            return {
+                label: (row.querySelector('.payslip-custom-label').value || '').trim(),
+                value: (row.querySelector('.payslip-custom-value').value || '').trim()
+            };
+        }).filter(function (item) {
+            return item.label;
+        });
+    }
+
+    function syncCustomFieldsToHidden() {
+        if (customFieldsHidden) {
+            customFieldsHidden.value = JSON.stringify(collectCustomFields());
+        }
+    }
+
+    function recalc() {
+        const earnings = collectRows(earningsWrap);
+        const deductions = collectRows(deductionsWrap);
+        const monthlySalaryBase = Number(monthlySalaryEl ? monthlySalaryEl.value : 0) || 0;
+        const totalEarnings = earnings.reduce(function (sum, row) {
+            return sum + ((monthlySalaryBase * Number(row.pct || 0)) / 100);
+        }, 0);
+        const totalDeductions = deductions.reduce(function (sum, row) {
+            if (row.mode === 'pct') {
+                return sum + ((monthlySalaryBase * Number(row.pct || 0)) / 100);
+            }
+            return sum + Number(row.amount || 0);
+        }, 0);
+        const netPay = totalEarnings - totalDeductions;
+        if (totalEarningsEl) totalEarningsEl.textContent = money(totalEarnings);
+        if (totalDeductionsEl) totalDeductionsEl.textContent = money(totalDeductions);
+        if (netPayEl) netPayEl.textContent = money(netPay);
+        refreshPayslipAllowanceOptions();
+    }
+
+    refreshPayslipAllowanceOptions();
+    const offerWrapLive = document.getElementById('offerComponentsWrap');
+    if (offerWrapLive) {
+        offerWrapLive.addEventListener('input', refreshPayslipAllowanceOptions);
+        offerWrapLive.addEventListener('change', refreshPayslipAllowanceOptions);
+    }
+    if (monthlySalaryEl) {
+        monthlySalaryEl.addEventListener('input', recalc);
+    }
+
+    addEarningBtn.addEventListener('click', function () {
+        addRow(earningsWrap, '', '');
+    });
+    addDeductionBtn.addEventListener('click', function () {
+        addRow(deductionsWrap, '', '');
+    });
+    if (useOfferPercentBtn) {
+        useOfferPercentBtn.addEventListener('click', function () {
+            const ok = applyOfferBreakupToPayslipEarnings();
+            if (!ok) {
+                window.alert('No Offer Allowance % data found. Please set Annual Income and Allowance Components in Offer Letter Builder first.');
+            }
+        });
+    }
+    addCustomFieldBtn.addEventListener('click', function () {
+        addCustomFieldRow('', '');
+        syncCustomFieldsToHidden();
+    });
+
+    form.addEventListener('submit', function () {
+        const earnings = collectRows(earningsWrap);
+        const deductions = collectRows(deductionsWrap);
+        const customFields = collectCustomFields();
+        if (earningsHidden) earningsHidden.value = JSON.stringify(earnings);
+        if (deductionsHidden) deductionsHidden.value = JSON.stringify(deductions);
+        if (customFieldsHidden) customFieldsHidden.value = JSON.stringify(customFields);
+        if (payslipActionInput) payslipActionInput.value = 'send_payslip_pdf';
+    });
+
+    function preparePayslipPayload(actionValue) {
+        const earnings = collectRows(earningsWrap);
+        if (!earnings.length) {
+            window.alert('Add at least one earning component.');
+            return false;
+        }
+        const deductions = collectRows(deductionsWrap);
+        const customFields = collectCustomFields();
+        if (earningsHidden) earningsHidden.value = JSON.stringify(earnings);
+        if (deductionsHidden) deductionsHidden.value = JSON.stringify(deductions);
+        if (customFieldsHidden) customFieldsHidden.value = JSON.stringify(customFields);
+        if (payslipActionInput) payslipActionInput.value = actionValue;
+        return true;
+    }
+
+    if (payslipBulkSendBtn && form) {
+        payslipBulkSendBtn.addEventListener('click', function () {
+            if (!preparePayslipPayload('send_payslip_bulk_auto')) return;
+            if (bulkConfirmOverlay) {
+                bulkConfirmOverlay.style.display = 'flex';
+            } else {
+                form.submit();
+            }
+        });
+    }
+    if (bulkConfirmOkBtn) {
+        bulkConfirmOkBtn.addEventListener('click', function () {
+            if (bulkConfirmOverlay) bulkConfirmOverlay.style.display = 'none';
+            form.submit();
+        });
+    }
+    if (bulkConfirmCancelBtn) {
+        bulkConfirmCancelBtn.addEventListener('click', function () {
+            if (bulkConfirmOverlay) bulkConfirmOverlay.style.display = 'none';
+        });
+    }
+    if (bulkConfirmOverlay) {
+        bulkConfirmOverlay.addEventListener('click', function (event) {
+            if (event.target === bulkConfirmOverlay) {
+                bulkConfirmOverlay.style.display = 'none';
+            }
+        });
+    }
+    if (payslipBulkPreviewBtn && form) {
+        payslipBulkPreviewBtn.addEventListener('click', function () {
+            if (!preparePayslipPayload('preview_payslip_bulk_auto')) return;
+            form.submit();
+        });
+    }
+
+    const now = new Date();
+    if (monthNameEl && !monthNameEl.value) {
+        monthNameEl.value = now.toLocaleString('en-US', { month: 'long' });
+    }
+    if (yearEl && !yearEl.value) {
+        yearEl.value = String(now.getFullYear());
+    }
+
+    const initialBuilder = {{ payslip_builder_initial_json|safe }};
+    if (initialBuilder && Array.isArray(initialBuilder.earnings) && initialBuilder.earnings.length) {
+        initialBuilder.earnings.forEach(function (row) {
+            addRow(earningsWrap, row.name || '', (row.pct != null ? row.pct : row.amount));
+        });
+    } else if (!applyOfferBreakupToPayslipEarnings()) {
+        addRow(earningsWrap, 'BASIC', 40);
+        addRow(earningsWrap, 'HRA', 20);
+        addRow(earningsWrap, 'SPECIAL ALLOWANCE', 30);
+        addRow(earningsWrap, 'LTA', 10);
+        if (monthlySalaryEl && !monthlySalaryEl.value) monthlySalaryEl.value = '137500';
+    }
+    if (initialBuilder && Array.isArray(initialBuilder.deductions) && initialBuilder.deductions.length) {
+        initialBuilder.deductions.forEach(function (row) {
+            addRow(deductionsWrap, row.name || '', (row.mode === 'pct' ? row.pct : row.amount) || 0, row.mode || 'amount');
+        });
+    } else {
+        addRow(deductionsWrap, 'PF', 1800, 'amount');
+        addRow(deductionsWrap, 'PROF TAX', 208, 'amount');
+        addRow(deductionsWrap, 'INCOME TAX', 10, 'pct');
+    }
+    if (initialBuilder && Array.isArray(initialBuilder.custom_fields) && initialBuilder.custom_fields.length) {
+        initialBuilder.custom_fields.forEach(function (row) {
+            addCustomFieldRow(row.label || '', row.value || '');
+        });
+    }
+    syncCustomFieldsToHidden();
+    recalc();
 })();
 
 (function () {

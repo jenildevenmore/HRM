@@ -107,7 +107,7 @@ def resolve_profile_access(profile, user=None):
             client_id=profile.client_id,
             email__iexact=((getattr(user_obj, 'email', '') or '')),
         )
-        .only('id', 'role', 'client_role__module_permissions', 'client_role__enabled_addons')
+        .only('id', 'employee_code', 'role', 'client_role__module_permissions', 'client_role__enabled_addons')
         .first()
     )
     role_permissions = normalize_permission_keys(
@@ -135,6 +135,7 @@ def resolve_profile_access(profile, user=None):
         'module_permissions': resolved_permissions,
         'enabled_addons': resolved_addons,
         'employee_id': employee_row.id if employee_row else None,
+        'employee_code': employee_row.employee_code if employee_row else '',
         'employee_role': employee_row.role if employee_row else '',
     }
 
@@ -194,7 +195,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
                 client_id=obj.client_id,
                 email__iexact=(obj.user.email or ''),
             )
-            .only('id', 'role')
+            .only('id', 'employee_code', 'role')
             .first()
         )
         setattr(obj, cache_attr, employee or False)
@@ -206,6 +207,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
         data['module_permissions'] = resolved['module_permissions']
         data['enabled_addons'] = resolved['enabled_addons']
         data['employee_id'] = resolved['employee_id']
+        data['employee_code'] = resolved.get('employee_code', '')
         data['employee_role'] = resolved['employee_role']
         return data
 
@@ -258,6 +260,27 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         request = self.context.get('request')
         client_id = request.data.get('client_id') if request else None
         login_mode = request.data.get('login_mode') if request else None
+        login_identifier = str(attrs.get(self.username_field) or '').strip()
+
+        if login_identifier and login_mode != 'superadmin' and client_id:
+            try:
+                cid = int(client_id)
+                employee_row = (
+                    Employee.objects.filter(client_id=cid, employee_code__iexact=login_identifier)
+                    .only('email')
+                    .first()
+                )
+                if employee_row and employee_row.email:
+                    profile = (
+                        UserProfile.objects.select_related('user')
+                        .filter(client_id=cid, user__email__iexact=employee_row.email)
+                        .only('user__username')
+                        .first()
+                    )
+                    if profile and profile.user and profile.user.username:
+                        attrs[self.username_field] = profile.user.username
+            except (TypeError, ValueError):
+                pass
 
         data = super().validate(attrs)
         
@@ -304,6 +327,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             data['enabled_addons'] = resolved_access['enabled_addons']
             data['permission_group'] = profile.permission_group_id
             data['employee_id'] = resolved_access['employee_id']
+            data['employee_code'] = resolved_access.get('employee_code', '')
             data['employee_role'] = resolved_access['employee_role']
         except UserProfile.DoesNotExist:
             # Allow Django superusers even if profile row is missing.

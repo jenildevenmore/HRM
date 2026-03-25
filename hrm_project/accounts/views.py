@@ -15,6 +15,7 @@ import re
 from .models import UserProfile, ClientPermissionGroup
 from .serializers import UserProfileSerializer, UserSerializer, ClientPermissionGroupSerializer
 from dynamic_models.models import DynamicModel
+from employees.models import Employee
 from core.mailers import send_branded_email
 
 
@@ -244,6 +245,14 @@ class UserProfileViewSet(viewsets.ModelViewSet):
         profile = profile_qs.filter(
             Q(user__email__iexact=identifier) | Q(user__username__iexact=identifier)
         ).order_by('id').first()
+        if not profile:
+            employee_row = Employee.objects.filter(employee_code__iexact=identifier).only('email', 'client_id').first()
+            if employee_row and employee_row.email:
+                profile_lookup = profile_qs.filter(
+                    client_id=employee_row.client_id,
+                    user__email__iexact=employee_row.email,
+                ).order_by('id').first()
+                profile = profile_lookup
 
         # Do not reveal whether an account exists.
         if not profile:

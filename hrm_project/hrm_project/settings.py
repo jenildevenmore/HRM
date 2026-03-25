@@ -101,6 +101,7 @@ INSTALLED_APPS = [
     'employees',
     'custom_fields',
     'dynamic_models',
+    'attendance',
     'leaves',
     'holidays',
     'payroll',
@@ -186,7 +187,7 @@ else:
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": _resolve_sqlite_db_name(),
         }
-    }
+}
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators

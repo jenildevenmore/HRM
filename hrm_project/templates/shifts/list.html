@@ -669,7 +669,9 @@
         }
     }
 
-    showSection('shift-section-list');
+    const sectionParam = (new URLSearchParams(window.location.search).get('section') || '').trim().toLowerCase();
+    const initialSection = sectionParam === 'create' ? 'shift-section-create' : 'shift-section-list';
+    showSection(initialSection);
     sectionButtons.forEach(function (btn) {
         btn.addEventListener('click', function () {
             showSection(btn.getAttribute('data-target'));

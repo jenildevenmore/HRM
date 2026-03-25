@@ -6,23 +6,9 @@
 <div class="page-header">
     <div>
         <h1 class="page-title">Dynamic Models</h1>
-        <p class="page-subtitle">Create client-specific custom models at runtime.</p>
+        <p class="page-subtitle">Create client-specific custom models at runtime. Attendance is managed separately in Attendance module.</p>
     </div>
     <div style="display:flex; gap:8px;">
-        {% if role == 'superadmin' or 'attendance' in enabled_addons %}
-        <form method="post" action="{{ url('dynamic_model_create_attendance') }}">
-            {{ csrf_input }}
-            {% if role == 'superadmin' %}
-            <select name="client" style="min-width:180px; margin-right:8px;" required>
-                <option value="">Select Client</option>
-                {% for c in clients %}
-                <option value="{{ c.id }}">{{ c.name }}</option>
-                {% endfor %}
-            </select>
-            {% endif %}
-            <button type="submit" class="btn btn-secondary">+ Attendance Module</button>
-        </form>
-        {% endif %}
         <a href="{{ url('dynamic_model_create') }}" class="btn btn-primary">+ Add Model</a>
     </div>
 </div>

@@ -217,6 +217,7 @@
     <table>
         <thead>
             <tr>
+                <th>Employee ID</th>
                 <th>Name</th>
                 <th>Email</th>
                 <th>Role</th>
@@ -229,6 +230,7 @@
         <tbody>
             {% for emp in employees %}
             <tr>
+                <td style="color:var(--text-muted);">{{ emp.employee_code or ('EMP-' ~ emp.id) }}</td>
                 <td><strong>{{ emp.first_name }} {{ emp.last_name }}</strong></td>
                 <td style="color:var(--text-muted);">{{ emp.email }}</td>
                 <td style="color:var(--text-muted);">{{ emp.client_role_name or (emp.role_display or (emp.role or 'employee')|upper) }}</td>

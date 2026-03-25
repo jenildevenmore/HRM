@@ -7,37 +7,44 @@
     .main-content {
         overflow-x: hidden;
     }
+
     .payroll-header {
         margin-bottom: 16px;
     }
+
     .payroll-filter-card {
         border: 1px solid var(--border);
         background: var(--bg-card);
     }
+
     .payroll-filter-grid {
         display: grid;
         grid-template-columns: repeat(3, minmax(220px, 1fr));
         gap: 14px;
     }
+
     .payroll-filter-actions {
         display: flex;
         gap: 10px;
         margin-top: 16px;
     }
+
     .payroll-kpis {
         display: grid;
         grid-template-columns: repeat(5, minmax(120px, 1fr));
         gap: 10px;
     }
+
     .payroll-kpi {
         border: 1px solid var(--border);
         border-radius: 10px;
-        background: rgba(255,255,255,0.02);
+        background: rgba(255, 255, 255, 0.02);
         padding: 10px 12px;
         display: flex;
         flex-direction: column;
         gap: 4px;
     }
+
     .payroll-kpi-label {
         color: var(--text-muted);
         text-transform: uppercase;
@@ -45,11 +52,13 @@
         font-size: 11px;
         font-weight: 700;
     }
+
     .payroll-kpi-value {
         font-size: 14px;
         font-weight: 700;
         color: var(--text);
     }
+
     .policy-toggle-row {
         display: flex;
         align-items: center;
@@ -57,6 +66,7 @@
         min-height: 42px;
         margin-bottom: 20px;
     }
+
     .policy-toggle-row input[type="checkbox"] {
         width: 18px !important;
         height: 18px !important;
@@ -72,6 +82,7 @@
         cursor: pointer;
         flex: 0 0 auto;
     }
+
     .policy-toggle-row label {
         display: inline;
         margin: 0;
@@ -83,13 +94,16 @@
         pointer-events: auto;
         cursor: pointer;
     }
+
     .payroll-module-btn {
         min-width: 170px;
     }
+
     .payroll-table table th,
     .payroll-table table td {
         white-space: nowrap;
     }
+
     .payroll-table {
         width: 100%;
         max-width: 100%;
@@ -99,34 +113,52 @@
         scrollbar-gutter: stable both-edges;
         padding-bottom: 4px;
     }
+
     .payroll-table table {
         min-width: 1600px;
     }
+
     #payroll-data-section .card {
         overflow: hidden;
     }
+
     .payroll-table::-webkit-scrollbar {
         height: 10px;
     }
+
     .payroll-table::-webkit-scrollbar-thumb {
         background: color-mix(in srgb, var(--accent) 45%, #9ca3af 55%);
         border-radius: 999px;
     }
+
     .payroll-table::-webkit-scrollbar-track {
         background: rgba(148, 163, 184, 0.2);
         border-radius: 999px;
     }
+
     .payroll-table table td:last-child,
     .payroll-table table th:last-child {
         font-weight: 700;
     }
+
     @media (max-width: 1200px) {
-        .payroll-filter-grid { grid-template-columns: repeat(2, minmax(220px, 1fr)); }
-        .payroll-kpis { grid-template-columns: repeat(3, minmax(120px, 1fr)); }
+        .payroll-filter-grid {
+            grid-template-columns: repeat(2, minmax(220px, 1fr));
+        }
+
+        .payroll-kpis {
+            grid-template-columns: repeat(3, minmax(120px, 1fr));
+        }
     }
+
     @media (max-width: 700px) {
-        .payroll-filter-grid { grid-template-columns: 1fr; }
-        .payroll-kpis { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+        .payroll-filter-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .payroll-kpis {
+            grid-template-columns: repeat(2, minmax(120px, 1fr));
+        }
     }
 </style>
 <div class="page-header">
@@ -148,7 +180,7 @@
             <label>Year</label>
             <select name="year">
                 {% for y in year_options %}
-                <option value="{{ y }}" {% if selected_year == y|string %}selected{% endif %}>{{ y }}</option>
+                <option value="{{ y }}" {% if selected_year==y|string %}selected{% endif %}>{{ y }}</option>
                 {% endfor %}
             </select>
         </div>
@@ -156,7 +188,7 @@
             <label>Month</label>
             <select name="month">
                 {% for m, m_name in month_options %}
-                <option value="{{ m }}" {% if selected_month == m|string %}selected{% endif %}>{{ m_name }}</option>
+                <option value="{{ m }}" {% if selected_month==m|string %}selected{% endif %}>{{ m_name }}</option>
                 {% endfor %}
             </select>
         </div>
@@ -166,7 +198,7 @@
             <select name="employee">
                 <option value="">All Employees</option>
                 {% for emp in employees %}
-                <option value="{{ emp.id }}" {% if selected_employee == emp.id|string %}selected{% endif %}>
+                <option value="{{ emp.id }}" {% if selected_employee==emp.id|string %}selected{% endif %}>
                     {{ emp.first_name }} {{ emp.last_name }}
                 </option>
                 {% endfor %}
@@ -210,10 +242,13 @@
 <div class="card" style="margin-bottom:16px;">
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
         {% if can_manage_payroll %}
-        <button type="button" class="btn btn-secondary payroll-module-btn" data-payroll-section-target="payroll-policy-section">Payroll Policy Setup</button>
-        <button type="button" class="btn btn-secondary payroll-module-btn" data-payroll-section-target="payroll-compensation-section">Employee Salary Setup</button>
+        <button type="button" class="btn btn-secondary payroll-module-btn"
+            data-payroll-section-target="payroll-policy-section">Payroll Policy Setup</button>
+        <button type="button" class="btn btn-secondary payroll-module-btn"
+            data-payroll-section-target="payroll-compensation-section">Employee Salary Setup</button>
         {% endif %}
-        <button type="button" class="btn btn-secondary payroll-module-btn" data-payroll-section-target="payroll-data-section">Payroll Data</button>
+        <button type="button" class="btn btn-secondary payroll-module-btn"
+            data-payroll-section-target="payroll-data-section">Payroll Data</button>
     </div>
 </div>
 
@@ -221,6 +256,12 @@
 <div id="payroll-policy-section" class="payroll-module-section">
     <div class="card" style="margin-bottom:16px;">
         <h3 class="section-title">Payroll Policy Setup</h3>
+        {% if not has_shifts %}
+        <div class="empty-state" style="padding:20px 10px;">
+            <p>{{ payroll_shift_required_message }}</p>
+            <a href="{{ url('shift_list') }}" class="btn btn-primary">Go To Shifts</a>
+        </div>
+        {% else %}
         <form method="post">
             {{ csrf_input }}
             <input type="hidden" name="form_action" value="save_policy">
@@ -228,32 +269,39 @@
             <div class="form-row">
                 <div class="form-group">
                     <label>Monthly Working Days</label>
-                    <input type="number" name="monthly_working_days" min="1" max="31" value="{{ policy_row.monthly_working_days if policy_row else 24 }}" required>
+                    <input type="number" name="monthly_working_days" min="1" max="31"
+                        value="{{ policy_row.monthly_working_days if policy_row else 24 }}" required>
                 </div>
                 <div class="form-group">
                     <label>Standard Hours / Day</label>
-                    <input type="number" step="0.01" name="standard_hours_per_day" min="0.1" max="24" value="{{ policy_row.standard_hours_per_day if policy_row else 8 }}" required>
+                    <input type="number" step="0.01" name="standard_hours_per_day" min="0.1" max="24"
+                        value="{{ policy_row.standard_hours_per_day if policy_row else 8 }}" required>
                 </div>
                 <div class="form-group">
                     <label>Policy Basis</label>
                     <select name="salary_basis" required>
-                        <option value="day" {% if (policy_row and policy_row.salary_basis == 'day') or not policy_row %}selected{% endif %}>Day</option>
-                        <option value="hour" {% if policy_row and policy_row.salary_basis == 'hour' %}selected{% endif %}>Hour</option>
+                        <option value="day" {% if (policy_row and policy_row.salary_basis=='day' ) or not policy_row
+                            %}selected{% endif %}>Day</option>
+                        <option value="hour" {% if policy_row and policy_row.salary_basis=='hour' %}selected{% endif %}>
+                            Hour</option>
                     </select>
                 </div>
             </div>
             <div class="form-row">
                 <div class="policy-toggle-row">
-                    <input id="allow_extra_hours_payout" type="checkbox" name="allow_extra_hours_payout" {% if policy_row and policy_row.allow_extra_hours_payout %}checked{% endif %}>
+                    <input id="allow_extra_hours_payout" type="checkbox" name="allow_extra_hours_payout" {% if
+                        policy_row and policy_row.allow_extra_hours_payout %}checked{% endif %}>
                     <label for="allow_extra_hours_payout">Allow Extra Hours Payout</label>
                 </div>
                 <div class="policy-toggle-row">
-                    <input id="allow_extra_days_payout" type="checkbox" name="allow_extra_days_payout" {% if policy_row and policy_row.allow_extra_days_payout %}checked{% endif %}>
+                    <input id="allow_extra_days_payout" type="checkbox" name="allow_extra_days_payout" {% if policy_row
+                        and policy_row.allow_extra_days_payout %}checked{% endif %}>
                     <label for="allow_extra_days_payout">Allow Extra Days Payout</label>
                 </div>
             </div>
             <button type="submit" class="btn btn-primary">Save Policy</button>
         </form>
+        {% endif %}
     </div>
 </div>
 
@@ -288,17 +336,35 @@
                 </div>
             </div>
             <div class="form-row">
+                <div class="form-group">
+                    <label>Shift</label>
+                    <select name="shift_id" id="compShiftField">
+                        <option value="">Select shift</option>
+                        {% for shift in shifts %}
+                        <option value="{{ shift.id }}">{{ shift.name }}{% if shift.code %} ({{ shift.code }}){% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <div style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap;">
+                        <a href="{{ url('shift_list') }}" class="btn btn-secondary btn-sm">Open Shift Management</a>
+                    </div>
+                </div>
+            </div>
+            <div class="form-row">
                 <div class="form-group" id="monthlySalaryGroup">
                     <label>Monthly Salary</label>
-                    <input type="number" step="0.01" min="0" name="monthly_salary" id="monthlySalaryField" placeholder="Enter monthly salary">
+                    <input type="number" step="0.01" min="0" name="monthly_salary" id="monthlySalaryField"
+                        placeholder="Enter monthly salary">
                 </div>
                 <div class="form-group" id="dailySalaryGroup">
                     <label>Daily Salary</label>
-                    <input type="number" step="0.01" min="0" name="daily_salary" id="dailySalaryField" placeholder="Enter daily salary">
+                    <input type="number" step="0.01" min="0" name="daily_salary" id="dailySalaryField"
+                        placeholder="Enter daily salary">
                 </div>
                 <div class="form-group" id="hourlySalaryGroup">
                     <label>Hourly Salary</label>
-                    <input type="number" step="0.01" min="0" name="hourly_salary" id="hourlySalaryField" placeholder="Enter hourly salary">
+                    <input type="number" step="0.01" min="0" name="hourly_salary" id="hourlySalaryField"
+                        placeholder="Enter hourly salary">
                 </div>
             </div>
             <button type="submit" class="btn btn-primary">Save Employee Salary</button>
@@ -308,37 +374,39 @@
 {% endif %}
 
 <div id="payroll-data-section" class="payroll-module-section">
-<div class="card">
-    <h3 class="section-title">Payroll Data</h3>
+    <div class="card">
+        <h3 class="section-title">Payroll Data</h3>
         <div class="table-wrap payroll-table">
             <table>
-            <thead>
-                <tr>
-                    <th>#</th>
-                    <th>Employee</th>
-                    <th>Month</th>
-                    <th>Comp Basis</th>
-                    <th>Monthly Salary</th>
-                    <th>Daily Salary</th>
-                    <th>Hourly Salary</th>
-                    <th>Per Day</th>
-                    <th>Per Hour</th>
-                    <th>Present Days</th>
-                    <th>Paid Leave Days</th>
-                    <th>Paid Leave Hours</th>
-                    <th>Worked Hours</th>
-                    <th>Payable Hours</th>
-                    <th>Salary (Day)</th>
-                    <th>Salary (Hour)</th>
-                    <th>Final Salary</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% if rows %}
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Employee</th>
+                        <th>Shift</th>
+                        <th>Month</th>
+                        <th>Comp Basis</th>
+                        <th>Monthly Salary</th>
+                        <th>Daily Salary</th>
+                        <th>Hourly Salary</th>
+                        <th>Per Day</th>
+                        <th>Per Hour</th>
+                        <th>Present Days</th>
+                        <th>Paid Leave Days</th>
+                        <th>Paid Leave Hours</th>
+                        <th>Worked Hours</th>
+                        <th>Payable Hours</th>
+                        <th>Salary (Day)</th>
+                        <th>Salary (Hour)</th>
+                        <th>Final Salary</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if rows %}
                     {% for row in rows %}
                     <tr>
                         <td>{{ loop.index }}</td>
                         <td>{{ row.employee_name }}</td>
+                        <td>{{ row.shift_name or '-' }}</td>
                         <td>{{ row.month }}</td>
                         <td>{{ row.salary_basis|upper }}</td>
                         <td>{{ row.monthly_salary }}</td>
@@ -356,58 +424,60 @@
                         <td><strong>{{ row.earned_salary }}</strong></td>
                     </tr>
                     {% endfor %}
-                {% else %}
+                    {% else %}
                     <tr>
-                        <td colspan="17" style="text-align:center;">No payroll data for selected month.</td>
+                        <td colspan="18" style="text-align:center;">No payroll data for selected month.</td>
                     </tr>
-                {% endif %}
-            </tbody>
+                    {% endif %}
+                </tbody>
             </table>
         </div>
-</div>
+    </div>
 </div>
 
 <script>
-(function () {
-    const sectionButtons = Array.prototype.slice.call(document.querySelectorAll('[data-payroll-section-target]'));
-    const sectionIds = ['payroll-policy-section', 'payroll-compensation-section', 'payroll-data-section'];
-    const sections = {};
-    const filterCard = document.getElementById('payroll-filter-card');
-    const policySummaryCard = document.getElementById('payroll-policy-summary-card');
-    sectionIds.forEach(function (id) { sections[id] = document.getElementById(id); });
+    (function () {
+        const sectionButtons = Array.prototype.slice.call(document.querySelectorAll('[data-payroll-section-target]'));
+        const sectionIds = ['payroll-policy-section', 'payroll-compensation-section', 'payroll-data-section'];
+        const sections = {};
+        const filterCard = document.getElementById('payroll-filter-card');
+        const policySummaryCard = document.getElementById('payroll-policy-summary-card');
+        sectionIds.forEach(function (id) { sections[id] = document.getElementById(id); });
 
-    function showSection(targetId) {
-        sectionIds.forEach(function (id) {
-            if (!sections[id]) return;
-            sections[id].style.display = id === targetId ? 'block' : 'none';
-        });
+        function showSection(targetId) {
+            sectionIds.forEach(function (id) {
+                if (!sections[id]) return;
+                sections[id].style.display = id === targetId ? 'block' : 'none';
+            });
+            sectionButtons.forEach(function (btn) {
+                const active = btn.getAttribute('data-payroll-section-target') === targetId;
+                btn.classList.toggle('btn-primary', active);
+                btn.classList.toggle('btn-secondary', !active);
+            });
+            const showListFilters = targetId === 'payroll-data-section';
+            if (filterCard) {
+                filterCard.style.display = showListFilters ? 'block' : 'none';
+            }
+            if (policySummaryCard) {
+                policySummaryCard.style.display = showListFilters ? 'block' : 'none';
+            }
+        }
+
         sectionButtons.forEach(function (btn) {
-            const active = btn.getAttribute('data-payroll-section-target') === targetId;
-            btn.classList.toggle('btn-primary', active);
-            btn.classList.toggle('btn-secondary', !active);
+            btn.addEventListener('click', function () {
+                showSection(btn.getAttribute('data-payroll-section-target'));
+            });
         });
-        const showListFilters = targetId === 'payroll-data-section';
-        if (filterCard) {
-            filterCard.style.display = showListFilters ? 'block' : 'none';
-        }
-        if (policySummaryCard) {
-            policySummaryCard.style.display = showListFilters ? 'block' : 'none';
-        }
-    }
 
-    sectionButtons.forEach(function (btn) {
-        btn.addEventListener('click', function () {
-            showSection(btn.getAttribute('data-payroll-section-target'));
-        });
-    });
-
-    showSection('{% if can_manage_payroll %}payroll-data-section{% else %}payroll-data-section{% endif %}');
-{% if can_manage_payroll %}
-    const compensationByEmployee = {{ compensation_by_employee_json|safe }};
+        showSection('{% if can_manage_payroll %}payroll-data-section{% else %}payroll-data-section{% endif %}');
+        {% if can_manage_payroll %}
+        const compensationByEmployee = {{ compensation_by_employee_json| safe
+    }};
     const employeeField = document.getElementById('compEmployeeField');
     const basisField = document.getElementById('compSalaryBasisField');
     const compensationIdField = document.getElementById('compensationIdField');
     const effectiveFromField = document.getElementById('effectiveFromField');
+    const shiftField = document.getElementById('compShiftField');
     const monthlySalaryField = document.getElementById('monthlySalaryField');
     const dailySalaryField = document.getElementById('dailySalaryField');
     const hourlySalaryField = document.getElementById('hourlySalaryField');
@@ -428,6 +498,7 @@
         compensationIdField.value = row ? (row.id || '') : '';
         basisField.value = row ? (row.salary_basis || 'monthly') : 'monthly';
         effectiveFromField.value = row ? (row.effective_from || '') : '';
+        shiftField.value = row && row.shift != null ? String(row.shift) : '';
         monthlySalaryField.value = row && row.monthly_salary != null ? row.monthly_salary : '';
         dailySalaryField.value = row && row.daily_salary != null ? row.daily_salary : '';
         hourlySalaryField.value = row && row.hourly_salary != null ? row.hourly_salary : '';
@@ -437,7 +508,7 @@
     employeeField.addEventListener('change', applyCompensationForEmployee);
     basisField.addEventListener('change', updateBasisVisibility);
     applyCompensationForEmployee();
-{% endif %}
-})();
+    {% endif %}
+}) ();
 </script>
 {% endblock %}

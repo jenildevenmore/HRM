@@ -75,3 +75,21 @@ class DynamicRecord(models.Model):
 
     def __str__(self):
         return f'{self.dynamic_model.slug}#{self.id}'
+
+
+class AttendanceBreak(models.Model):
+    attendance_record = models.ForeignKey(
+        DynamicRecord,
+        on_delete=models.CASCADE,
+        related_name='breaks',
+    )
+    break_in = models.TimeField()
+    break_out = models.TimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ('break_in', 'id')
+
+    def __str__(self):
+        return f'AttendanceBreak#{self.id} for record#{self.attendance_record_id}'

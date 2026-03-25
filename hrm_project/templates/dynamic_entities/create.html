@@ -38,7 +38,12 @@
         </div>
         <div class="form-group">
             <label>Shift (optional)</label>
-            <input type="text" name="shift" placeholder="morning / evening / night">
+            <select name="shift">
+                <option value="">Select shift</option>
+                {% for shift in attendance_shifts or [] %}
+                <option value="{{ shift.id }}">{{ shift.name }}{% if shift.code %} ({{ shift.code }}){% endif %}</option>
+                {% endfor %}
+            </select>
         </div>
         <div class="form-group">
             <label>Remarks (optional)</label>

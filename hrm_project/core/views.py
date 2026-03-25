@@ -1,5 +1,6 @@
 import requests
 import json
+import copy
 import datetime
 import calendar
 import csv
@@ -375,7 +376,7 @@ def _format_duration(delta):
 
 
 def _attendance_total_time(data, end_override=None):
-    """Return HH:MM:SS between check_in and check_out (or override end)."""
+    """Return net HH:MM:SS = (check_out - check_in) - closed break duration."""
     check_in_dt = _parse_time_to_datetime(data.get('check_in'))
     check_out_value = end_override if end_override is not None else data.get('check_out')
     check_out_dt = _parse_time_to_datetime(check_out_value)
@@ -385,7 +386,125 @@ def _attendance_total_time(data, end_override=None):
 
     if check_out_dt < check_in_dt:
         check_out_dt += datetime.timedelta(days=1)
-    return _format_duration(check_out_dt - check_in_dt)
+    gross_seconds = max(0, int((check_out_dt - check_in_dt).total_seconds()))
+    break_metrics = _attendance_break_metrics(data if isinstance(data, dict) else {})
+    net_seconds = max(0, gross_seconds - int(break_metrics.get('total_break_seconds') or 0))
+    return _format_duration(datetime.timedelta(seconds=net_seconds))
+
+
+def _attendance_break_metrics(data):
+    sessions_raw = data.get('break_sessions')
+    if not isinstance(sessions_raw, list):
+        # Support new attendance app payload shape.
+        sessions_raw = data.get('breaks')
+    sessions = []
+    total_break_seconds = 0
+    open_break_active = False
+    closed_break_count = 0
+
+    if isinstance(sessions_raw, list):
+        for item in sessions_raw:
+            if not isinstance(item, dict):
+                continue
+            break_in = str(item.get('break_in') or '').strip()
+            break_out = str(item.get('break_out') or '').strip()
+            if not break_in:
+                continue
+            row = {'break_in': break_in, 'break_out': break_out}
+            sessions.append(row)
+
+            in_dt = _parse_time_to_datetime(break_in)
+            out_dt = _parse_time_to_datetime(break_out) if break_out else None
+            if in_dt and out_dt:
+                if out_dt < in_dt:
+                    out_dt += datetime.timedelta(days=1)
+                total_break_seconds += max(0, int((out_dt - in_dt).total_seconds()))
+                closed_break_count += 1
+            elif break_in and not break_out:
+                open_break_active = True
+
+    hours = total_break_seconds // 3600
+    minutes = (total_break_seconds % 3600) // 60
+    seconds = total_break_seconds % 60
+    return {
+        'sessions': sessions,
+        'closed_break_count': closed_break_count,
+        'open_break_active': open_break_active,
+        'total_break_seconds': total_break_seconds,
+        'total_break_time': f'{hours:02d}:{minutes:02d}:{seconds:02d}',
+    }
+
+
+def _normalize_attendance_record(record):
+    """Convert AttendanceRecord API response to legacy dynamic-record shape for templates."""
+    if not isinstance(record, dict):
+        return {}
+    if isinstance(record.get('data'), dict):
+        return record
+
+    breaks = record.get('breaks') if isinstance(record.get('breaks'), list) else []
+    break_sessions = []
+    for row in breaks:
+        if not isinstance(row, dict):
+            continue
+        break_in = str(row.get('break_in') or '').strip()
+        if not break_in:
+            continue
+        break_sessions.append({
+            'break_in': break_in,
+            'break_out': str(row.get('break_out') or '').strip(),
+        })
+
+    normalized = dict(record)
+    normalized['data'] = {
+        'attendance_date': record.get('attendance_date'),
+        'status': record.get('status'),
+        'shift': record.get('shift_name') or record.get('shift') or '',
+        'check_in': record.get('check_in'),
+        'check_out': record.get('check_out'),
+        'remarks': record.get('remarks') or '',
+        'break_sessions': break_sessions,
+        'breaks': break_sessions,
+    }
+    normalized['break_total_time'] = record.get('total_break_time') or '00:00:00'
+    normalized['total_time'] = record.get('total_time') or _attendance_total_time(normalized['data']) or '-'
+    return normalized
+
+
+def _resolve_shift_id(request, raw_shift):
+    """Accept shift id or name/code text and resolve to Shift.id."""
+    shift_text = str(raw_shift or '').strip()
+    if not shift_text:
+        return None
+    if shift_text.isdigit():
+        return int(shift_text)
+
+    try:
+        shift_resp = _api_get(request, '/api/shifts/')
+        if shift_resp.status_code != 200:
+            return None
+        payload = shift_resp.json()
+        shifts = payload.get('results', payload) if isinstance(payload, dict) else payload
+        wanted = shift_text.lower()
+        for shift in shifts or []:
+            name = str(shift.get('name') or '').strip().lower()
+            code = str(shift.get('code') or '').strip().lower()
+            if wanted == name or wanted == code:
+                return shift.get('id')
+    except requests.exceptions.ConnectionError:
+        return None
+    return None
+
+
+def _attendance_elapsed_seconds(check_in_value, end_value=None):
+    """Return elapsed seconds from check_in to end_value (or now-style time string)."""
+    check_in_dt = _parse_time_to_datetime(check_in_value)
+    end_dt = _parse_time_to_datetime(end_value) if end_value is not None else None
+    if not check_in_dt or not end_dt:
+        return 0
+    if end_dt < check_in_dt:
+        end_dt += datetime.timedelta(days=1)
+    return max(0, int((end_dt - check_in_dt).total_seconds()))
 
 
 def _build_attendance_calendar(employee, attendance_records, year, month):
@@ -664,15 +783,6 @@ def _load_client_app_settings(request, access_token=None, client_id=None):
 def _load_auto_clockout_alerts(request, limit=8):
     """Load recent auto clock-out attendance events for UI cards."""
     try:
-        model_resp = _api_get(request, '/api/dynamic-models/')
-        if model_resp.status_code != 200:
-            return []
-        model_payload = model_resp.json()
-        models = model_payload.get('results', model_payload) if isinstance(model_payload, dict) else model_payload
-        attendance_model = next((m for m in models if str(m.get('slug', '')).lower() == 'attendance'), None)
-        if not attendance_model:
-            return []
-
         employees_resp = _api_get(request, '/api/employees/')
         employee_rows = []
         if employees_resp.status_code == 200:
@@ -683,11 +793,12 @@ def _load_auto_clockout_alerts(request, limit=8):
             )
         employee_map = {str(e.get('id')): e for e in employee_rows}
 
-        records_resp = _api_get(request, '/api/dynamic-records/', params={'dynamic_model': attendance_model.get('id')})
+        records_resp = _api_get(request, '/api/attendance-records/')
         if records_resp.status_code != 200:
             return []
         records_payload = records_resp.json()
         records = records_payload.get('results', records_payload) if isinstance(records_payload, dict) else records_payload
+        records = [_normalize_attendance_record(row) for row in (records or [])]
 
         session_role = request.session.get('role', 'employee')
         session_employee_role = (request.session.get('employee_role') or '').strip().lower()
@@ -1332,6 +1443,449 @@ def _build_offer_letter_pdf_branded(
     return buffer.getvalue()
 
 
+def _default_payslip_template():
+    return (
+        'Payslip for the month of {{month_name}} {{year}}\n\n'
+        'Name: {{employee_name}}\n'
+        'Employee Email: {{employee_email}}\n'
+        'Employee No: {{employee_no}}\n'
+        'Role: {{role}}\n'
+        'Joining Date: {{joining_date}}\n'
+        'Designation: {{designation}}\n'
+        'Department: {{department}}\n'
+        'Manager: {{manager_name}}\n'
+        'HR: {{hr_name}}\n'
+        'Location: {{location}}\n'
+        'Effective Work Days: {{effective_work_days}}\n'
+        'LOP: {{lop}}\n'
+        'Bank Name: {{bank_name}}\n'
+        'Account Holder Name: {{account_holder_name}}\n'
+        'Bank Account No: {{bank_account_no}}\n'
+        'IFSC Code: {{ifsc_code}}\n'
+        'Branch Name: {{branch_name}}\n'
+        'UPI ID: {{upi_id}}\n'
+        'PAN Number: {{pan_number}}\n'
+        'PF No: {{pf_no}}\n'
+        'PF UAN: {{pf_uan}}'
+    )
+
+
+def _render_payslip_text(template_body, context):
+    rendered = str(template_body or '').strip() or _default_payslip_template()
+    for key, value in (context or {}).items():
+        key_txt = str(key or '').strip()
+        if not key_txt:
+            continue
+        value_txt = str(value or '')
+        rendered = rendered.replace(f'{{{{{key_txt}}}}}', value_txt)
+        rendered = rendered.replace(f'{{{{ {key_txt} }}}}', value_txt)
+        rendered = rendered.replace(f'{{{key_txt}}}', value_txt)
+    rendered = re.sub(r'\{\{\s*[a-zA-Z0-9_]+\s*\}\}', '', rendered)
+    return rendered
+
+
+def _prune_payslip_template_lines(template_body, hidden_fields):
+    raw = str(template_body or '').strip() or _default_payslip_template()
+    hidden = {str(key or '').strip() for key in (hidden_fields or []) if str(key or '').strip()}
+    if not hidden:
+        return raw
+    lines = []
+    for line in str(raw).splitlines():
+        skip = False
+        for key in hidden:
+            if f'{{{{{key}}}}}' in line or f'{{{{ {key} }}}}' in line or f'{{{key}}}' in line:
+                skip = True
+                break
+        if not skip:
+            lines.append(line)
+    return '\n'.join(lines)
+
+
+def _payslip_layout_settings(config=None):
+    cfg = config if isinstance(config, dict) else {}
+
+    def _clamp(value, default, min_value, max_value):
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            parsed = float(default)
+        return max(float(min_value), min(float(max_value), parsed))
+
+    return {
+        'page_margin_top_mm': _clamp(cfg.get('page_margin_top_mm'), 15, 8, 35),
+        'page_margin_right_mm': _clamp(cfg.get('page_margin_right_mm'), 10, 6, 30),
+        'page_margin_bottom_mm': _clamp(cfg.get('page_margin_bottom_mm'), 12, 8, 35),
+        'page_margin_left_mm': _clamp(cfg.get('page_margin_left_mm'), 10, 6, 30),
+    }
+
+
+def _build_payslip_pdf(
+    details,
+    earnings,
+    deductions,
+    company_name='Your Company',
+    logo_source='',
+    template_body='',
+    show_amount_words=True,
+    layout_settings=None,
+):
+    safe_company = str(company_name or 'Your Company').strip() or 'Your Company'
+    data = details if isinstance(details, dict) else {}
+    month_name = str(data.get('month_name') or '').strip() or 'Month'
+    year = str(data.get('year') or '').strip() or str(timezone.localdate().year)
+    employee_name = str(data.get('employee_name') or '').strip() or 'Employee'
+
+    safe_earnings = []
+    for row in (earnings or []):
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get('name') or '').strip()
+        if not name:
+            continue
+        try:
+            amount = float(row.get('amount') or 0)
+        except (TypeError, ValueError):
+            amount = 0.0
+        safe_earnings.append({'name': name, 'amount': max(0.0, amount)})
+
+    safe_deductions = []
+    for row in (deductions or []):
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get('name') or '').strip()
+        if not name:
+            continue
+        try:
+            amount = float(row.get('amount') or 0)
+        except (TypeError, ValueError):
+            amount = 0.0
+        safe_deductions.append({'name': name, 'amount': max(0.0, amount)})
+
+    total_earnings = sum([r.get('amount', 0.0) for r in safe_earnings])
+    total_deductions = sum([r.get('amount', 0.0) for r in safe_deductions])
+    net_pay = total_earnings - total_deductions
+    detail_keys = [
+        'employee_name', 'employee_email', 'employee_no', 'role', 'joining_date', 'designation', 'department',
+        'manager_name', 'hr_name', 'location', 'effective_work_days', 'lop', 'bank_name',
+        'account_holder_name', 'bank_account_no', 'ifsc_code', 'branch_name', 'upi_id',
+        'pan_number', 'pf_no', 'pf_uan',
+    ]
+
+    visible_fields = data.get('visible_fields')
+    visible_fields_set = None
+    if isinstance(visible_fields, (list, tuple, set)):
+        cleaned_visible = {str(k or '').strip() for k in visible_fields if str(k or '').strip()}
+        if cleaned_visible:
+            visible_fields_set = cleaned_visible
+
+    render_context = {
+        'month_name': month_name,
+        'year': year,
+        'employee_name': employee_name,
+        'employee_email': str(data.get('employee_email') or '').strip(),
+        'employee_no': str(data.get('employee_no') or '').strip(),
+        'role': str(data.get('role') or '').strip(),
+        'joining_date': str(data.get('joining_date') or '').strip(),
+        'designation': str(data.get('designation') or '').strip(),
+        'department': str(data.get('department') or '').strip(),
+        'manager_name': str(data.get('manager_name') or '').strip(),
+        'hr_name': str(data.get('hr_name') or '').strip(),
+        'location': str(data.get('location') or '').strip(),
+        'effective_work_days': str(data.get('effective_work_days') or '').strip(),
+        'lop': str(data.get('lop') or '').strip(),
+        'bank_name': str(data.get('bank_name') or '').strip(),
+        'account_holder_name': str(data.get('account_holder_name') or '').strip(),
+        'bank_account_no': str(data.get('bank_account_no') or '').strip(),
+        'ifsc_code': str(data.get('ifsc_code') or '').strip(),
+        'branch_name': str(data.get('branch_name') or '').strip(),
+        'upi_id': str(data.get('upi_id') or '').strip(),
+        'pan_number': str(data.get('pan_number') or '').strip(),
+        'pf_no': str(data.get('pf_no') or '').strip(),
+        'pf_uan': str(data.get('pf_uan') or '').strip(),
+        'total_earnings': f'{total_earnings:,.2f}',
+        'total_deductions': f'{total_deductions:,.2f}',
+        'net_pay': f'{net_pay:,.2f}',
+    }
+    if visible_fields_set is not None:
+        for key in detail_keys:
+            if key not in visible_fields_set:
+                render_context[key] = ''
+            else:
+                # Keep checked fields visible even when data is missing.
+                if str(render_context.get(key) or '').strip() == '':
+                    render_context[key] = '-'
+
+    hidden_fields = []
+    if visible_fields_set is not None:
+        for key in detail_keys:
+            if key not in visible_fields_set:
+                hidden_fields.append(key)
+
+    custom_fields = data.get('custom_fields')
+    if isinstance(custom_fields, list):
+        for item in custom_fields:
+            if not isinstance(item, dict):
+                continue
+            label = str(item.get('label') or '').strip()
+            value = str(item.get('value') or '').strip()
+            if not label:
+                continue
+            key = re.sub(r'[^a-zA-Z0-9_]+', '_', label.strip().lower()).strip('_')
+            if key:
+                render_context[key] = value
+
+    prepared_template = _prune_payslip_template_lines(template_body, hidden_fields)
+    rendered_meta = _render_payslip_text(prepared_template, render_context)
+    meta_lines = [line.strip() for line in str(rendered_meta or '').splitlines() if line.strip()]
+    meta_lines = [line for line in meta_lines if not re.match(r'^[A-Za-z0-9 /._-]+:\s*$', line)]
+    month_heading_txt = f'payslip for the month of {month_name} {year}'.strip().lower()
+    meta_lines = [
+        line for line in meta_lines
+        if str(line or '').strip().lower() not in ('payslip', month_heading_txt)
+        and not str(line or '').strip().lower().startswith('payslip for the month of ')
+    ]
+
+    if isinstance(custom_fields, list):
+        for item in custom_fields:
+            if not isinstance(item, dict):
+                continue
+            label = str(item.get('label') or '').strip()
+            value = str(item.get('value') or '').strip()
+            if not label:
+                continue
+            if value:
+                meta_lines.append(f'{label}: {value}')
+
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import mm
+        from reportlab.lib.utils import ImageReader
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    except Exception:
+        lines = [
+            safe_company,
+            f'Payslip for the month of {month_name} {year}',
+            '',
+        ] + meta_lines + ['']
+        lines.append('EARNINGS')
+        for row in safe_earnings:
+            lines.append(f"{row['name']}: INR {row['amount']:,.2f}")
+        lines.append(f'Total Earnings: INR {total_earnings:,.2f}')
+        lines.append('')
+        lines.append('DEDUCTIONS')
+        for row in safe_deductions:
+            lines.append(f"{row['name']}: INR {row['amount']:,.2f}")
+        lines.append(f'Total Deductions: INR {total_deductions:,.2f}')
+        lines.append('')
+        lines.append(f'Net Pay: INR {net_pay:,.2f}')
+        return _build_simple_text_pdf(lines)
+
+    logo_bytes = _load_logo_bytes(logo_source)
+    logo_reader = None
+    if logo_bytes:
+        try:
+            logo_reader = ImageReader(io.BytesIO(logo_bytes))
+        except Exception:
+            logo_reader = None
+
+    normalized_layout = _payslip_layout_settings(layout_settings)
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=normalized_layout['page_margin_left_mm'] * mm,
+        rightMargin=normalized_layout['page_margin_right_mm'] * mm,
+        topMargin=normalized_layout['page_margin_top_mm'] * mm,
+        bottomMargin=normalized_layout['page_margin_bottom_mm'] * mm,
+        title=f'Payslip - {employee_name}',
+    )
+
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(
+        name='PayslipBody',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=9.4,
+        leading=12.8,
+        textColor=colors.HexColor('#0f172a'),
+    ))
+    styles.add(ParagraphStyle(
+        name='PayslipHeading',
+        parent=styles['Heading3'],
+        fontName='Helvetica-Bold',
+        fontSize=16,
+        leading=19,
+        alignment=1,
+        textColor=colors.HexColor('#0f172a'),
+    ))
+    styles.add(ParagraphStyle(
+        name='PayslipSubHeading',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=10,
+        leading=13,
+        alignment=1,
+        textColor=colors.HexColor('#475569'),
+    ))
+    styles.add(ParagraphStyle(
+        name='PayslipMuted',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=8.8,
+        leading=12,
+        textColor=colors.HexColor('#64748b'),
+    ))
+
+    story = []
+    story.append(Paragraph(xml_escape(safe_company), styles['PayslipHeading']))
+    story.append(Spacer(1, 2))
+    story.append(Paragraph('Employee Payslip', styles['PayslipSubHeading']))
+    story.append(Spacer(1, 5))
+    story.append(Paragraph(f'Payslip for the month of {xml_escape(month_name)} {xml_escape(year)}', styles['PayslipHeading']))
+    story.append(Spacer(1, 10))
+
+    left_info = []
+    right_info = []
+    for idx, line in enumerate(meta_lines):
+        if ':' in line:
+            k, v = line.split(':', 1)
+            row_data = f'<b>{xml_escape(k.strip())}:</b> {xml_escape(v.strip())}'
+        else:
+            row_data = xml_escape(line)
+        if idx % 2 == 0:
+            left_info.append(row_data)
+        else:
+            right_info.append(row_data)
+    max_len = max(len(left_info), len(right_info))
+    info_rows = []
+    for i in range(max_len):
+        info_rows.append([
+            Paragraph(left_info[i], styles['PayslipBody']) if i < len(left_info) else Paragraph('', styles['PayslipBody']),
+            Paragraph(right_info[i], styles['PayslipBody']) if i < len(right_info) else Paragraph('', styles['PayslipBody']),
+        ])
+    usable_width = float(doc.width)
+    info_col_width = usable_width / 2.0
+    info_table = Table(info_rows, colWidths=[info_col_width, info_col_width], hAlign='LEFT')
+    info_table.setStyle(TableStyle([
+        ('GRID', (0, 0), (-1, -1), 0.45, colors.HexColor('#cbd5e1')),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#ffffff')),
+        ('LEFTPADDING', (0, 0), (-1, -1), 5),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+    ]))
+    story.append(info_table)
+    story.append(Spacer(1, 9))
+
+    max_items = max(len(safe_earnings), len(safe_deductions), 1)
+    pay_rows = [[
+        Paragraph('<b>Earnings</b>', styles['PayslipBody']),
+        Paragraph('<b>Actual</b>', styles['PayslipBody']),
+        Paragraph('<b>Deductions</b>', styles['PayslipBody']),
+        Paragraph('<b>Actual</b>', styles['PayslipBody']),
+    ]]
+    for i in range(max_items):
+        earn = safe_earnings[i] if i < len(safe_earnings) else {'name': '', 'amount': ''}
+        ded = safe_deductions[i] if i < len(safe_deductions) else {'name': '', 'amount': ''}
+        pay_rows.append([
+            str(earn.get('name') or ''),
+            f"{float(earn.get('amount') or 0):,.2f}" if earn.get('name') else '',
+            str(ded.get('name') or ''),
+            f"{float(ded.get('amount') or 0):,.2f}" if ded.get('name') else '',
+        ])
+    pay_rows.append([
+        'Total Earnings: INR',
+        f'{total_earnings:,.2f}',
+        'Total Deductions: INR',
+        f'{total_deductions:,.2f}',
+    ])
+
+    # Keep earnings/deductions table fully inside page width.
+    pay_col_widths = [
+        usable_width * 0.36,  # earnings name
+        usable_width * 0.12,  # earnings amount
+        usable_width * 0.36,  # deductions name
+        usable_width * 0.16,  # deductions amount
+    ]
+    pay_table = Table(pay_rows, colWidths=pay_col_widths, hAlign='LEFT')
+    pay_table.setStyle(TableStyle([
+        ('GRID', (0, 0), (-1, -1), 0.45, colors.HexColor('#cbd5e1')),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#eef2ff')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#334155')),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#f8fafc')),
+        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+        ('ALIGN', (3, 0), (3, -1), 'RIGHT'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+    ]))
+    story.append(pay_table)
+    story.append(Spacer(1, 10))
+
+    net_table = Table(
+        [[
+            Paragraph('<b>Net Pay for the month</b>', styles['PayslipBody']),
+            Paragraph(f'<b>INR {net_pay:,.2f}</b>', styles['PayslipBody']),
+        ]],
+        colWidths=[usable_width * 0.74, usable_width * 0.26],
+        hAlign='LEFT',
+    )
+    net_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#ecfeff')),
+        ('LINEBELOW', (0, 0), (-1, 0), 0.6, colors.HexColor('#06b6d4')),
+        ('LEFTPADDING', (0, 0), (-1, -1), 7),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 7),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+    ]))
+    story.append(net_table)
+    if show_amount_words:
+        story.append(Spacer(1, 4))
+        story.append(Paragraph(
+            f'Amount in words: INR {net_pay:,.2f} only',
+            styles['PayslipMuted'],
+        ))
+    story.append(Spacer(1, 6))
+    story.append(Paragraph('This is a system generated payslip and does not require signature.', styles['PayslipMuted']))
+
+    def _draw_header(canvas_obj, _doc_obj):
+        page_w, page_h = A4
+        canvas_obj.saveState()
+        # Top accent line.
+        canvas_obj.setStrokeColor(colors.HexColor('#4f46e5'))
+        canvas_obj.setLineWidth(1.6)
+        canvas_obj.line(
+            normalized_layout['page_margin_left_mm'] * mm,
+            page_h - (normalized_layout['page_margin_top_mm'] * mm) + (2 * mm),
+            page_w - (normalized_layout['page_margin_right_mm'] * mm),
+            page_h - (normalized_layout['page_margin_top_mm'] * mm) + (2 * mm),
+        )
+        if logo_reader:
+            try:
+                canvas_obj.drawImage(
+                    logo_reader,
+                    normalized_layout['page_margin_left_mm'] * mm,
+                    page_h - (normalized_layout['page_margin_top_mm'] * mm) - (13 * mm),
+                    width=24 * mm,
+                    height=12 * mm,
+                    preserveAspectRatio=True,
+                    mask='auto',
+                )
+            except Exception:
+                pass
+        canvas_obj.restoreState()
+
+    doc.build(story, onFirstPage=_draw_header, onLaterPages=_draw_header)
+    return buffer.getvalue()
+
+
 def _pop_messages(request):
     """Pop and return all flash messages."""
     msgs = request.session.pop('_messages', [])
@@ -1464,12 +2018,13 @@ def login_view(request):
                     data = resp.json()
                     request.session['access_token'] = data['access']
                     request.session['refresh_token'] = data.get('refresh', '')
-                    request.session['username'] = form.cleaned_data['username']
+                    request.session['username'] = data.get('username') or form.cleaned_data['username']
                     request.session['client_id'] = data.get('client_id')
                     request.session['role'] = data.get('role', 'employee')
                     request.session['user_id'] = data.get('user_id')
                     request.session['user_email'] = data.get('user_email', '')
                     request.session['employee_id'] = data.get('employee_id')
+                    request.session['employee_code'] = data.get('employee_code', '')
                     request.session['employee_role'] = data.get('employee_role', '')
                     request.session['module_permissions'] = _normalize_module_permissions(
                         data.get('module_permissions', [])
@@ -1500,7 +2055,7 @@ def login_view(request):
                         return redirect('org_setup_onboarding')
                     return _default_redirect_response(request)
                 else:
-                    error = 'Invalid username or password.'
+                    error = 'Invalid employee ID/username or password.'
             except requests.exceptions.RequestException:
                 error = 'Backend API timeout/unreachable during login. Please try again.'
 
@@ -1577,7 +2132,7 @@ def forgot_password_view(request):
 
     if request.method == 'POST':
         if not identifier:
-            error = 'Email or username is required.'
+            error = 'Email, employee ID, or username is required.'
         else:
             payload = {'identifier': identifier}
             if selected_client_id:
@@ -1651,6 +2206,8 @@ def attendance_template_v2(request):
         'attendance_mode': 'manual_attendance',
         'holiday_rule': 'no_paid_holiday_attendance',
         'track_in_out_enabled': False,
+        'break_tracking_enabled': True,
+        'max_break_in_out_per_day': 2,
         'no_attendance_without_punch_out': False,
         'allow_multiple_punches': False,
         'auto_approval_enabled': False,
@@ -1670,6 +2227,7 @@ def attendance_template_v2(request):
         defaults['attendance_mode'] = (request.POST.get('attendance_mode') or '').strip()
         defaults['holiday_rule'] = (request.POST.get('holiday_rule') or '').strip()
         defaults['track_in_out_enabled'] = str(request.POST.get('track_in_out_enabled') or '').strip().lower() in truthy
+        defaults['break_tracking_enabled'] = str(request.POST.get('break_tracking_enabled') or '').strip().lower() in truthy
         defaults['no_attendance_without_punch_out'] = str(request.POST.get('no_attendance_without_punch_out') or '').strip().lower() in truthy
         defaults['allow_multiple_punches'] = str(request.POST.get('allow_multiple_punches') or '').strip().lower() in truthy
         defaults['auto_approval_enabled'] = str(request.POST.get('auto_approval_enabled') or '').strip().lower() in truthy
@@ -1685,6 +2243,10 @@ def attendance_template_v2(request):
             defaults['mark_absent_after_days'] = int((request.POST.get('mark_absent_after_days') or '2').strip())
         except (TypeError, ValueError):
             defaults['mark_absent_after_days'] = 2
+        try:
+            defaults['max_break_in_out_per_day'] = int((request.POST.get('max_break_in_out_per_day') or '2').strip())
+        except (TypeError, ValueError):
+            defaults['max_break_in_out_per_day'] = 2
 
         if not defaults['name']:
             errors.append('Template name is required.')
@@ -1716,8 +2278,12 @@ def attendance_template_v2(request):
             errors.append('Auto approve after days must be between 1 and 365.')
         if defaults['mark_absent_after_days'] < 1 or defaults['mark_absent_after_days'] > 365:
             errors.append('Mark absent after days must be between 1 and 365.')
+        if defaults['max_break_in_out_per_day'] < 1 or defaults['max_break_in_out_per_day'] > 20:
+            errors.append('Max break in/out per day must be between 1 and 20.')
         if defaults['allow_multiple_punches'] and not defaults['track_in_out_enabled']:
             errors.append('Enable Track In & Out Time before allowing multiple punches.')
+        if defaults['break_tracking_enabled'] and not defaults['track_in_out_enabled']:
+            errors.append('Enable Track In & Out Time before enabling break tracking.')
 
         if not errors:
             payload_settings = dict(app_settings)
@@ -1836,7 +2402,7 @@ def dashboard(request):
             holiday_payload = holiday_resp.json()
             holidays_rows = holiday_payload.get('results', holiday_payload) if isinstance(holiday_payload, dict) else holiday_payload
 
-        # Attendance (present today) from dynamic attendance model records.
+        # Keep attendance dynamic-model id for existing UI routes.
         dm_resp = _api_get(request, '/api/dynamic-models/')
         if dm_resp.status_code == 200:
             dm_payload = dm_resp.json()
@@ -1844,18 +2410,21 @@ def dashboard(request):
             attendance_model = next((m for m in dm_rows if str(m.get('slug', '')).lower() == 'attendance'), None)
             if attendance_model:
                 attendance_model_id = attendance_model.get('id')
-                rec_resp = _api_get(request, '/api/dynamic-records/', params={'dynamic_model': attendance_model.get('id')})
-                if rec_resp.status_code == 200:
-                    rec_payload = rec_resp.json()
-                    rec_rows = rec_payload.get('results', rec_payload) if isinstance(rec_payload, dict) else rec_payload
-                    for rec in rec_rows or []:
-                        data = rec.get('data') or {}
-                        att_date = str(data.get('attendance_date') or '')
-                        if att_date != today.isoformat():
-                            continue
-                        status = str(data.get('status') or '').strip().lower()
-                        if status == 'present' or data.get('check_in'):
-                            present_employee_ids.add(str(rec.get('employee')))
+
+        # Attendance (present today) from dedicated attendance records.
+        rec_resp = _api_get(request, '/api/attendance-records/', params={'attendance_date': today.isoformat()})
+        if rec_resp.status_code == 200:
+            rec_payload = rec_resp.json()
+            rec_rows = rec_payload.get('results', rec_payload) if isinstance(rec_payload, dict) else rec_payload
+            rec_rows = [_normalize_attendance_record(row) for row in (rec_rows or [])]
+            for rec in rec_rows or []:
+                data = rec.get('data') or {}
+                att_date = str(data.get('attendance_date') or '')
+                if att_date != today.isoformat():
+                    continue
+                status = str(data.get('status') or '').strip().lower()
+                if status == 'present' or data.get('check_in'):
+                    present_employee_ids.add(str(rec.get('employee')))
 
         employee_by_id = {str(e.get('id')): e for e in employees_rows or []}
 
@@ -2181,6 +2750,19 @@ def document_list(request):
     selected_uploader = (request.GET.get('uploader') or '').strip()
     edit_id = (request.GET.get('edit') or '').strip()
     uploader_options = []
+    documents_initial_section = ''
+    payslip_bulk_preview_rows = []
+    payslip_bulk_preview_summary = {}
+    default_visible_fields = [
+        'employee_name', 'employee_email', 'employee_no', 'role', 'joining_date', 'designation', 'department',
+        'manager_name', 'hr_name',
+        'location', 'effective_work_days', 'lop', 'bank_name', 'bank_account_no',
+        'account_holder_name', 'ifsc_code', 'branch_name', 'upi_id',
+        'pan_number', 'pf_no', 'pf_uan'
+    ]
+    payslip_visible_fields_selected = list(default_visible_fields)
+    payslip_form = {}
+    payslip_builder_initial = {}
 
     role = request.session.get('role', 'employee')
     client_id = request.session.get('client_id')
@@ -2274,6 +2856,44 @@ def document_list(request):
 
     if request.method == 'POST':
         action = (request.POST.get('action') or '').strip()
+        submitted_action = action
+        payslip_form = {
+            'payslip_employee_name': (request.POST.get('payslip_employee_name') or '').strip(),
+            'payslip_recipient_email': (request.POST.get('payslip_recipient_email') or '').strip(),
+            'payslip_month_name': (request.POST.get('payslip_month_name') or '').strip(),
+            'payslip_year': (request.POST.get('payslip_year') or '').strip(),
+            'payslip_monthly_salary': (request.POST.get('payslip_monthly_salary') or '').strip(),
+            'payslip_employee_no': (request.POST.get('payslip_employee_no') or '').strip(),
+            'payslip_role': (request.POST.get('payslip_role') or '').strip(),
+            'payslip_joining_date': (request.POST.get('payslip_joining_date') or '').strip(),
+            'payslip_designation': (request.POST.get('payslip_designation') or '').strip(),
+            'payslip_department': (request.POST.get('payslip_department') or '').strip(),
+            'payslip_manager_name': (request.POST.get('payslip_manager_name') or '').strip(),
+            'payslip_hr_name': (request.POST.get('payslip_hr_name') or '').strip(),
+            'payslip_location': (request.POST.get('payslip_location') or '').strip(),
+            'payslip_effective_work_days': (request.POST.get('payslip_effective_work_days') or '').strip(),
+            'payslip_lop': (request.POST.get('payslip_lop') or '').strip(),
+            'payslip_bank_name': (request.POST.get('payslip_bank_name') or '').strip(),
+            'payslip_account_holder_name': (request.POST.get('payslip_account_holder_name') or '').strip(),
+            'payslip_bank_account_no': (request.POST.get('payslip_bank_account_no') or '').strip(),
+            'payslip_ifsc_code': (request.POST.get('payslip_ifsc_code') or '').strip(),
+            'payslip_branch_name': (request.POST.get('payslip_branch_name') or '').strip(),
+            'payslip_upi_id': (request.POST.get('payslip_upi_id') or '').strip(),
+            'payslip_pan_number': (request.POST.get('payslip_pan_number') or '').strip(),
+            'payslip_pf_no': (request.POST.get('payslip_pf_no') or '').strip(),
+            'payslip_pf_uan': (request.POST.get('payslip_pf_uan') or '').strip(),
+        }
+        posted_visible_fields = [str(v).strip() for v in request.POST.getlist('payslip_visible_fields') if str(v).strip()]
+        if posted_visible_fields:
+            payslip_visible_fields_selected = posted_visible_fields
+        payslip_builder_initial = {
+            'month_name': payslip_form.get('payslip_month_name') or '',
+            'year': payslip_form.get('payslip_year') or '',
+            'monthly_salary': payslip_form.get('payslip_monthly_salary') or '',
+            'earnings': [],
+            'deductions': [],
+            'custom_fields': [],
+        }
 
         if action == 'save_document':
             edit_id = (request.POST.get('edit_id') or '').strip()
@@ -2311,6 +2931,53 @@ def document_list(request):
                 if redir:
                     return redir
                 if save_resp.status_code in (200, 201):
+                    # Persist latest Offer Letter salary-breakup snapshot for Payslip reuse.
+                    snapshot_components_raw = (request.POST.get('offer_snapshot_components_json') or '').strip()
+                    snapshot_annual_raw = (request.POST.get('offer_snapshot_annual_income') or '').strip()
+                    snapshot_state = (request.POST.get('offer_snapshot_state') or '').strip()
+                    try:
+                        snapshot_components = json.loads(snapshot_components_raw) if snapshot_components_raw else []
+                    except json.JSONDecodeError:
+                        snapshot_components = []
+                    normalized_snapshot = []
+                    if isinstance(snapshot_components, list):
+                        for row in snapshot_components:
+                            if not isinstance(row, dict):
+                                continue
+                            name = str(row.get('name') or '').strip()
+                            if not name:
+                                continue
+                            try:
+                                pct = float(row.get('pct') or 0)
+                            except (TypeError, ValueError):
+                                pct = 0.0
+                            normalized_snapshot.append({'name': name, 'pct': max(0.0, round(pct, 2))})
+                    try:
+                        snapshot_annual_income = float(snapshot_annual_raw or 0)
+                    except (TypeError, ValueError):
+                        snapshot_annual_income = 0.0
+
+                    if normalized_snapshot and snapshot_annual_income > 0:
+                        try:
+                            app_settings = request.session.get('app_settings', {}) or {}
+                            settings_snapshot = copy.deepcopy(app_settings) if isinstance(app_settings, dict) else {}
+                            offer_snapshot = settings_snapshot.get('offer_letter') if isinstance(settings_snapshot.get('offer_letter'), dict) else {}
+                            offer_snapshot['salary_breakup_components'] = normalized_snapshot
+                            offer_snapshot['salary_breakup_annual_income'] = round(snapshot_annual_income, 2)
+                            offer_snapshot['salary_breakup_state'] = snapshot_state or offer_snapshot.get('salary_breakup_state') or 'other'
+                            offer_snapshot['salary_breakup_updated_at'] = timezone.now().isoformat()
+                            settings_snapshot['offer_letter'] = offer_snapshot
+
+                            snapshot_payload = {'app_settings': settings_snapshot}
+                            if role == 'superadmin' and client_id:
+                                snapshot_payload['client_id'] = client_id
+                            snapshot_resp = _api_post(request, '/api/clients/settings/', snapshot_payload)
+                            if snapshot_resp.status_code == 200:
+                                saved_snapshot = snapshot_resp.json() if isinstance(snapshot_resp.json(), dict) else settings_snapshot
+                                request.session['app_settings'] = saved_snapshot
+                                request.session.modified = True
+                        except Exception:
+                            pass
                     _flash(request, 'Document saved successfully.', 'success')
                     return redirect('document_list')
                 errors = _error_list_from_response(save_resp, 'Failed to save document.')
@@ -2472,6 +3139,602 @@ def document_list(request):
             except requests.exceptions.ConnectionError:
                 errors = ['Backend server unreachable.']
 
+        elif action == 'send_payslip_pdf':
+            permission_redirect = _require_module_permission(request, 'documents.create')
+            if permission_redirect:
+                return permission_redirect
+
+            employee_name = (request.POST.get('payslip_employee_name') or '').strip()
+            recipient_email = (request.POST.get('payslip_recipient_email') or '').strip()
+            month_name = (request.POST.get('payslip_month_name') or '').strip() or timezone.localdate().strftime('%B')
+            year = (request.POST.get('payslip_year') or '').strip() or str(timezone.localdate().year)
+            monthly_salary_raw = (request.POST.get('payslip_monthly_salary') or '').strip()
+            earnings_raw = (request.POST.get('payslip_earnings_json') or '').strip()
+            deductions_raw = (request.POST.get('payslip_deductions_json') or '').strip()
+            custom_fields_raw = (request.POST.get('payslip_custom_fields_json') or '').strip()
+            visible_fields = [str(v).strip() for v in request.POST.getlist('payslip_visible_fields') if str(v).strip()]
+
+            if not employee_name:
+                errors = ['Employee name is required for payslip.']
+            if not recipient_email:
+                errors.append('Recipient email is required.')
+            else:
+                try:
+                    validate_email(recipient_email)
+                except ValidationError:
+                    errors.append('Recipient email is invalid.')
+
+            earnings = []
+            deductions = []
+            custom_fields = []
+            try:
+                monthly_salary = float(monthly_salary_raw or 0)
+            except (TypeError, ValueError):
+                monthly_salary = 0.0
+            try:
+                parsed_earnings = json.loads(earnings_raw or '[]')
+                if isinstance(parsed_earnings, list):
+                    for row in parsed_earnings:
+                        if not isinstance(row, dict):
+                            continue
+                        name = str(row.get('name') or '').strip()
+                        if not name:
+                            continue
+                        pct_raw = row.get('pct')
+                        if pct_raw is not None and str(pct_raw).strip() != '':
+                            try:
+                                pct = float(pct_raw or 0)
+                            except (TypeError, ValueError):
+                                pct = 0.0
+                            amount = (monthly_salary * max(0.0, pct)) / 100.0
+                        else:
+                            amount = float(row.get('amount') or 0)
+                        earnings.append({'name': name, 'amount': max(0.0, amount)})
+            except Exception:
+                errors.append('Invalid earnings data.')
+
+            try:
+                parsed_deductions = json.loads(deductions_raw or '[]')
+                if isinstance(parsed_deductions, list):
+                    for row in parsed_deductions:
+                        if not isinstance(row, dict):
+                            continue
+                        name = str(row.get('name') or '').strip()
+                        if not name:
+                            continue
+                        mode = str(row.get('mode') or 'amount').strip().lower()
+                        if mode == 'pct':
+                            try:
+                                pct = float(row.get('pct') or 0)
+                            except (TypeError, ValueError):
+                                pct = 0.0
+                            amount = (monthly_salary * max(0.0, pct)) / 100.0
+                        else:
+                            amount = float(row.get('amount') or 0)
+                        deductions.append({'name': name, 'amount': max(0.0, amount)})
+            except Exception:
+                errors.append('Invalid deductions data.')
+
+            try:
+                parsed_custom = json.loads(custom_fields_raw or '[]')
+                if isinstance(parsed_custom, list):
+                    for row in parsed_custom:
+                        if not isinstance(row, dict):
+                            continue
+                        label = str(row.get('label') or '').strip()
+                        if not label:
+                            continue
+                        value = str(row.get('value') or '').strip()
+                        custom_fields.append({'label': label, 'value': value})
+            except Exception:
+                errors.append('Invalid custom fields data.')
+
+            if not earnings:
+                errors.append('Add at least one earning component.')
+            if monthly_salary <= 0:
+                errors.append('Monthly salary base is required and must be greater than 0.')
+
+            if not errors:
+                try:
+                    app_settings = request.session.get('app_settings', {}) or {}
+                    brand_cfg = app_settings.get('brand', {}) if isinstance(app_settings, dict) else {}
+                    company_cfg = app_settings.get('company', {}) if isinstance(app_settings, dict) else {}
+                    ui_cfg = app_settings.get('ui', {}) if isinstance(app_settings, dict) else {}
+                    payslip_cfg = app_settings.get('payslip', {}) if isinstance(app_settings, dict) else {}
+                    company_name = (
+                        str(company_cfg.get('company_name') or '').strip()
+                        or str(brand_cfg.get('brand_name') or '').strip()
+                        or str(request.session.get('client_name') or '').strip()
+                        or 'Your Company'
+                    )
+                    logo_source = (
+                        str(ui_cfg.get('sidebar_logo_url') or '').strip()
+                        or str(brand_cfg.get('logo_url') or '').strip()
+                    )
+
+                    details = {
+                        'month_name': month_name,
+                        'year': year,
+                        'employee_name': employee_name,
+                        'employee_email': recipient_email,
+                        'employee_no': (request.POST.get('payslip_employee_no') or '').strip(),
+                        'role': (request.POST.get('payslip_role') or '').strip(),
+                        'joining_date': (request.POST.get('payslip_joining_date') or '').strip(),
+                        'designation': (request.POST.get('payslip_designation') or '').strip(),
+                        'department': (request.POST.get('payslip_department') or '').strip(),
+                        'manager_name': (request.POST.get('payslip_manager_name') or '').strip(),
+                        'hr_name': (request.POST.get('payslip_hr_name') or '').strip(),
+                        'location': (request.POST.get('payslip_location') or '').strip(),
+                        'effective_work_days': (request.POST.get('payslip_effective_work_days') or '').strip(),
+                        'lop': (request.POST.get('payslip_lop') or '').strip(),
+                        'bank_name': (request.POST.get('payslip_bank_name') or '').strip(),
+                        'account_holder_name': (request.POST.get('payslip_account_holder_name') or '').strip(),
+                        'bank_account_no': (request.POST.get('payslip_bank_account_no') or '').strip(),
+                        'ifsc_code': (request.POST.get('payslip_ifsc_code') or '').strip(),
+                        'branch_name': (request.POST.get('payslip_branch_name') or '').strip(),
+                        'upi_id': (request.POST.get('payslip_upi_id') or '').strip(),
+                        'pan_number': (request.POST.get('payslip_pan_number') or '').strip(),
+                        'pf_no': (request.POST.get('payslip_pf_no') or '').strip(),
+                        'pf_uan': (request.POST.get('payslip_pf_uan') or '').strip(),
+                        'custom_fields': custom_fields,
+                        'visible_fields': visible_fields,
+                    }
+                    payslip_template_body = str(payslip_cfg.get('template_body') or '').strip() if isinstance(payslip_cfg, dict) else ''
+                    show_amount_words = bool(payslip_cfg.get('show_amount_words')) if isinstance(payslip_cfg, dict) and 'show_amount_words' in payslip_cfg else True
+                    layout_settings = _payslip_layout_settings(payslip_cfg)
+
+                    pdf_bytes = _build_payslip_pdf(
+                        details=details,
+                        earnings=earnings,
+                        deductions=deductions,
+                        company_name=company_name,
+                        logo_source=logo_source,
+                        template_body=payslip_template_body,
+                        show_amount_words=show_amount_words,
+                        layout_settings=layout_settings,
+                    )
+                    file_name = f"payslip_{slugify(employee_name) or 'employee'}_{slugify(month_name) or 'month'}_{year}.pdf"
+                    send_branded_email(
+                        subject=f'Payslip - {employee_name} - {month_name} {year}',
+                        recipient_list=[recipient_email],
+                        heading='Payslip',
+                        greeting='Hello,',
+                        lines=[
+                            f'Please find attached your payslip for {month_name} {year}.',
+                            f'Company: {company_name}',
+                            f'Employee: {employee_name}',
+                        ],
+                        closing='Regards, HR Team',
+                        app_settings=request.session.get('app_settings', {}),
+                        attachments=[(file_name, pdf_bytes, 'application/pdf')],
+                        fail_silently=False,
+                    )
+                    _flash(request, f'Payslip PDF sent successfully to {recipient_email}.', 'success')
+                    return redirect('document_list')
+                except Exception:
+                    errors = ['Failed to generate or send payslip PDF.']
+
+        elif action in ('preview_payslip_bulk_auto', 'send_payslip_bulk_auto'):
+            permission_redirect = _require_module_permission(request, 'documents.create')
+            if permission_redirect:
+                return permission_redirect
+
+            month_name = (request.POST.get('payslip_month_name') or '').strip() or timezone.localdate().strftime('%B')
+            year_raw = (request.POST.get('payslip_year') or '').strip() or str(timezone.localdate().year)
+            earnings_raw = (request.POST.get('payslip_earnings_json') or '').strip()
+            deductions_raw = (request.POST.get('payslip_deductions_json') or '').strip()
+            custom_fields_raw = (request.POST.get('payslip_custom_fields_json') or '').strip()
+            visible_fields = [str(v).strip() for v in request.POST.getlist('payslip_visible_fields') if str(v).strip()]
+
+            try:
+                year_int = int(year_raw)
+            except (TypeError, ValueError):
+                year_int = timezone.localdate().year
+
+            month_num = timezone.localdate().month
+            month_candidate = str(month_name or '').strip()
+            if month_candidate.isdigit():
+                parsed_month = int(month_candidate)
+                if 1 <= parsed_month <= 12:
+                    month_num = parsed_month
+            else:
+                lowered = month_candidate.lower()
+                for i in range(1, 13):
+                    if lowered in (calendar.month_name[i].lower(), calendar.month_abbr[i].lower()):
+                        month_num = i
+                        break
+
+            earnings_template = []
+            deductions_template = []
+            custom_fields = []
+            try:
+                parsed_earnings = json.loads(earnings_raw or '[]')
+                if isinstance(parsed_earnings, list):
+                    for row in parsed_earnings:
+                        if not isinstance(row, dict):
+                            continue
+                        name = str(row.get('name') or '').strip()
+                        if not name:
+                            continue
+                        pct = None
+                        if row.get('pct') is not None and str(row.get('pct')).strip() != '':
+                            try:
+                                pct = max(0.0, float(row.get('pct') or 0))
+                            except (TypeError, ValueError):
+                                pct = 0.0
+                        amount = 0.0
+                        try:
+                            amount = max(0.0, float(row.get('amount') or 0))
+                        except (TypeError, ValueError):
+                            amount = 0.0
+                        earnings_template.append({'name': name, 'pct': pct, 'amount': amount})
+                payslip_builder_initial['earnings'] = earnings_template
+            except Exception:
+                errors.append('Invalid earnings data.')
+
+            try:
+                parsed_deductions = json.loads(deductions_raw or '[]')
+                if isinstance(parsed_deductions, list):
+                    for row in parsed_deductions:
+                        if not isinstance(row, dict):
+                            continue
+                        name = str(row.get('name') or '').strip()
+                        if not name:
+                            continue
+                        mode = str(row.get('mode') or 'amount').strip().lower()
+                        amount = 0.0
+                        pct = None
+                        if mode == 'pct':
+                            try:
+                                pct = max(0.0, float(row.get('pct') or 0))
+                            except (TypeError, ValueError):
+                                pct = 0.0
+                        else:
+                            try:
+                                amount = max(0.0, float(row.get('amount') or 0))
+                            except (TypeError, ValueError):
+                                amount = 0.0
+                        deductions_template.append({'name': name, 'amount': amount, 'pct': pct, 'mode': mode})
+                payslip_builder_initial['deductions'] = deductions_template
+            except Exception:
+                errors.append('Invalid deductions data.')
+
+            try:
+                parsed_custom = json.loads(custom_fields_raw or '[]')
+                if isinstance(parsed_custom, list):
+                    for row in parsed_custom:
+                        if not isinstance(row, dict):
+                            continue
+                        label = str(row.get('label') or '').strip()
+                        if not label:
+                            continue
+                        value = str(row.get('value') or '').strip()
+                        custom_fields.append({'label': label, 'value': value})
+                payslip_builder_initial['custom_fields'] = custom_fields
+            except Exception:
+                errors.append('Invalid custom fields data.')
+
+            if not earnings_template:
+                errors.append('Add at least one earning component.')
+
+            if not errors:
+                try:
+                    app_settings = request.session.get('app_settings', {}) or {}
+                    brand_cfg = app_settings.get('brand', {}) if isinstance(app_settings, dict) else {}
+                    company_cfg = app_settings.get('company', {}) if isinstance(app_settings, dict) else {}
+                    ui_cfg = app_settings.get('ui', {}) if isinstance(app_settings, dict) else {}
+                    payslip_cfg = app_settings.get('payslip', {}) if isinstance(app_settings, dict) else {}
+                    company_name = (
+                        str(company_cfg.get('company_name') or '').strip()
+                        or str(brand_cfg.get('brand_name') or '').strip()
+                        or str(request.session.get('client_name') or '').strip()
+                        or 'Your Company'
+                    )
+                    logo_source = (
+                        str(ui_cfg.get('sidebar_logo_url') or '').strip()
+                        or str(brand_cfg.get('logo_url') or '').strip()
+                    )
+                    payslip_template_body = str(payslip_cfg.get('template_body') or '').strip() if isinstance(payslip_cfg, dict) else ''
+                    show_amount_words = bool(payslip_cfg.get('show_amount_words')) if isinstance(payslip_cfg, dict) and 'show_amount_words' in payslip_cfg else True
+                    layout_settings = _payslip_layout_settings(payslip_cfg)
+
+                    payroll_params = {'year': year_int, 'month': month_num}
+                    role = request.session.get('role')
+                    client_id = request.session.get('client_id')
+                    if role == 'superadmin' and client_id:
+                        payroll_params['client'] = client_id
+
+                    payroll_resp = _api_get(request, '/api/payroll-report/', params=payroll_params)
+                    redir = _handle_unauthorized(payroll_resp, request)
+                    if redir:
+                        return redir
+                    if payroll_resp.status_code != 200:
+                        errors = _error_list_from_response(payroll_resp, 'Failed to load payroll report.')
+                        return render(request, 'documents/list.html', {
+                            'documents': documents,
+                            'requests_list': requests_list,
+                            'employee_email_options': employee_email_options,
+                            'edit_item': edit_item,
+                            'search_q': search_q,
+                            'category_q': category_q,
+                            'selected_status': selected_status,
+                            'selected_uploader': selected_uploader,
+                            'uploader_options': uploader_options,
+                            'errors': errors,
+                            'messages': messages,
+                            **_get_context(request),
+                        })
+
+                    payroll_rows = payroll_resp.json() if isinstance(payroll_resp.json(), list) else []
+                    if not payroll_rows:
+                        _flash(request, 'No payroll rows found for selected month/year.', 'error')
+                        return redirect('document_list')
+
+                    emp_params = {}
+                    if role == 'superadmin' and client_id:
+                        emp_params['client'] = client_id
+                    emp_resp = _api_get(request, '/api/employees/', params=emp_params or None)
+                    redir = _handle_unauthorized(emp_resp, request)
+                    if redir:
+                        return redir
+                    emp_payload = emp_resp.json() if emp_resp.status_code == 200 else []
+                    employees = emp_payload.get('results', emp_payload) if isinstance(emp_payload, dict) else emp_payload
+                    employee_by_id = {}
+                    for emp in (employees or []):
+                        if isinstance(emp, dict) and emp.get('id') is not None:
+                            employee_by_id[int(emp.get('id'))] = emp
+
+                    bank_params = {}
+                    if role == 'superadmin' and client_id:
+                        bank_params['client'] = client_id
+                    bank_resp = _api_get(request, '/api/bank-accounts/', params=bank_params or None)
+                    redir = _handle_unauthorized(bank_resp, request)
+                    if redir:
+                        return redir
+                    bank_payload = bank_resp.json() if bank_resp.status_code == 200 else []
+                    bank_rows = bank_payload.get('results', bank_payload) if isinstance(bank_payload, dict) else bank_payload
+                    bank_by_employee = {}
+                    for bank in (bank_rows or []):
+                        if not isinstance(bank, dict):
+                            continue
+                        try:
+                            emp_id = int(bank.get('employee'))
+                        except Exception:
+                            continue
+                        current = bank_by_employee.get(emp_id)
+                        # Prefer active primary account.
+                        if current is None:
+                            bank_by_employee[emp_id] = bank
+                        elif bool(bank.get('is_primary')) and bool(bank.get('is_active', True)):
+                            bank_by_employee[emp_id] = bank
+
+                    sent_count = 0
+                    skipped_count = 0
+                    failed_count = 0
+                    failed_reasons = []
+                    preview_rows = []
+
+                    for row in payroll_rows:
+                        if not isinstance(row, dict):
+                            continue
+                        employee_id = row.get('employee_id')
+                        try:
+                            employee_id = int(employee_id)
+                        except Exception:
+                            skipped_count += 1
+                            continue
+
+                        emp = employee_by_id.get(employee_id, {})
+                        recipient_email = str((emp or {}).get('email') or '').strip()
+                        if not recipient_email:
+                            preview_rows.append({
+                                'employee_name': str(row.get('employee_name') or '').strip() or 'Employee',
+                                'email': '',
+                                'monthly_base': 0.0,
+                                'total_earnings': 0.0,
+                                'total_deductions': 0.0,
+                                'net_pay': 0.0,
+                                'status': 'Skipped (No email)',
+                            })
+                            skipped_count += 1
+                            continue
+
+                        try:
+                            validate_email(recipient_email)
+                        except ValidationError:
+                            preview_rows.append({
+                                'employee_name': str(row.get('employee_name') or '').strip() or 'Employee',
+                                'email': recipient_email,
+                                'monthly_base': 0.0,
+                                'total_earnings': 0.0,
+                                'total_deductions': 0.0,
+                                'net_pay': 0.0,
+                                'status': 'Skipped (Invalid email)',
+                            })
+                            skipped_count += 1
+                            continue
+
+                        monthly_base = 0.0
+                        try:
+                            monthly_base = float(row.get('earned_salary') or 0)
+                        except (TypeError, ValueError):
+                            monthly_base = 0.0
+                        if monthly_base <= 0:
+                            try:
+                                monthly_base = float(row.get('monthly_salary') or 0)
+                            except (TypeError, ValueError):
+                                monthly_base = 0.0
+                        if monthly_base <= 0:
+                            preview_rows.append({
+                                'employee_name': str(row.get('employee_name') or '').strip() or 'Employee',
+                                'email': recipient_email,
+                                'monthly_base': 0.0,
+                                'total_earnings': 0.0,
+                                'total_deductions': 0.0,
+                                'net_pay': 0.0,
+                                'status': 'Skipped (Payroll amount missing)',
+                            })
+                            skipped_count += 1
+                            continue
+
+                        earnings = []
+                        for comp in earnings_template:
+                            pct_val = comp.get('pct')
+                            if pct_val is not None:
+                                amount = (monthly_base * float(pct_val)) / 100.0
+                            else:
+                                amount = float(comp.get('amount') or 0)
+                            earnings.append({
+                                'name': str(comp.get('name') or '').strip(),
+                                'amount': max(0.0, float(amount)),
+                            })
+                        deductions = []
+                        for comp in deductions_template:
+                            d_mode = str(comp.get('mode') or 'amount').strip().lower()
+                            if d_mode == 'pct':
+                                d_amount = (monthly_base * float(comp.get('pct') or 0)) / 100.0
+                            else:
+                                d_amount = float(comp.get('amount') or 0)
+                            deductions.append({
+                                'name': str(comp.get('name') or '').strip(),
+                                'amount': max(0.0, float(d_amount)),
+                            })
+                        total_earnings_preview = sum([float(x.get('amount') or 0) for x in earnings])
+                        total_deductions_preview = sum([float(x.get('amount') or 0) for x in deductions])
+                        net_pay_preview = total_earnings_preview - total_deductions_preview
+
+                        policy_days = float(row.get('policy_monthly_working_days') or 0)
+                        payable_days = float(row.get('payable_present_days') or 0)
+                        lop_value = max(0.0, policy_days - payable_days)
+
+                        full_name = str(row.get('employee_name') or '').strip()
+                        if not full_name:
+                            first_name = str((emp or {}).get('first_name') or '').strip()
+                            last_name = str((emp or {}).get('last_name') or '').strip()
+                            full_name = f'{first_name} {last_name}'.strip() or 'Employee'
+
+                        emp_bank = bank_by_employee.get(employee_id) or {}
+                        emp_role_name = str((emp or {}).get('client_role_name') or '').strip()
+                        emp_role_display = str((emp or {}).get('role_display') or '').strip()
+                        emp_role = str((emp or {}).get('role') or '').strip().title()
+
+                        details = {
+                            'month_name': month_name,
+                            'year': str(year_int),
+                            'employee_name': full_name,
+                            'employee_email': recipient_email,
+                            'employee_no': str((emp or {}).get('employee_code') or '').strip(),
+                            'role': emp_role_display or emp_role,
+                            'joining_date': str((emp or {}).get('joining_date') or '').strip(),
+                            'designation': emp_role_name or emp_role_display or emp_role,
+                            'department': emp_role_name or emp_role_display or emp_role,
+                            'manager_name': str((emp or {}).get('manager_name') or '').strip(),
+                            'hr_name': str((emp or {}).get('hr_name') or '').strip(),
+                            'location': str((emp or {}).get('location') or '').strip(),
+                            'effective_work_days': f'{payable_days:.2f}' if payable_days else '',
+                            'lop': f'{lop_value:.2f}' if lop_value else '',
+                            'bank_name': str((emp_bank or {}).get('bank_name') or '').strip(),
+                            'account_holder_name': str((emp_bank or {}).get('account_holder_name') or '').strip(),
+                            'bank_account_no': str((emp_bank or {}).get('account_number') or '').strip(),
+                            'ifsc_code': str((emp_bank or {}).get('ifsc_code') or '').strip(),
+                            'branch_name': str((emp_bank or {}).get('branch_name') or '').strip(),
+                            'upi_id': str((emp_bank or {}).get('upi_id') or '').strip(),
+                            'pan_number': str((emp or {}).get('pan_number') or '').strip(),
+                            'pf_no': str((emp or {}).get('pf_no') or '').strip(),
+                            'pf_uan': str((emp or {}).get('pf_uan') or '').strip(),
+                            'custom_fields': custom_fields,
+                            'visible_fields': visible_fields,
+                        }
+
+                        if action == 'preview_payslip_bulk_auto':
+                            preview_rows.append({
+                                'employee_name': full_name,
+                                'email': recipient_email,
+                                'monthly_base': round(float(monthly_base), 2),
+                                'total_earnings': round(float(total_earnings_preview), 2),
+                                'total_deductions': round(float(total_deductions_preview), 2),
+                                'net_pay': round(float(net_pay_preview), 2),
+                                'status': 'Ready',
+                            })
+                            sent_count += 1
+                            continue
+
+                        try:
+                            pdf_bytes = _build_payslip_pdf(
+                                details=details,
+                                earnings=earnings,
+                                deductions=deductions,
+                                company_name=company_name,
+                                logo_source=logo_source,
+                                template_body=payslip_template_body,
+                                show_amount_words=show_amount_words,
+                                layout_settings=layout_settings,
+                            )
+                            file_name = f"payslip_{slugify(full_name) or 'employee'}_{slugify(month_name) or 'month'}_{year_int}.pdf"
+                            send_branded_email(
+                                subject=f'Payslip - {full_name} - {month_name} {year_int}',
+                                recipient_list=[recipient_email],
+                                heading='Payslip',
+                                greeting='Hello,',
+                                lines=[
+                                    f'Please find attached your payslip for {month_name} {year_int}.',
+                                    f'Company: {company_name}',
+                                    f'Employee: {full_name}',
+                                ],
+                                closing='Regards, HR Team',
+                                app_settings=request.session.get('app_settings', {}),
+                                attachments=[(file_name, pdf_bytes, 'application/pdf')],
+                                fail_silently=False,
+                            )
+                            sent_count += 1
+                        except Exception as exc:
+                            failed_count += 1
+                            reason = str(exc).strip() or 'Unknown error while generating/sending payslip.'
+                            # Keep flash readable and avoid leaking very long backend traces.
+                            if len(reason) > 220:
+                                reason = reason[:220].rstrip() + '...'
+                            failed_reasons.append(f'{full_name}: {reason}')
+                            preview_rows.append({
+                                'employee_name': full_name,
+                                'email': recipient_email,
+                                'monthly_base': round(float(monthly_base), 2),
+                                'total_earnings': round(float(total_earnings_preview), 2),
+                                'total_deductions': round(float(total_deductions_preview), 2),
+                                'net_pay': round(float(net_pay_preview), 2),
+                                'status': f'Failed ({reason})',
+                            })
+
+                    if action == 'preview_payslip_bulk_auto':
+                        payslip_bulk_preview_rows = preview_rows
+                        payslip_bulk_preview_summary = {
+                            'ready': sent_count,
+                            'skipped': skipped_count,
+                            'failed': failed_count,
+                            'total': len(preview_rows),
+                            'month_name': month_name,
+                            'year': year_int,
+                        }
+                        _flash(request, f'Preview generated. Ready: {sent_count}, Skipped: {skipped_count}.', 'success')
+                        action = ''
+                    else:
+                        if sent_count == 0:
+                            reason_text = failed_reasons[0] if failed_reasons else 'Unknown reason'
+                            _flash(
+                                request,
+                                f'No payslips sent. Skipped: {skipped_count}, Failed: {failed_count}. First error: {reason_text}',
+                                'error'
+                            )
+                        else:
+                            extra_fail = f' First error: {failed_reasons[0]}' if failed_reasons else ''
+                            _flash(
+                                request,
+                                f'Bulk payslip send completed. Sent: {sent_count}, Skipped: {skipped_count}, Failed: {failed_count}.{extra_fail}',
+                                'success'
+                            )
+                        return redirect('document_list')
+                except Exception as exc:
+                    errors = [f'Failed to send bulk payslips from payroll data. {str(exc).strip() or ""}'.strip()]
+
         elif action == 'send_offer_letter_pdf':
             permission_redirect = _require_module_permission(request, 'documents.create')
             if permission_redirect:
@@ -2597,6 +3860,27 @@ def document_list(request):
                         attachments=[(file_name, pdf_bytes, 'application/pdf')],
                         fail_silently=False,
                     )
+                    try:
+                        settings_snapshot = copy.deepcopy(app_settings) if isinstance(app_settings, dict) else {}
+                        offer_snapshot = settings_snapshot.get('offer_letter') if isinstance(settings_snapshot.get('offer_letter'), dict) else {}
+                        offer_snapshot['salary_breakup_components'] = components
+                        offer_snapshot['salary_breakup_annual_income'] = round(float(annual_income or 0), 2)
+                        offer_snapshot['salary_breakup_state'] = state_name
+                        offer_snapshot['salary_breakup_updated_at'] = timezone.now().isoformat()
+                        settings_snapshot['offer_letter'] = offer_snapshot
+
+                        snapshot_payload = {'app_settings': settings_snapshot}
+                        if request.session.get('role') == 'superadmin' and request.session.get('client_id'):
+                            snapshot_payload['client_id'] = request.session.get('client_id')
+
+                        snapshot_resp = _api_post(request, '/api/clients/settings/', snapshot_payload)
+                        if snapshot_resp.status_code == 200:
+                            saved_snapshot = snapshot_resp.json() if isinstance(snapshot_resp.json(), dict) else settings_snapshot
+                            request.session['app_settings'] = saved_snapshot
+                            request.session.modified = True
+                    except Exception:
+                        # Snapshot save is best-effort; do not block offer letter delivery.
+                        pass
                     _flash(request, f'Offer letter PDF sent successfully to {recipient_email}.', 'success')
                     return redirect('document_list')
                 except Exception:
@@ -2614,6 +3898,19 @@ def document_list(request):
         'uploader_options': uploader_options,
         'errors': errors,
         'messages': messages,
+        'payslip_bulk_preview_rows': payslip_bulk_preview_rows,
+        'payslip_bulk_preview_summary': payslip_bulk_preview_summary,
+        'payslip_builder_initial_json': json.dumps(payslip_builder_initial),
+        'payslip_form': payslip_form,
+        'payslip_visible_fields_selected': payslip_visible_fields_selected,
+        'documents_initial_section': (
+            'section-payslip'
+            if (
+                payslip_bulk_preview_rows
+                or submitted_action in ('send_payslip_pdf', 'preview_payslip_bulk_auto', 'send_payslip_bulk_auto')
+            )
+            else ''
+        ) if request.method == 'POST' else '',
         **_get_context(request),
     })
 
@@ -2841,9 +4138,90 @@ def settings_page(request):
 
     sidebar_logo_modules = _get_sidebar_logo_modules(request)
     sidebar_module_icon_keys_csv = ','.join([str(item.get('key') or '').strip() for item in sidebar_logo_modules if str(item.get('key') or '').strip()])
+    payslip_cfg_existing = settings_data.get('payslip') if isinstance(settings_data, dict) else {}
+    if not isinstance(payslip_cfg_existing, dict):
+        payslip_cfg_existing = {}
+    offer_letter_cfg_existing = settings_data.get('offer_letter') if isinstance(settings_data, dict) else {}
+    if not isinstance(offer_letter_cfg_existing, dict):
+        offer_letter_cfg_existing = {}
+
+    def _normalize_payslip_components(raw_rows, fallback_rows):
+        rows = raw_rows if isinstance(raw_rows, list) else fallback_rows
+        normalized = []
+        for row in rows or []:
+            if not isinstance(row, dict):
+                continue
+            name = str(row.get('name') or '').strip()
+            if not name:
+                continue
+            try:
+                amount = float(row.get('amount') or 0)
+            except (TypeError, ValueError):
+                amount = 0.0
+            normalized.append({'name': name, 'amount': max(0.0, round(amount, 2))})
+        return normalized
+
+    def _normalize_offer_breakup_components(raw_rows):
+        normalized = []
+        if not isinstance(raw_rows, list):
+            return normalized
+        for row in raw_rows:
+            if not isinstance(row, dict):
+                continue
+            name = str(row.get('name') or '').strip()
+            if not name:
+                continue
+            try:
+                pct = float(row.get('pct') or 0)
+            except (TypeError, ValueError):
+                pct = 0.0
+            normalized.append({'name': name, 'pct': max(0.0, round(pct, 2))})
+        return normalized
+
+    default_earnings_components = [
+        {'name': 'BASIC', 'amount': 61875.0},
+        {'name': 'HRA', 'amount': 24750.0},
+        {'name': 'SPECIAL ALLOWANCE', 'amount': 41594.0},
+        {'name': 'LTA', 'amount': 9281.0},
+    ]
+    default_deduction_components = [
+        {'name': 'PF', 'amount': 1800.0},
+        {'name': 'PROF TAX', 'amount': 208.0},
+        {'name': 'INCOME TAX', 'amount': 10074.0},
+    ]
+    offer_breakup_components = _normalize_offer_breakup_components(
+        offer_letter_cfg_existing.get('salary_breakup_components')
+    )
+    try:
+        offer_breakup_annual_income = float(offer_letter_cfg_existing.get('salary_breakup_annual_income') or 0)
+    except (TypeError, ValueError):
+        offer_breakup_annual_income = 0.0
+
+    payslip_earnings_raw = payslip_cfg_existing.get('earnings_components')
+    if isinstance(payslip_earnings_raw, list):
+        existing_earnings_components = _normalize_payslip_components(
+            payslip_earnings_raw,
+            default_earnings_components,
+        ) or default_earnings_components
+    elif offer_breakup_components and offer_breakup_annual_income > 0:
+        existing_earnings_components = []
+        for item in offer_breakup_components:
+            pct = float(item.get('pct') or 0)
+            monthly_amt = (offer_breakup_annual_income * pct / 100.0) / 12.0
+            existing_earnings_components.append({
+                'name': str(item.get('name') or '').strip(),
+                'amount': max(0.0, round(monthly_amt, 2)),
+            })
+    else:
+        existing_earnings_components = list(default_earnings_components)
+    existing_deduction_components = _normalize_payslip_components(
+        payslip_cfg_existing.get('deduction_components'),
+        default_deduction_components,
+    ) or default_deduction_components
 
     if request.method == 'POST':
         is_edit_mode = True
+        form_action = str(request.POST.get('form_action') or '').strip().lower()
         def _bool_field(name):
             return str(request.POST.get(name) or '').strip().lower() in ('1', 'true', 'yes', 'on')
         def _int_field(name, default=14, min_value=12, max_value=20):
@@ -2910,70 +4288,132 @@ def settings_page(request):
             elif module_key in sidebar_module_icons:
                 sidebar_module_icons.pop(module_key, None)
 
-        payload_settings = {
-            'brand': {
-                'brand_name': (request.POST.get('brand_name') or '').strip(),
-                'tagline': (request.POST.get('tagline') or '').strip(),
-                'logo_url': logo_url,
-                'favicon_url': favicon_url,
-            },
-            'theme': {
-                'primary_color': (request.POST.get('primary_color') or '').strip(),
-                'secondary_color': (request.POST.get('secondary_color') or '').strip(),
-                'background_color': (request.POST.get('background_color') or '').strip(),
-            },
-            'ui': {
-                'sidebar_variant': (request.POST.get('sidebar_variant') or 'inset').strip().lower(),
-                'sidebar_style': (request.POST.get('sidebar_style') or 'plain').strip().lower(),
-                'layout_direction': (request.POST.get('layout_direction') or 'ltr').strip().lower(),
-                'theme_mode': (request.POST.get('theme_mode') or 'light').strip().lower(),
-                'font_family': (request.POST.get('font_family') or 'inter').strip().lower(),
-                'font_family_custom': (request.POST.get('font_family_custom') or '').strip(),
-                'font_size_base': _int_field('font_size_base', default=14, min_value=12, max_value=20),
-                'sidebar_logo_url': sidebar_logo_url,
-                'sidebar_module_icons': sidebar_module_icons,
-            },
-            'system': {
-                'timezone': (request.POST.get('timezone') or '').strip(),
-                'date_format': (request.POST.get('date_format') or '').strip(),
-            },
-            'company': {
-                'company_name': (request.POST.get('company_name') or '').strip(),
-                'company_email': (request.POST.get('company_email') or '').strip(),
-                'company_phone': (request.POST.get('company_phone') or '').strip(),
-            },
-            'currency': {
-                'currency_code': (request.POST.get('currency_code') or '').strip(),
-                'currency_symbol': (request.POST.get('currency_symbol') or '').strip(),
-            },
-            'email': {
-                'from_email': (request.POST.get('from_email') or '').strip(),
-                'reply_to_email': (request.POST.get('reply_to_email') or '').strip(),
-            },
-            'email_notifications': {
-                'leave_request_email': _bool_field('leave_request_email'),
-                'leave_approval_email': _bool_field('leave_approval_email'),
-                'attendance_alert_email': _bool_field('attendance_alert_email'),
-            },
-            'stripe': {
-                'publishable_key': (request.POST.get('stripe_publishable_key') or '').strip(),
-                'secret_key': (request.POST.get('stripe_secret_key') or '').strip(),
-                'enabled': _bool_field('stripe_enabled'),
-            },
-            'paypal': {
-                'client_id': (request.POST.get('paypal_client_id') or '').strip(),
-                'secret_key': (request.POST.get('paypal_secret_key') or '').strip(),
-                'enabled': _bool_field('paypal_enabled'),
-            },
-            'offer_letter': {
+        earnings_components_raw = (request.POST.get('payslip_earnings_components_json') or '').strip()
+        deduction_components_raw = (request.POST.get('payslip_deduction_components_json') or '').strip()
+        try:
+            posted_earnings_components = json.loads(earnings_components_raw) if earnings_components_raw else existing_earnings_components
+        except json.JSONDecodeError:
+            posted_earnings_components = existing_earnings_components
+        try:
+            posted_deduction_components = json.loads(deduction_components_raw) if deduction_components_raw else existing_deduction_components
+        except json.JSONDecodeError:
+            posted_deduction_components = existing_deduction_components
+        payslip_earnings_components = _normalize_payslip_components(posted_earnings_components, existing_earnings_components) or existing_earnings_components
+        payslip_deduction_components = _normalize_payslip_components(posted_deduction_components, existing_deduction_components) or existing_deduction_components
+
+        if form_action == 'reset_theme_font':
+            payload_settings = copy.deepcopy(settings_data) if isinstance(settings_data, dict) else {}
+            theme_cfg = payload_settings.get('theme') if isinstance(payload_settings.get('theme'), dict) else {}
+            theme_cfg['primary_color'] = '#6c63ff'
+            theme_cfg['secondary_color'] = '#a78bfa'
+            theme_cfg['background_color'] = '#0d0d1a'
+            payload_settings['theme'] = theme_cfg
+
+            ui_cfg = payload_settings.get('ui') if isinstance(payload_settings.get('ui'), dict) else {}
+            ui_cfg['font_family'] = 'inter'
+            ui_cfg['font_family_custom'] = ''
+            ui_cfg['font_size_base'] = 14
+            payload_settings['ui'] = ui_cfg
+        else:
+            existing_offer_letter = settings_data.get('offer_letter') if isinstance(settings_data, dict) else {}
+            if not isinstance(existing_offer_letter, dict):
+                existing_offer_letter = {}
+            offer_letter_payload = dict(existing_offer_letter)
+            offer_letter_payload.update({
                 'template_body': (request.POST.get('offer_letter_template_body') or '').strip(),
                 'show_salary_table': _bool_field('offer_letter_show_salary_table'),
                 'page_margin_top_mm': max(42, min(90, _int_field('offer_letter_page_margin_top_mm', default=48, min_value=42, max_value=90))),
                 'page_margin_right_mm': max(8, min(40, _int_field('offer_letter_page_margin_right_mm', default=18, min_value=8, max_value=40))),
                 'page_margin_bottom_mm': max(8, min(50, _int_field('offer_letter_page_margin_bottom_mm', default=16, min_value=8, max_value=50))),
                 'page_margin_left_mm': max(8, min(40, _int_field('offer_letter_page_margin_left_mm', default=18, min_value=8, max_value=40))),
-            },
-        }
+            })
+            payload_settings = {
+                'brand': {
+                    'brand_name': (request.POST.get('brand_name') or '').strip(),
+                    'tagline': (request.POST.get('tagline') or '').strip(),
+                    'logo_url': logo_url,
+                    'favicon_url': favicon_url,
+                },
+                'theme': {
+                    'primary_color': (request.POST.get('primary_color') or '').strip(),
+                    'secondary_color': (request.POST.get('secondary_color') or '').strip(),
+                    'background_color': (request.POST.get('background_color') or '').strip(),
+                },
+                'ui': {
+                    'sidebar_variant': (request.POST.get('sidebar_variant') or 'inset').strip().lower(),
+                    'sidebar_style': (request.POST.get('sidebar_style') or 'plain').strip().lower(),
+                    'layout_direction': (request.POST.get('layout_direction') or 'ltr').strip().lower(),
+                    'theme_mode': (request.POST.get('theme_mode') or 'light').strip().lower(),
+                    'font_family': (request.POST.get('font_family') or 'inter').strip().lower(),
+                    'font_family_custom': (request.POST.get('font_family_custom') or '').strip(),
+                    'font_size_base': _int_field('font_size_base', default=14, min_value=12, max_value=20),
+                    'sidebar_logo_url': sidebar_logo_url,
+                    'sidebar_module_icons': sidebar_module_icons,
+                },
+                'system': {
+                    'timezone': (request.POST.get('timezone') or '').strip(),
+                    'date_format': (request.POST.get('date_format') or '').strip(),
+                },
+                'company': {
+                    'company_name': (request.POST.get('company_name') or '').strip(),
+                    'company_email': (request.POST.get('company_email') or '').strip(),
+                    'company_phone': (request.POST.get('company_phone') or '').strip(),
+                },
+                'currency': {
+                    'currency_code': (request.POST.get('currency_code') or '').strip(),
+                    'currency_symbol': (request.POST.get('currency_symbol') or '').strip(),
+                },
+                'email': {
+                    'from_email': (request.POST.get('from_email') or '').strip(),
+                    'reply_to_email': (request.POST.get('reply_to_email') or '').strip(),
+                    'email_backend': (request.POST.get('email_backend') or '').strip(),
+                    'email_host': (request.POST.get('email_host') or '').strip(),
+                    'email_port': (request.POST.get('email_port') or '').strip(),
+                    'email_host_user': (request.POST.get('email_host_user') or '').strip(),
+                    'email_host_password': (request.POST.get('email_host_password') or '').strip(),
+                    'email_use_tls': _bool_field('email_use_tls'),
+                },
+                'email_notifications': {
+                    'leave_request_email': _bool_field('leave_request_email'),
+                    'leave_approval_email': _bool_field('leave_approval_email'),
+                    'attendance_alert_email': _bool_field('attendance_alert_email'),
+                },
+                'email_templates': {
+                    'leave_request': {
+                        'subject': (request.POST.get('leave_request_email_subject') or '').strip(),
+                        'body': (request.POST.get('leave_request_email_template') or '').strip(),
+                    },
+                    'leave_approval': {
+                        'subject': (request.POST.get('leave_approval_email_subject') or '').strip(),
+                        'body': (request.POST.get('leave_approval_email_template') or '').strip(),
+                    },
+                    'attendance_alert': {
+                        'subject': (request.POST.get('attendance_alert_email_subject') or '').strip(),
+                        'body': (request.POST.get('attendance_alert_email_template') or '').strip(),
+                    },
+                },
+                'stripe': {
+                    'publishable_key': (request.POST.get('stripe_publishable_key') or '').strip(),
+                    'secret_key': (request.POST.get('stripe_secret_key') or '').strip(),
+                    'enabled': _bool_field('stripe_enabled'),
+                },
+                'paypal': {
+                    'client_id': (request.POST.get('paypal_client_id') or '').strip(),
+                    'secret_key': (request.POST.get('paypal_secret_key') or '').strip(),
+                    'enabled': _bool_field('paypal_enabled'),
+                },
+                'offer_letter': offer_letter_payload,
+                'payslip': {
+                    'template_body': (request.POST.get('payslip_template_body') or '').strip(),
+                    'show_amount_words': _bool_field('payslip_show_amount_words'),
+                    'page_margin_top_mm': max(8, min(35, _int_field('payslip_page_margin_top_mm', default=15, min_value=8, max_value=35))),
+                    'page_margin_right_mm': max(6, min(30, _int_field('payslip_page_margin_right_mm', default=10, min_value=6, max_value=30))),
+                    'page_margin_bottom_mm': max(8, min(35, _int_field('payslip_page_margin_bottom_mm', default=12, min_value=8, max_value=35))),
+                    'page_margin_left_mm': max(6, min(30, _int_field('payslip_page_margin_left_mm', default=10, min_value=6, max_value=30))),
+                    'earnings_components': payslip_earnings_components,
+                    'deduction_components': payslip_deduction_components,
+                },
+            }
 
         payload = {'app_settings': payload_settings}
         if role == 'superadmin' and client_id:
@@ -2988,7 +4428,10 @@ def settings_page(request):
                 saved_settings = save_resp.json() if isinstance(save_resp.json(), dict) else {}
                 request.session['app_settings'] = saved_settings
                 request.session.modified = True
-                _flash(request, 'Settings saved successfully.', 'success')
+                if form_action == 'reset_theme_font':
+                    _flash(request, 'Theme color and font settings reset successfully.', 'success')
+                else:
+                    _flash(request, 'Settings saved successfully.', 'success')
                 return redirect('settings_page')
             errors = _error_list_from_response(save_resp, 'Failed to save settings.')
         except requests.exceptions.ConnectionError:
@@ -2997,6 +4440,11 @@ def settings_page(request):
     return render(request, 'settings/list.html', {
         'settings_data': settings_data,
         'offer_letter_layout': _offer_letter_layout_settings(settings_data.get('offer_letter') if isinstance(settings_data, dict) else {}),
+        'payslip_layout': _payslip_layout_settings(settings_data.get('payslip') if isinstance(settings_data, dict) else {}),
+        'payslip_earnings_components_json': json.dumps(existing_earnings_components),
+        'payslip_deduction_components_json': json.dumps(existing_deduction_components),
+        'offer_breakup_components_json': json.dumps(offer_breakup_components),
+        'offer_breakup_annual_income': offer_breakup_annual_income,
         'is_edit_mode': is_edit_mode,
         'sidebar_logo_modules': sidebar_logo_modules,
         'sidebar_module_icon_keys_csv': sidebar_module_icon_keys_csv,
@@ -3812,6 +5260,11 @@ def _filter_visible_dynamic_fields(request, fields):
     return [field for field in (fields or []) if field.get('visible_to_users', True)]
 
 
+def _exclude_attendance_system_fields(fields):
+    hidden_keys = {'location_lat', 'location_lng', 'selfie_url'}
+    return [field for field in (fields or []) if str(field.get('key') or '') not in hidden_keys]
+
+
 def _filter_visible_dynamic_record_items(request, fields, record_data):
     if _can_manage_all_dynamic_fields(request):
         return list((record_data or {}).items())
@@ -3987,6 +5440,15 @@ def employee_detail(request, pk):
             if dr_resp.status_code == 200:
                 dr_data = dr_resp.json()
                 records = dr_data.get('results', dr_data) if isinstance(dr_data, dict) else dr_data
+            attendance_resp = _api_get(request, '/api/attendance-records/', params={'employee': pk})
+            attendance_records = []
+            if attendance_resp.status_code == 200:
+                attendance_payload = attendance_resp.json()
+                attendance_rows = (
+                    attendance_payload.get('results', attendance_payload)
+                    if isinstance(attendance_payload, dict) else attendance_payload
+                )
+                attendance_records = [_normalize_attendance_record(row) for row in (attendance_rows or [])]
 
             by_model = {r.get('dynamic_model'): r for r in records}
             fields_by_model = {}
@@ -4006,10 +5468,6 @@ def employee_detail(request, pk):
                     selected_month = today.month
                     selected_year = today.year
 
-                attendance_records = [
-                    r for r in records
-                    if r.get('dynamic_model') == attendance_model.get('id')
-                ]
                 attendance_calendar = _build_attendance_calendar(
                     employee,
                     attendance_records,
@@ -5489,11 +6947,37 @@ def payroll_list(request):
     rows = []
     policy_row = None
     compensation_by_employee = {}
+    shifts = []
+    shifts_loaded = False
+    has_shifts = False
+    payroll_shift_required_message = ''
+
+    try:
+        shifts_resp = _api_get(request, '/api/shifts/')
+        redir = _handle_unauthorized(shifts_resp, request)
+        if redir:
+            return redir
+        if shifts_resp.status_code == 200:
+            shifts_payload = shifts_resp.json()
+            shifts = shifts_payload.get('results', shifts_payload) if isinstance(shifts_payload, dict) else shifts_payload
+            shifts_loaded = True
+            has_shifts = bool(shifts)
+    except requests.exceptions.ConnectionError:
+        pass
+
+    if can_manage_payroll and not has_shifts:
+        payroll_shift_required_message = 'First create at least one shift, then setup payroll policy or employee salary.'
+    if can_manage_payroll and shifts_loaded and not has_shifts:
+        _flash(request, payroll_shift_required_message, 'error')
+        return redirect(f"{reverse('shift_list')}?section=create")
 
     if request.method == 'POST' and can_manage_payroll:
         form_action = (request.POST.get('form_action') or '').strip()
         try:
             if form_action == 'save_policy':
+                if not has_shifts:
+                    errors = [payroll_shift_required_message or 'First create at least one shift, then setup payroll policy.']
+                    raise ValueError('shift_required')
                 payload = {
                     'monthly_working_days': int((request.POST.get('monthly_working_days') or '24').strip() or 24),
                     'standard_hours_per_day': (request.POST.get('standard_hours_per_day') or '8').strip() or '8',
@@ -5515,13 +6999,19 @@ def payroll_list(request):
                 errors = _error_list_from_response(save_resp, 'Failed to save payroll policy.')
 
             elif form_action == 'save_compensation':
+                if not has_shifts:
+                    errors = [payroll_shift_required_message or 'First create at least one shift, then setup employee salary.']
+                    raise ValueError('shift_required')
                 employee_id = (request.POST.get('employee_id') or '').strip()
                 salary_basis = (request.POST.get('comp_salary_basis') or 'monthly').strip() or 'monthly'
                 monthly_salary_raw = (request.POST.get('monthly_salary') or '').strip()
                 daily_salary_raw = (request.POST.get('daily_salary') or '').strip()
                 hourly_salary_raw = (request.POST.get('hourly_salary') or '').strip()
+                selected_shift_id = (request.POST.get('shift_id') or '').strip()
+
                 payload = {
                     'employee': employee_id,
+                    'shift': int(selected_shift_id) if selected_shift_id else None,
                     'salary_basis': salary_basis,
                     'monthly_salary': float(monthly_salary_raw) if monthly_salary_raw else None,
                     'daily_salary': float(daily_salary_raw) if daily_salary_raw else None,
@@ -5541,7 +7031,8 @@ def payroll_list(request):
                     return redirect('payroll_list')
                 errors = _error_list_from_response(save_resp, 'Failed to save employee salary details.')
         except (TypeError, ValueError):
-            errors = ['Please enter valid numeric values for salary and policy fields.']
+            if not errors:
+                errors = ['Please enter valid numeric values for salary and policy fields.']
         except requests.exceptions.ConnectionError:
             errors = ['Backend server unreachable.']
 
@@ -5626,7 +7117,10 @@ def payroll_list(request):
         'policy_row': policy_row,
         'compensation_by_employee': compensation_by_employee,
         'compensation_by_employee_json': json.dumps(compensation_by_employee),
+        'shifts': shifts,
         'can_manage_payroll': can_manage_payroll,
+        'has_shifts': has_shifts,
+        'payroll_shift_required_message': payroll_shift_required_message,
         'selected_year': str(selected_year),
         'selected_month': str(selected_month),
         'selected_employee': selected_employee,
@@ -6045,6 +7539,10 @@ def dynamic_model_list(request):
             return redir
         data = resp.json() if resp.status_code == 200 else []
         dynamic_models = data.get('results', data) if isinstance(data, dict) else data
+        dynamic_models = [
+            m for m in (dynamic_models or [])
+            if str((m or {}).get('slug') or '').strip().lower() != 'attendance'
+        ]
 
         if role == 'superadmin':
             client_resp = _api_get(request, '/api/clients/')
@@ -6091,6 +7589,15 @@ def dynamic_model_create(request):
     if request.method == 'POST':
         form = DynamicModelForm(request.POST)
         if form.is_valid():
+            if str(form.cleaned_data.get('slug') or '').strip().lower() == 'attendance':
+                errors = ['Attendance is a separate system module. Please use Attendance module instead of Dynamic Model create.']
+                return render(request, 'dynamic_models/create.html', {
+                    'form': form,
+                    'errors': errors,
+                    'messages': messages,
+                    'role': role,
+                    **_get_context(request),
+                })
             payload = {
                 'name': form.cleaned_data['name'],
                 'slug': form.cleaned_data['slug'],
@@ -6152,6 +7659,9 @@ def dynamic_model_edit(request, pk):
         if get_resp.status_code == 404:
             return render(request, 'errors/404.html', status=404)
         model_data = get_resp.json()
+        if str(model_data.get('slug') or '').strip().lower() == 'attendance':
+            _flash(request, 'Attendance is managed in the separate Attendance module.', 'error')
+            return redirect('attendance_template_v2')
     except requests.exceptions.ConnectionError:
         return render(request, 'dynamic_models/edit.html', {
             'errors': ['Backend server unreachable.'],
@@ -6204,6 +7714,19 @@ def dynamic_model_delete(request, pk):
     addon_redirect = _require_addon(request, 'dynamic_models')
     if addon_redirect:
         return addon_redirect
+    try:
+        model_resp = _api_get(request, f'/api/dynamic-models/{pk}/')
+        redir = _handle_unauthorized(model_resp, request)
+        if redir:
+            return redir
+        if model_resp.status_code == 200:
+            model_data = model_resp.json() if isinstance(model_resp.json(), dict) else {}
+            if str(model_data.get('slug') or '').strip().lower() == 'attendance':
+                _flash(request, 'Attendance cannot be deleted from Dynamic Models. Manage it from Attendance module.', 'error')
+                return redirect('attendance_template_v2')
+    except requests.exceptions.ConnectionError:
+        _flash(request, 'Backend server unreachable.', 'error')
+        return redirect('dynamic_model_list')
     try:
         resp = _api_delete(request, f'/api/dynamic-models/{pk}/')
         redir = _handle_unauthorized(resp, request)
@@ -6268,6 +7791,9 @@ def dynamic_field_list(request, model_id):
         if model_resp.status_code == 404:
             return render(request, 'errors/404.html', status=404)
         dynamic_model = model_resp.json()
+        if str(dynamic_model.get('slug') or '').strip().lower() == 'attendance':
+            _flash(request, 'Attendance fields are managed in Attendance module.', 'error')
+            return redirect('attendance_template_v2')
 
         resp = _api_get(request, f'/api/dynamic-fields/?dynamic_model={model_id}')
         redir = _handle_unauthorized(resp, request)
@@ -6308,6 +7834,9 @@ def dynamic_field_create(request, model_id):
         if model_resp.status_code == 404:
             return render(request, 'errors/404.html', status=404)
         dynamic_model = model_resp.json()
+        if str(dynamic_model.get('slug') or '').strip().lower() == 'attendance':
+            _flash(request, 'Attendance fields are managed in Attendance module.', 'error')
+            return redirect('attendance_template_v2')
     except requests.exceptions.ConnectionError:
         return render(request, 'dynamic_fields/create.html', {
             'errors': ['Backend server unreachable.'],
@@ -6402,6 +7931,9 @@ def dynamic_field_edit(request, model_id, pk):
         if model_resp.status_code == 404:
             return render(request, 'errors/404.html', status=404)
         dynamic_model = model_resp.json()
+        if str(dynamic_model.get('slug') or '').strip().lower() == 'attendance':
+            _flash(request, 'Attendance fields are managed in Attendance module.', 'error')
+            return redirect('attendance_template_v2')
 
         get_resp = _api_get(request, f'/api/dynamic-fields/{pk}/')
         redir = _handle_unauthorized(get_resp, request)
@@ -6503,6 +8035,19 @@ def dynamic_field_delete(request, model_id, pk):
     if addon_redirect:
         return addon_redirect
     try:
+        model_resp = _api_get(request, f'/api/dynamic-models/{model_id}/')
+        redir = _handle_unauthorized(model_resp, request)
+        if redir:
+            return redir
+        if model_resp.status_code == 200:
+            dynamic_model = model_resp.json() if isinstance(model_resp.json(), dict) else {}
+            if str(dynamic_model.get('slug') or '').strip().lower() == 'attendance':
+                _flash(request, 'Attendance fields are managed in Attendance module.', 'error')
+                return redirect('attendance_template_v2')
+    except requests.exceptions.ConnectionError:
+        _flash(request, 'Backend server unreachable.', 'error')
+        return redirect('dynamic_model_list')
+    try:
         resp = _api_delete(request, f'/api/dynamic-fields/{pk}/')
         redir = _handle_unauthorized(resp, request)
         if redir:
@@ -6532,6 +8077,9 @@ def dynamic_record_list(request, model_id):
         if model_resp.status_code == 404:
             return render(request, 'errors/404.html', status=404)
         dynamic_model = model_resp.json()
+        if str(dynamic_model.get('slug') or '').strip().lower() == 'attendance':
+            _flash(request, 'Attendance records are managed in Attendance module.', 'error')
+            return redirect('dynamic_entity_list', model_id=model_id)
 
         resp = _api_get(request, f'/api/dynamic-records/?dynamic_model={model_id}')
         redir = _handle_unauthorized(resp, request)
@@ -6571,6 +8119,9 @@ def dynamic_record_create(request, model_id):
         if model_resp.status_code == 404:
             return render(request, 'errors/404.html', status=404)
         dynamic_model = model_resp.json()
+        if str(dynamic_model.get('slug') or '').strip().lower() == 'attendance':
+            _flash(request, 'Attendance records are managed in Attendance module.', 'error')
+            return redirect('dynamic_entity_list', model_id=model_id)
     except requests.exceptions.ConnectionError:
         return render(request, 'dynamic_records/create.html', {
             'errors': ['Backend server unreachable.'],
@@ -6638,6 +8189,9 @@ def dynamic_record_edit(request, model_id, pk):
         if model_resp.status_code == 404:
             return render(request, 'errors/404.html', status=404)
         dynamic_model = model_resp.json()
+        if str(dynamic_model.get('slug') or '').strip().lower() == 'attendance':
+            _flash(request, 'Attendance records are managed in Attendance module.', 'error')
+            return redirect('dynamic_entity_list', model_id=model_id)
 
         get_resp = _api_get(request, f'/api/dynamic-records/{pk}/')
         redir = _handle_unauthorized(get_resp, request)
@@ -6708,6 +8262,19 @@ def dynamic_record_delete(request, model_id, pk):
     if addon_redirect:
         return addon_redirect
     try:
+        model_resp = _api_get(request, f'/api/dynamic-models/{model_id}/')
+        redir = _handle_unauthorized(model_resp, request)
+        if redir:
+            return redir
+        if model_resp.status_code == 200:
+            dynamic_model = model_resp.json() if isinstance(model_resp.json(), dict) else {}
+            if str(dynamic_model.get('slug') or '').strip().lower() == 'attendance':
+                _flash(request, 'Attendance records are managed in Attendance module.', 'error')
+                return redirect('dynamic_entity_list', model_id=model_id)
+    except requests.exceptions.ConnectionError:
+        _flash(request, 'Backend server unreachable.', 'error')
+        return redirect('dynamic_model_list')
+    try:
         resp = _api_delete(request, f'/api/dynamic-records/{pk}/')
         redir = _handle_unauthorized(resp, request)
         if redir:
@@ -6774,6 +8341,14 @@ def dynamic_entity_list(request, model_id):
     can_manage_attendance_template = False
     attendance_add_locked = False
     attendance_open_record_id = None
+    attendance_open_break_active = False
+    attendance_open_break_count = 0
+    attendance_open_employee_id = None
+    attendance_open_can_punch_out = False
+    attendance_open_punch_out_remaining = ''
+    attendance_break_tracking_enabled = True
+    attendance_break_limit = 2
+    attendance_min_punch_out_hours = 9
     current_employee_id = request.session.get('employee_id')
     current_employee_role = (request.session.get('employee_role') or '').strip().lower()
     try:
@@ -6783,6 +8358,7 @@ def dynamic_entity_list(request, model_id):
         fields = _filter_visible_dynamic_fields(request, fields)
         is_attendance = str(dynamic_model.get('slug', '')).lower() == 'attendance'
         if is_attendance:
+            fields = _exclude_attendance_system_fields(fields)
             addon_redirect = _require_addon(request, 'attendance')
             if addon_redirect:
                 return addon_redirect
@@ -6790,8 +8366,18 @@ def dynamic_entity_list(request, model_id):
                 request.session.get('role') in ('superadmin', 'admin')
                 or _has_any_module_permission(request, ['attendance.create', 'attendance.edit'])
             )
+            app_settings = request.session.get('app_settings') or {}
+            attendance_cfg = app_settings.get('attendance_template_v2') if isinstance(app_settings, dict) else {}
+            if not isinstance(attendance_cfg, dict):
+                attendance_cfg = {}
+            attendance_break_tracking_enabled = bool(attendance_cfg.get('break_tracking_enabled', True))
+            try:
+                attendance_break_limit = int(attendance_cfg.get('max_break_in_out_per_day') or 2)
+            except (TypeError, ValueError):
+                attendance_break_limit = 2
+            attendance_break_limit = max(1, min(20, attendance_break_limit))
 
-        records_params = {'dynamic_model': model_id}
+        records_params = {}
         if is_attendance:
             can_view_all_attendance = (
                 request.session.get('role') in ('superadmin', 'admin')
@@ -6811,13 +8397,18 @@ def dynamic_entity_list(request, model_id):
                 records_params['employee'] = selected_employee_id
             elif not can_view_all_attendance and current_employee_id:
                 records_params['employee'] = current_employee_id
+        else:
+            records_params['dynamic_model'] = model_id
 
-        records_resp = _api_get(request, '/api/dynamic-records/', params=records_params)
+        records_path = '/api/attendance-records/' if is_attendance else '/api/dynamic-records/'
+        records_resp = _api_get(request, records_path, params=records_params)
         redir = _handle_unauthorized(records_resp, request)
         if redir:
             return redir
         records_data = records_resp.json() if records_resp.status_code == 200 else []
         records = records_data.get('results', records_data) if isinstance(records_data, dict) else records_data
+        if is_attendance:
+            records = [_normalize_attendance_record(row) for row in (records or [])]
 
         if is_attendance:
             employee_name_map = {
@@ -6850,6 +8441,34 @@ def dynamic_entity_list(request, model_id):
                 rec['total_time'] = _attendance_total_time(rec_data) or '-'
                 rec['employee_name'] = employee_name_map.get(str(rec.get('employee')), f"Employee #{rec.get('employee')}")
                 rec['is_open_attendance'] = bool(rec_data.get('check_in') and not rec_data.get('check_out'))
+                break_metrics = _attendance_break_metrics(rec_data)
+                rec['break_total_time'] = break_metrics.get('total_break_time') or '00:00:00'
+                rec['break_open'] = bool(break_metrics.get('open_break_active'))
+                rec['closed_break_count'] = int(break_metrics.get('closed_break_count') or 0)
+                rec['can_break_in'] = bool(
+                    attendance_break_tracking_enabled
+                    and rec['is_open_attendance']
+                    and not rec['break_open']
+                    and rec['closed_break_count'] < attendance_break_limit
+                )
+                rec['can_break_out'] = bool(
+                    attendance_break_tracking_enabled
+                    and rec['is_open_attendance']
+                    and rec['break_open']
+                )
+                elapsed_seconds = _attendance_elapsed_seconds(rec_data.get('check_in'), timezone.localtime().strftime('%H:%M:%S'))
+                min_punch_out_seconds = attendance_min_punch_out_hours * 3600
+                rec['can_punch_out'] = bool(
+                    rec['is_open_attendance']
+                    and not rec['break_open']
+                    and elapsed_seconds >= min_punch_out_seconds
+                )
+                if rec['is_open_attendance'] and elapsed_seconds < min_punch_out_seconds:
+                    rec['punch_out_remaining'] = _format_duration(
+                        datetime.timedelta(seconds=(min_punch_out_seconds - elapsed_seconds))
+                    )
+                else:
+                    rec['punch_out_remaining'] = ''
 
             # For regular employee login, lock Add Attendance after first check-in of the day.
             if (not can_view_all_attendance) and current_employee_id:
@@ -6864,6 +8483,11 @@ def dynamic_entity_list(request, model_id):
                     open_row = next((row for row in today_rows if row.get('is_open_attendance')), None)
                     if open_row:
                         attendance_open_record_id = open_row.get('id')
+                        attendance_open_break_active = bool(open_row.get('break_open'))
+                        attendance_open_break_count = int(open_row.get('closed_break_count') or 0)
+                        attendance_open_employee_id = open_row.get('employee')
+                        attendance_open_can_punch_out = bool(open_row.get('can_punch_out'))
+                        attendance_open_punch_out_remaining = open_row.get('punch_out_remaining') or ''
     except requests.exceptions.ConnectionError:
         dynamic_model = {}
         fields = []
@@ -6881,6 +8505,14 @@ def dynamic_entity_list(request, model_id):
         'can_manage_attendance_template': can_manage_attendance_template,
         'attendance_add_locked': attendance_add_locked,
         'attendance_open_record_id': attendance_open_record_id,
+        'attendance_open_break_active': attendance_open_break_active,
+        'attendance_open_break_count': attendance_open_break_count,
+        'attendance_open_employee_id': attendance_open_employee_id,
+        'attendance_open_can_punch_out': attendance_open_can_punch_out,
+        'attendance_open_punch_out_remaining': attendance_open_punch_out_remaining,
+        'attendance_break_tracking_enabled': attendance_break_tracking_enabled,
+        'attendance_break_limit': attendance_break_limit,
+        'attendance_min_punch_out_hours': attendance_min_punch_out_hours,
         'messages': messages,
         **_attendance_feature_flags(request),
         **_get_context(request),
@@ -6895,7 +8527,7 @@ def dynamic_entity_punch(request, model_id):
     """
     Attendance punch flow:
     - first punch of day => Punch In (create)
-    - second punch of day => Punch Out (update existing open record)
+    - during open attendance => Break In / Break Out / Punch Out
     """
     try:
         redir, dynamic_model, fields = _load_dynamic_model_and_fields(request, model_id)
@@ -6923,6 +8555,7 @@ def dynamic_entity_punch(request, model_id):
 
         today = timezone.localdate().isoformat()
         now_time = timezone.localtime().strftime('%H:%M:%S')
+        punch_action = str(request.POST.get('punch_action') or '').strip().lower()
         shift = (request.POST.get('shift') or '').strip()
         remarks = (request.POST.get('remarks') or '').strip()
         location_lat = (request.POST.get('location_lat') or '').strip()
@@ -6937,10 +8570,23 @@ def dynamic_entity_punch(request, model_id):
             _flash(request, 'Selfie is required for this client attendance plan.', 'error')
             return redirect('dynamic_entity_list', model_id=model_id)
 
+        app_settings = request.session.get('app_settings') or {}
+        attendance_cfg = app_settings.get('attendance_template_v2') if isinstance(app_settings, dict) else {}
+        if not isinstance(attendance_cfg, dict):
+            attendance_cfg = {}
+        break_tracking_enabled = bool(attendance_cfg.get('break_tracking_enabled', True))
+        min_punch_out_hours = 9
+        try:
+            max_break_limit = int(attendance_cfg.get('max_break_in_out_per_day') or 2)
+        except (TypeError, ValueError):
+            max_break_limit = 2
+        max_break_limit = max(1, min(20, max_break_limit))
+
         # Find open attendance for employee (today + check_in exists + check_out missing).
         rec_resp = _api_get(
             request,
-            f'/api/dynamic-records/?dynamic_model={model_id}&employee={employee_id}',
+            '/api/attendance-records/',
+            params={'employee': employee_id, 'attendance_date': today},
         )
         redir = _handle_unauthorized(rec_resp, request)
         if redir:
@@ -6950,6 +8596,7 @@ def dynamic_entity_punch(request, model_id):
         if rec_resp.status_code == 200:
             rec_data = rec_resp.json()
             records = rec_data.get('results', rec_data) if isinstance(rec_data, dict) else rec_data
+            records = [_normalize_attendance_record(row) for row in (records or [])]
 
         today_record = None
         open_record = None
@@ -6963,8 +8610,76 @@ def dynamic_entity_punch(request, model_id):
             break
 
         if open_record:
-            # Punch Out
             data = dict(open_record.get('data', {}))
+            break_metrics = _attendance_break_metrics(data)
+            sessions = list(break_metrics.get('sessions') or [])
+            break_open = bool(break_metrics.get('open_break_active'))
+            closed_break_count = int(break_metrics.get('closed_break_count') or 0)
+
+            if punch_action not in ('break_in', 'break_out', 'punch_out'):
+                punch_action = 'punch_out'
+
+            if punch_action == 'break_in':
+                if not break_tracking_enabled:
+                    _flash(request, 'Break tracking is disabled by client settings.', 'error')
+                    return redirect('dynamic_entity_list', model_id=model_id)
+                if break_open:
+                    _flash(request, 'Break already started. Please do Break Out first.', 'error')
+                    return redirect('dynamic_entity_list', model_id=model_id)
+                if closed_break_count >= max_break_limit:
+                    _flash(request, f'Break limit reached for today ({max_break_limit}).', 'error')
+                    return redirect('dynamic_entity_list', model_id=model_id)
+                upd_resp = _api_post(
+                    request,
+                    f"/api/attendance-records/{open_record['id']}/break-in/",
+                    {'at': now_time},
+                )
+                redir = _handle_unauthorized(upd_resp, request)
+                if redir:
+                    return redir
+                if upd_resp.status_code in (200, 201):
+                    _flash(request, f'Break In saved at {now_time}.', 'success')
+                else:
+                    _flash(request, '; '.join(_error_list_from_response(upd_resp, 'Failed to save Break In.')), 'error')
+                return redirect('dynamic_entity_list', model_id=model_id)
+
+            if punch_action == 'break_out':
+                if not break_tracking_enabled:
+                    _flash(request, 'Break tracking is disabled by client settings.', 'error')
+                    return redirect('dynamic_entity_list', model_id=model_id)
+                if not break_open:
+                    _flash(request, 'No active break found. Please do Break In first.', 'error')
+                    return redirect('dynamic_entity_list', model_id=model_id)
+                upd_resp = _api_post(
+                    request,
+                    f"/api/attendance-records/{open_record['id']}/break-out/",
+                    {'at': now_time},
+                )
+                redir = _handle_unauthorized(upd_resp, request)
+                if redir:
+                    return redir
+                if upd_resp.status_code in (200, 201):
+                    _flash(request, f'Break Out saved at {now_time}.', 'success')
+                else:
+                    _flash(request, '; '.join(_error_list_from_response(upd_resp, 'Failed to save Break Out.')), 'error')
+                return redirect('dynamic_entity_list', model_id=model_id)
+
+            if break_open:
+                _flash(request, 'Please do Break Out before Punch Out.', 'error')
+                return redirect('dynamic_entity_list', model_id=model_id)
+
+            elapsed_seconds = _attendance_elapsed_seconds(data.get('check_in'), now_time)
+            min_punch_out_seconds = min_punch_out_hours * 3600
+            if elapsed_seconds < min_punch_out_seconds:
+                remaining = _format_duration(datetime.timedelta(seconds=(min_punch_out_seconds - elapsed_seconds)))
+                _flash(
+                    request,
+                    f'Punch Out is allowed only after {min_punch_out_hours} hours from Punch In. Remaining time: {remaining}.',
+                    'error'
+                )
+                return redirect('dynamic_entity_list', model_id=model_id)
+
+            # Punch Out
             data['check_out'] = now_time
             if remarks:
                 data['remarks'] = remarks
@@ -6974,11 +8689,15 @@ def dynamic_entity_punch(request, model_id):
             if flags.get('attendance_selfie_required'):
                 data['selfie_url'] = selfie_url
             payload = {
-                'dynamic_model': model_id,
                 'employee': employee_id,
-                'data': data,
+                'attendance_date': data.get('attendance_date') or today,
+                'status': data.get('status') or 'present',
+                'shift': _resolve_shift_id(request, data.get('shift')),
+                'check_in': data.get('check_in'),
+                'check_out': now_time,
+                'remarks': data.get('remarks') or '',
             }
-            upd_resp = _api_put(request, f"/api/dynamic-records/{open_record['id']}/", payload)
+            upd_resp = _api_put(request, f"/api/attendance-records/{open_record['id']}/", payload)
             redir = _handle_unauthorized(upd_resp, request)
             if redir:
                 return redir
@@ -6989,31 +8708,28 @@ def dynamic_entity_punch(request, model_id):
             return redirect('dynamic_entity_list', model_id=model_id)
 
         if today_record:
-            _flash(request, 'Attendance already completed for today. You can only check in/check out once per day.', 'error')
+            if punch_action in ('break_in', 'break_out'):
+                _flash(request, 'Cannot mark break. Today attendance is already completed.', 'error')
+            elif punch_action == 'punch_out':
+                _flash(request, 'No open attendance found for today. Please Punch In first.', 'error')
+            else:
+                _flash(request, 'Attendance already completed for today. You can only check in/check out once per day.', 'error')
             return redirect('dynamic_entity_list', model_id=model_id)
 
         # Punch In
-        data = {
+        payload = {
+            'employee': employee_id,
             'attendance_date': today,
             'status': 'present',
             'check_in': now_time,
         }
-        if shift:
-            data['shift'] = shift
+        shift_id = _resolve_shift_id(request, shift)
+        if shift_id:
+            payload['shift'] = shift_id
         if remarks:
-            data['remarks'] = remarks
-        if flags.get('attendance_location_required'):
-            data['location_lat'] = location_lat
-            data['location_lng'] = location_lng
-        if flags.get('attendance_selfie_required'):
-            data['selfie_url'] = selfie_url
+            payload['remarks'] = remarks
 
-        payload = {
-            'dynamic_model': model_id,
-            'employee': employee_id,
-            'data': data,
-        }
-        create_resp = _api_post(request, '/api/dynamic-records/', payload)
+        create_resp = _api_post(request, '/api/attendance-records/', payload)
         redir = _handle_unauthorized(create_resp, request)
         if redir:
             return redir
@@ -7066,16 +8782,28 @@ def dynamic_entity_create(request, model_id):
         })
     is_attendance = str(dynamic_model.get('slug', '')).lower() == 'attendance'
     if is_attendance:
+        fields = _exclude_attendance_system_fields(fields)
         addon_redirect = _require_addon(request, 'attendance')
         if addon_redirect:
             return addon_redirect
     attendance_flags = _attendance_feature_flags(request)
     current_time = timezone.localtime().strftime('%H:%M:%S')
     attendance_locked_employee_id = None
+    attendance_shifts = []
     if is_attendance:
         session_employee_role = (request.session.get('employee_role') or '').strip().lower()
         if request.session.get('role') == 'employee' and session_employee_role == 'employee':
             attendance_locked_employee_id = request.session.get('employee_id')
+        try:
+            shifts_resp = _api_get(request, '/api/shifts/')
+            if shifts_resp.status_code == 200:
+                shifts_payload = shifts_resp.json()
+                attendance_shifts = (
+                    shifts_payload.get('results', shifts_payload)
+                    if isinstance(shifts_payload, dict) else shifts_payload
+                )
+        except requests.exceptions.ConnectionError:
+            attendance_shifts = []
 
     if request.method == 'POST':
         data = {}
@@ -7100,6 +8828,7 @@ def dynamic_entity_create(request, model_id):
                     'is_attendance': is_attendance,
                     'current_time': current_time,
                     'attendance_locked_employee_id': attendance_locked_employee_id,
+                    'attendance_shifts': attendance_shifts,
                     'errors': errors,
                     'messages': messages,
                     **attendance_flags,
@@ -7109,7 +8838,8 @@ def dynamic_entity_create(request, model_id):
             today = timezone.localdate().isoformat()
             rec_resp = _api_get(
                 request,
-                f'/api/dynamic-records/?dynamic_model={model_id}&employee={employee_id}',
+                '/api/attendance-records/',
+                params={'employee': employee_id, 'attendance_date': today},
             )
             redir = _handle_unauthorized(rec_resp, request)
             if redir:
@@ -7117,10 +8847,7 @@ def dynamic_entity_create(request, model_id):
             if rec_resp.status_code == 200:
                 rec_data = rec_resp.json()
                 records = rec_data.get('results', rec_data) if isinstance(rec_data, dict) else rec_data
-                already_exists = any(
-                    str((r.get('data') or {}).get('attendance_date')) == today
-                    for r in records
-                )
+                already_exists = bool(records)
                 if already_exists:
                     errors = ['This employee already has attendance for today. Only one check-in/check-out is allowed per day.']
                     return render(request, 'dynamic_entities/create.html', {
@@ -7129,22 +8856,25 @@ def dynamic_entity_create(request, model_id):
                         'is_attendance': is_attendance,
                         'current_time': current_time,
                         'attendance_locked_employee_id': attendance_locked_employee_id,
+                        'attendance_shifts': attendance_shifts,
                         'errors': errors,
                         'messages': messages,
                         **attendance_flags,
                         **_get_context(request),
                     })
-
-            payload['employee'] = employee_id
-            data['attendance_date'] = today
-            data['status'] = (request.POST.get('status') or 'present').strip()
+            payload = {
+                'employee': employee_id,
+                'attendance_date': today,
+                'status': (request.POST.get('status') or 'present').strip(),
+                'check_in': current_time,
+            }
             shift = (request.POST.get('shift') or '').strip()
             remarks = (request.POST.get('remarks') or '').strip()
-            if shift:
-                data['shift'] = shift
+            shift_id = _resolve_shift_id(request, shift)
+            if shift_id:
+                payload['shift'] = shift_id
             if remarks:
-                data['remarks'] = remarks
-            data['check_in'] = current_time
+                payload['remarks'] = remarks
         else:
             for field in fields:
                 key = field.get('key')
@@ -7163,9 +8893,11 @@ def dynamic_entity_create(request, model_id):
                 if value != '':
                     data[key] = value
 
-        payload['data'] = data
+        if not is_attendance:
+            payload['data'] = data
         try:
-            resp = _api_post(request, '/api/dynamic-records/', payload)
+            create_path = '/api/attendance-records/' if is_attendance else '/api/dynamic-records/'
+            resp = _api_post(request, create_path, payload)
             redir = _handle_unauthorized(resp, request)
             if redir:
                 return redir
@@ -7183,6 +8915,7 @@ def dynamic_entity_create(request, model_id):
         'is_attendance': is_attendance,
         'current_time': current_time,
         'attendance_locked_employee_id': attendance_locked_employee_id,
+        'attendance_shifts': attendance_shifts,
         'errors': errors,
         'messages': messages,
         **attendance_flags,
@@ -7219,13 +8952,18 @@ def dynamic_entity_edit(request, model_id, pk):
         if redir:
             return redir
 
-        rec_resp = _api_get(request, f'/api/dynamic-records/{pk}/')
+        rec_resp = _api_get(
+            request,
+            f"/api/attendance-records/{pk}/" if str(dynamic_model.get('slug', '')).lower() == 'attendance' else f"/api/dynamic-records/{pk}/"
+        )
         redir = _handle_unauthorized(rec_resp, request)
         if redir:
             return redir
         if rec_resp.status_code == 404:
             return render(request, 'errors/404.html', status=404)
         record = rec_resp.json()
+        if str(dynamic_model.get('slug', '')).lower() == 'attendance':
+            record = _normalize_attendance_record(record)
     except requests.exceptions.ConnectionError:
         return render(request, 'dynamic_entities/edit.html', {
             'errors': ['Backend server unreachable.'],
@@ -7234,6 +8972,7 @@ def dynamic_entity_edit(request, model_id, pk):
         })
     is_attendance = str(dynamic_model.get('slug', '')).lower() == 'attendance'
     if is_attendance:
+        fields = _exclude_attendance_system_fields(fields)
         addon_redirect = _require_addon(request, 'attendance')
         if addon_redirect:
             return addon_redirect
@@ -7271,9 +9010,13 @@ def dynamic_entity_edit(request, model_id, pk):
                 existing['remarks'] = remarks
             existing['check_out'] = current_time
             payload = {
-                'dynamic_model': model_id,
                 'employee': record.get('employee'),
-                'data': existing,
+                'attendance_date': existing.get('attendance_date'),
+                'status': existing.get('status') or 'present',
+                'shift': _resolve_shift_id(request, existing.get('shift')),
+                'check_in': existing.get('check_in'),
+                'check_out': current_time,
+                'remarks': existing.get('remarks') or '',
             }
         else:
             data = {}
@@ -7297,7 +9040,8 @@ def dynamic_entity_edit(request, model_id, pk):
             payload = {'dynamic_model': model_id, 'data': data}
 
         try:
-            resp = _api_put(request, f'/api/dynamic-records/{pk}/', payload)
+            update_path = f'/api/attendance-records/{pk}/' if is_attendance else f'/api/dynamic-records/{pk}/'
+            resp = _api_put(request, update_path, payload)
             redir = _handle_unauthorized(resp, request)
             if redir:
                 return redir
@@ -7347,7 +9091,9 @@ def dynamic_entity_delete(request, model_id, pk):
     if addon_redirect:
         return addon_redirect
     try:
-        resp = _api_delete(request, f'/api/dynamic-records/{pk}/')
+        is_attendance = bool(probe_model and str(probe_model.get('slug', '')).lower() == 'attendance')
+        delete_path = f'/api/attendance-records/{pk}/' if is_attendance else f'/api/dynamic-records/{pk}/'
+        resp = _api_delete(request, delete_path)
         redir = _handle_unauthorized(resp, request)
         if redir:
             return redir

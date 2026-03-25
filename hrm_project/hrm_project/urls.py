@@ -27,6 +27,7 @@ from employees.views import EmployeeViewSet
 from custom_fields.views import CustomFieldViewSet, CustomFieldValueViewSet
 from clients.views import ClientViewSet, ClientRoleViewSet
 from dynamic_models.views import DynamicModelViewSet, DynamicFieldViewSet, DynamicRecordViewSet, AutoClockoutRunView
+from attendance.views import AttendanceRecordViewSet, AttendanceBreakViewSet
 from leaves.views import LeaveRequestViewSet, LeaveTypeViewSet, LeaveBalanceView
 from holidays.views import HolidayViewSet
 from payroll.views import PayrollPolicyViewSet, EmployeeCompensationViewSet, PayrollReportView
@@ -48,6 +49,8 @@ router.register("custom-field-values", CustomFieldValueViewSet, basename="custom
 router.register("dynamic-models", DynamicModelViewSet, basename="dynamic-models")
 router.register("dynamic-fields", DynamicFieldViewSet, basename="dynamic-fields")
 router.register("dynamic-records", DynamicRecordViewSet, basename="dynamic-records")
+router.register("attendance-records", AttendanceRecordViewSet, basename="attendance-records")
+router.register("attendance-breaks", AttendanceBreakViewSet, basename="attendance-breaks")
 router.register("leaves", LeaveRequestViewSet, basename="leaves")
 router.register("leave-types", LeaveTypeViewSet, basename="leave-types")
 router.register("holidays", HolidayViewSet, basename="holidays")

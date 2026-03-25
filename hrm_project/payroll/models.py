@@ -2,6 +2,7 @@ from django.db import models
 
 from clients.models import Client
 from employees.models import Employee
+from shifts.models import Shift
 
 
 class PayrollPolicy(models.Model):
@@ -39,6 +40,13 @@ class EmployeeCompensation(models.Model):
     )
 
     employee = models.OneToOneField(Employee, on_delete=models.CASCADE, related_name='compensation')
+    shift = models.ForeignKey(
+        Shift,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='employee_compensations',
+    )
     salary_basis = models.CharField(max_length=10, choices=SALARY_BASIS_CHOICES, default=BASIS_MONTHLY)
     monthly_salary = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     daily_salary = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
