@@ -1447,15 +1447,23 @@ def _default_payslip_template():
     return (
         'Payslip for the month of {{month_name}} {{year}}\n\n'
         'Name: {{employee_name}}\n'
+        'Employee Email: {{employee_email}}\n'
         'Employee No: {{employee_no}}\n'
+        'Role: {{role}}\n'
         'Joining Date: {{joining_date}}\n'
         'Designation: {{designation}}\n'
         'Department: {{department}}\n'
+        'Manager: {{manager_name}}\n'
+        'HR: {{hr_name}}\n'
         'Location: {{location}}\n'
         'Effective Work Days: {{effective_work_days}}\n'
         'LOP: {{lop}}\n'
         'Bank Name: {{bank_name}}\n'
+        'Account Holder Name: {{account_holder_name}}\n'
         'Bank Account No: {{bank_account_no}}\n'
+        'IFSC Code: {{ifsc_code}}\n'
+        'Branch Name: {{branch_name}}\n'
+        'UPI ID: {{upi_id}}\n'
         'PAN Number: {{pan_number}}\n'
         'PF No: {{pf_no}}\n'
         'PF UAN: {{pf_uan}}'
@@ -1556,6 +1564,12 @@ def _build_payslip_pdf(
     total_earnings = sum([r.get('amount', 0.0) for r in safe_earnings])
     total_deductions = sum([r.get('amount', 0.0) for r in safe_deductions])
     net_pay = total_earnings - total_deductions
+    detail_keys = [
+        'employee_name', 'employee_email', 'employee_no', 'role', 'joining_date', 'designation', 'department',
+        'manager_name', 'hr_name', 'location', 'effective_work_days', 'lop', 'bank_name',
+        'account_holder_name', 'bank_account_no', 'ifsc_code', 'branch_name', 'upi_id',
+        'pan_number', 'pf_no', 'pf_uan',
+    ]
 
     visible_fields = data.get('visible_fields')
     visible_fields_set = None
@@ -1568,15 +1582,23 @@ def _build_payslip_pdf(
         'month_name': month_name,
         'year': year,
         'employee_name': employee_name,
+        'employee_email': str(data.get('employee_email') or '').strip(),
         'employee_no': str(data.get('employee_no') or '').strip(),
+        'role': str(data.get('role') or '').strip(),
         'joining_date': str(data.get('joining_date') or '').strip(),
         'designation': str(data.get('designation') or '').strip(),
         'department': str(data.get('department') or '').strip(),
+        'manager_name': str(data.get('manager_name') or '').strip(),
+        'hr_name': str(data.get('hr_name') or '').strip(),
         'location': str(data.get('location') or '').strip(),
         'effective_work_days': str(data.get('effective_work_days') or '').strip(),
         'lop': str(data.get('lop') or '').strip(),
         'bank_name': str(data.get('bank_name') or '').strip(),
+        'account_holder_name': str(data.get('account_holder_name') or '').strip(),
         'bank_account_no': str(data.get('bank_account_no') or '').strip(),
+        'ifsc_code': str(data.get('ifsc_code') or '').strip(),
+        'branch_name': str(data.get('branch_name') or '').strip(),
+        'upi_id': str(data.get('upi_id') or '').strip(),
         'pan_number': str(data.get('pan_number') or '').strip(),
         'pf_no': str(data.get('pf_no') or '').strip(),
         'pf_uan': str(data.get('pf_uan') or '').strip(),
@@ -1585,21 +1607,17 @@ def _build_payslip_pdf(
         'net_pay': f'{net_pay:,.2f}',
     }
     if visible_fields_set is not None:
-        for key in [
-            'employee_name', 'employee_no', 'joining_date', 'designation', 'department',
-            'location', 'effective_work_days', 'lop', 'bank_name', 'bank_account_no',
-            'pan_number', 'pf_no', 'pf_uan'
-        ]:
+        for key in detail_keys:
             if key not in visible_fields_set:
                 render_context[key] = ''
+            else:
+                # Keep checked fields visible even when data is missing.
+                if str(render_context.get(key) or '').strip() == '':
+                    render_context[key] = '-'
 
     hidden_fields = []
     if visible_fields_set is not None:
-        for key in [
-            'employee_name', 'employee_no', 'joining_date', 'designation', 'department',
-            'location', 'effective_work_days', 'lop', 'bank_name', 'bank_account_no',
-            'pan_number', 'pf_no', 'pf_uan'
-        ]:
+        for key in detail_keys:
             if key not in visible_fields_set:
                 hidden_fields.append(key)
 
@@ -1620,6 +1638,12 @@ def _build_payslip_pdf(
     rendered_meta = _render_payslip_text(prepared_template, render_context)
     meta_lines = [line.strip() for line in str(rendered_meta or '').splitlines() if line.strip()]
     meta_lines = [line for line in meta_lines if not re.match(r'^[A-Za-z0-9 /._-]+:\s*$', line)]
+    month_heading_txt = f'payslip for the month of {month_name} {year}'.strip().lower()
+    meta_lines = [
+        line for line in meta_lines
+        if str(line or '').strip().lower() not in ('payslip', month_heading_txt)
+        and not str(line or '').strip().lower().startswith('payslip for the month of ')
+    ]
 
     if isinstance(custom_fields, list):
         for item in custom_fields:
@@ -1683,25 +1707,44 @@ def _build_payslip_pdf(
         name='PayslipBody',
         parent=styles['Normal'],
         fontName='Helvetica',
-        fontSize=9.6,
-        leading=13,
-        textColor=colors.black,
+        fontSize=9.4,
+        leading=12.8,
+        textColor=colors.HexColor('#0f172a'),
     ))
     styles.add(ParagraphStyle(
         name='PayslipHeading',
         parent=styles['Heading3'],
         fontName='Helvetica-Bold',
-        fontSize=12,
-        leading=14,
+        fontSize=16,
+        leading=19,
         alignment=1,
-        textColor=colors.black,
+        textColor=colors.HexColor('#0f172a'),
+    ))
+    styles.add(ParagraphStyle(
+        name='PayslipSubHeading',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=10,
+        leading=13,
+        alignment=1,
+        textColor=colors.HexColor('#475569'),
+    ))
+    styles.add(ParagraphStyle(
+        name='PayslipMuted',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=8.8,
+        leading=12,
+        textColor=colors.HexColor('#64748b'),
     ))
 
     story = []
-    story.append(Paragraph(safe_company.upper(), styles['PayslipHeading']))
-    story.append(Spacer(1, 4))
-    story.append(Paragraph(f'Payslip for the month of {month_name} {year}', styles['PayslipHeading']))
-    story.append(Spacer(1, 8))
+    story.append(Paragraph(xml_escape(safe_company), styles['PayslipHeading']))
+    story.append(Spacer(1, 2))
+    story.append(Paragraph('Employee Payslip', styles['PayslipSubHeading']))
+    story.append(Spacer(1, 5))
+    story.append(Paragraph(f'Payslip for the month of {xml_escape(month_name)} {xml_escape(year)}', styles['PayslipHeading']))
+    story.append(Spacer(1, 10))
 
     left_info = []
     right_info = []
@@ -1722,17 +1765,20 @@ def _build_payslip_pdf(
             Paragraph(left_info[i], styles['PayslipBody']) if i < len(left_info) else Paragraph('', styles['PayslipBody']),
             Paragraph(right_info[i], styles['PayslipBody']) if i < len(right_info) else Paragraph('', styles['PayslipBody']),
         ])
-    info_table = Table(info_rows, colWidths=[92 * mm, 92 * mm], hAlign='LEFT')
+    usable_width = float(doc.width)
+    info_col_width = usable_width / 2.0
+    info_table = Table(info_rows, colWidths=[info_col_width, info_col_width], hAlign='LEFT')
     info_table.setStyle(TableStyle([
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+        ('GRID', (0, 0), (-1, -1), 0.45, colors.HexColor('#cbd5e1')),
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 4),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
-        ('TOPPADDING', (0, 0), (-1, -1), 3),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#ffffff')),
+        ('LEFTPADDING', (0, 0), (-1, -1), 5),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
     ]))
     story.append(info_table)
-    story.append(Spacer(1, 8))
+    story.append(Spacer(1, 9))
 
     max_items = max(len(safe_earnings), len(safe_deductions), 1)
     pay_rows = [[
@@ -1757,51 +1803,83 @@ def _build_payslip_pdf(
         f'{total_deductions:,.2f}',
     ])
 
-    pay_table = Table(pay_rows, colWidths=[80 * mm, 22 * mm, 80 * mm, 22 * mm], hAlign='LEFT')
+    # Keep earnings/deductions table fully inside page width.
+    pay_col_widths = [
+        usable_width * 0.36,  # earnings name
+        usable_width * 0.12,  # earnings amount
+        usable_width * 0.36,  # deductions name
+        usable_width * 0.16,  # deductions amount
+    ]
+    pay_table = Table(pay_rows, colWidths=pay_col_widths, hAlign='LEFT')
     pay_table.setStyle(TableStyle([
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+        ('GRID', (0, 0), (-1, -1), 0.45, colors.HexColor('#cbd5e1')),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#eef2ff')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#334155')),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#f8fafc')),
         ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
         ('ALIGN', (3, 0), (3, -1), 'RIGHT'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 4),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
-        ('TOPPADDING', (0, 0), (-1, -1), 3),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
     ]))
     story.append(pay_table)
-    story.append(Spacer(1, 8))
+    story.append(Spacer(1, 10))
 
-    story.append(Paragraph(
-        f'<b>Net Pay for the month (Total Earnings - Total Deductions): INR {net_pay:,.2f}</b>',
-        styles['PayslipBody'],
-    ))
+    net_table = Table(
+        [[
+            Paragraph('<b>Net Pay for the month</b>', styles['PayslipBody']),
+            Paragraph(f'<b>INR {net_pay:,.2f}</b>', styles['PayslipBody']),
+        ]],
+        colWidths=[usable_width * 0.74, usable_width * 0.26],
+        hAlign='LEFT',
+    )
+    net_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#ecfeff')),
+        ('LINEBELOW', (0, 0), (-1, 0), 0.6, colors.HexColor('#06b6d4')),
+        ('LEFTPADDING', (0, 0), (-1, -1), 7),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 7),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+    ]))
+    story.append(net_table)
     if show_amount_words:
         story.append(Spacer(1, 4))
         story.append(Paragraph(
-            f'(Amount in words: INR {net_pay:,.2f} only)',
-            styles['PayslipBody'],
+            f'Amount in words: INR {net_pay:,.2f} only',
+            styles['PayslipMuted'],
         ))
     story.append(Spacer(1, 6))
-    story.append(Paragraph('This is a system generated payslip and does not require signature.', styles['PayslipBody']))
+    story.append(Paragraph('This is a system generated payslip and does not require signature.', styles['PayslipMuted']))
 
     def _draw_header(canvas_obj, _doc_obj):
-        if not logo_reader:
-            return
         page_w, page_h = A4
         canvas_obj.saveState()
-        try:
-            canvas_obj.drawImage(
-                logo_reader,
-                normalized_layout['page_margin_left_mm'] * mm,
-                page_h - (normalized_layout['page_margin_top_mm'] * mm) - (12 * mm),
-                width=24 * mm,
-                height=12 * mm,
-                preserveAspectRatio=True,
-                mask='auto',
-            )
-        except Exception:
-            pass
+        # Top accent line.
+        canvas_obj.setStrokeColor(colors.HexColor('#4f46e5'))
+        canvas_obj.setLineWidth(1.6)
+        canvas_obj.line(
+            normalized_layout['page_margin_left_mm'] * mm,
+            page_h - (normalized_layout['page_margin_top_mm'] * mm) + (2 * mm),
+            page_w - (normalized_layout['page_margin_right_mm'] * mm),
+            page_h - (normalized_layout['page_margin_top_mm'] * mm) + (2 * mm),
+        )
+        if logo_reader:
+            try:
+                canvas_obj.drawImage(
+                    logo_reader,
+                    normalized_layout['page_margin_left_mm'] * mm,
+                    page_h - (normalized_layout['page_margin_top_mm'] * mm) - (13 * mm),
+                    width=24 * mm,
+                    height=12 * mm,
+                    preserveAspectRatio=True,
+                    mask='auto',
+                )
+            except Exception:
+                pass
         canvas_obj.restoreState()
 
     doc.build(story, onFirstPage=_draw_header, onLaterPages=_draw_header)
@@ -2676,8 +2754,10 @@ def document_list(request):
     payslip_bulk_preview_rows = []
     payslip_bulk_preview_summary = {}
     default_visible_fields = [
-        'employee_name', 'employee_no', 'joining_date', 'designation', 'department',
+        'employee_name', 'employee_email', 'employee_no', 'role', 'joining_date', 'designation', 'department',
+        'manager_name', 'hr_name',
         'location', 'effective_work_days', 'lop', 'bank_name', 'bank_account_no',
+        'account_holder_name', 'ifsc_code', 'branch_name', 'upi_id',
         'pan_number', 'pf_no', 'pf_uan'
     ]
     payslip_visible_fields_selected = list(default_visible_fields)
@@ -2784,14 +2864,21 @@ def document_list(request):
             'payslip_year': (request.POST.get('payslip_year') or '').strip(),
             'payslip_monthly_salary': (request.POST.get('payslip_monthly_salary') or '').strip(),
             'payslip_employee_no': (request.POST.get('payslip_employee_no') or '').strip(),
+            'payslip_role': (request.POST.get('payslip_role') or '').strip(),
             'payslip_joining_date': (request.POST.get('payslip_joining_date') or '').strip(),
             'payslip_designation': (request.POST.get('payslip_designation') or '').strip(),
             'payslip_department': (request.POST.get('payslip_department') or '').strip(),
+            'payslip_manager_name': (request.POST.get('payslip_manager_name') or '').strip(),
+            'payslip_hr_name': (request.POST.get('payslip_hr_name') or '').strip(),
             'payslip_location': (request.POST.get('payslip_location') or '').strip(),
             'payslip_effective_work_days': (request.POST.get('payslip_effective_work_days') or '').strip(),
             'payslip_lop': (request.POST.get('payslip_lop') or '').strip(),
             'payslip_bank_name': (request.POST.get('payslip_bank_name') or '').strip(),
+            'payslip_account_holder_name': (request.POST.get('payslip_account_holder_name') or '').strip(),
             'payslip_bank_account_no': (request.POST.get('payslip_bank_account_no') or '').strip(),
+            'payslip_ifsc_code': (request.POST.get('payslip_ifsc_code') or '').strip(),
+            'payslip_branch_name': (request.POST.get('payslip_branch_name') or '').strip(),
+            'payslip_upi_id': (request.POST.get('payslip_upi_id') or '').strip(),
             'payslip_pan_number': (request.POST.get('payslip_pan_number') or '').strip(),
             'payslip_pf_no': (request.POST.get('payslip_pf_no') or '').strip(),
             'payslip_pf_uan': (request.POST.get('payslip_pf_uan') or '').strip(),
@@ -3169,15 +3256,23 @@ def document_list(request):
                         'month_name': month_name,
                         'year': year,
                         'employee_name': employee_name,
+                        'employee_email': recipient_email,
                         'employee_no': (request.POST.get('payslip_employee_no') or '').strip(),
+                        'role': (request.POST.get('payslip_role') or '').strip(),
                         'joining_date': (request.POST.get('payslip_joining_date') or '').strip(),
                         'designation': (request.POST.get('payslip_designation') or '').strip(),
                         'department': (request.POST.get('payslip_department') or '').strip(),
+                        'manager_name': (request.POST.get('payslip_manager_name') or '').strip(),
+                        'hr_name': (request.POST.get('payslip_hr_name') or '').strip(),
                         'location': (request.POST.get('payslip_location') or '').strip(),
                         'effective_work_days': (request.POST.get('payslip_effective_work_days') or '').strip(),
                         'lop': (request.POST.get('payslip_lop') or '').strip(),
                         'bank_name': (request.POST.get('payslip_bank_name') or '').strip(),
+                        'account_holder_name': (request.POST.get('payslip_account_holder_name') or '').strip(),
                         'bank_account_no': (request.POST.get('payslip_bank_account_no') or '').strip(),
+                        'ifsc_code': (request.POST.get('payslip_ifsc_code') or '').strip(),
+                        'branch_name': (request.POST.get('payslip_branch_name') or '').strip(),
+                        'upi_id': (request.POST.get('payslip_upi_id') or '').strip(),
                         'pan_number': (request.POST.get('payslip_pan_number') or '').strip(),
                         'pf_no': (request.POST.get('payslip_pf_no') or '').strip(),
                         'pf_uan': (request.POST.get('payslip_pf_uan') or '').strip(),
@@ -3389,9 +3484,34 @@ def document_list(request):
                         if isinstance(emp, dict) and emp.get('id') is not None:
                             employee_by_id[int(emp.get('id'))] = emp
 
+                    bank_params = {}
+                    if role == 'superadmin' and client_id:
+                        bank_params['client'] = client_id
+                    bank_resp = _api_get(request, '/api/bank-accounts/', params=bank_params or None)
+                    redir = _handle_unauthorized(bank_resp, request)
+                    if redir:
+                        return redir
+                    bank_payload = bank_resp.json() if bank_resp.status_code == 200 else []
+                    bank_rows = bank_payload.get('results', bank_payload) if isinstance(bank_payload, dict) else bank_payload
+                    bank_by_employee = {}
+                    for bank in (bank_rows or []):
+                        if not isinstance(bank, dict):
+                            continue
+                        try:
+                            emp_id = int(bank.get('employee'))
+                        except Exception:
+                            continue
+                        current = bank_by_employee.get(emp_id)
+                        # Prefer active primary account.
+                        if current is None:
+                            bank_by_employee[emp_id] = bank
+                        elif bool(bank.get('is_primary')) and bool(bank.get('is_active', True)):
+                            bank_by_employee[emp_id] = bank
+
                     sent_count = 0
                     skipped_count = 0
                     failed_count = 0
+                    failed_reasons = []
                     preview_rows = []
 
                     for row in payroll_rows:
@@ -3493,22 +3613,35 @@ def document_list(request):
                             last_name = str((emp or {}).get('last_name') or '').strip()
                             full_name = f'{first_name} {last_name}'.strip() or 'Employee'
 
+                        emp_bank = bank_by_employee.get(employee_id) or {}
+                        emp_role_name = str((emp or {}).get('client_role_name') or '').strip()
+                        emp_role_display = str((emp or {}).get('role_display') or '').strip()
+                        emp_role = str((emp or {}).get('role') or '').strip().title()
+
                         details = {
                             'month_name': month_name,
                             'year': str(year_int),
                             'employee_name': full_name,
+                            'employee_email': recipient_email,
                             'employee_no': str((emp or {}).get('employee_code') or '').strip(),
+                            'role': emp_role_display or emp_role,
                             'joining_date': str((emp or {}).get('joining_date') or '').strip(),
-                            'designation': '',
-                            'department': '',
-                            'location': '',
+                            'designation': emp_role_name or emp_role_display or emp_role,
+                            'department': emp_role_name or emp_role_display or emp_role,
+                            'manager_name': str((emp or {}).get('manager_name') or '').strip(),
+                            'hr_name': str((emp or {}).get('hr_name') or '').strip(),
+                            'location': str((emp or {}).get('location') or '').strip(),
                             'effective_work_days': f'{payable_days:.2f}' if payable_days else '',
                             'lop': f'{lop_value:.2f}' if lop_value else '',
-                            'bank_name': '',
-                            'bank_account_no': '',
-                            'pan_number': '',
-                            'pf_no': '',
-                            'pf_uan': '',
+                            'bank_name': str((emp_bank or {}).get('bank_name') or '').strip(),
+                            'account_holder_name': str((emp_bank or {}).get('account_holder_name') or '').strip(),
+                            'bank_account_no': str((emp_bank or {}).get('account_number') or '').strip(),
+                            'ifsc_code': str((emp_bank or {}).get('ifsc_code') or '').strip(),
+                            'branch_name': str((emp_bank or {}).get('branch_name') or '').strip(),
+                            'upi_id': str((emp_bank or {}).get('upi_id') or '').strip(),
+                            'pan_number': str((emp or {}).get('pan_number') or '').strip(),
+                            'pf_no': str((emp or {}).get('pf_no') or '').strip(),
+                            'pf_uan': str((emp or {}).get('pf_uan') or '').strip(),
                             'custom_fields': custom_fields,
                             'visible_fields': visible_fields,
                         }
@@ -3554,8 +3687,22 @@ def document_list(request):
                                 fail_silently=False,
                             )
                             sent_count += 1
-                        except Exception:
+                        except Exception as exc:
                             failed_count += 1
+                            reason = str(exc).strip() or 'Unknown error while generating/sending payslip.'
+                            # Keep flash readable and avoid leaking very long backend traces.
+                            if len(reason) > 220:
+                                reason = reason[:220].rstrip() + '...'
+                            failed_reasons.append(f'{full_name}: {reason}')
+                            preview_rows.append({
+                                'employee_name': full_name,
+                                'email': recipient_email,
+                                'monthly_base': round(float(monthly_base), 2),
+                                'total_earnings': round(float(total_earnings_preview), 2),
+                                'total_deductions': round(float(total_deductions_preview), 2),
+                                'net_pay': round(float(net_pay_preview), 2),
+                                'status': f'Failed ({reason})',
+                            })
 
                     if action == 'preview_payslip_bulk_auto':
                         payslip_bulk_preview_rows = preview_rows
@@ -3571,20 +3718,22 @@ def document_list(request):
                         action = ''
                     else:
                         if sent_count == 0:
+                            reason_text = failed_reasons[0] if failed_reasons else 'Unknown reason'
                             _flash(
                                 request,
-                                f'No payslips sent. Skipped: {skipped_count}, Failed: {failed_count}.',
+                                f'No payslips sent. Skipped: {skipped_count}, Failed: {failed_count}. First error: {reason_text}',
                                 'error'
                             )
                         else:
+                            extra_fail = f' First error: {failed_reasons[0]}' if failed_reasons else ''
                             _flash(
                                 request,
-                                f'Bulk payslip send completed. Sent: {sent_count}, Skipped: {skipped_count}, Failed: {failed_count}.',
+                                f'Bulk payslip send completed. Sent: {sent_count}, Skipped: {skipped_count}, Failed: {failed_count}.{extra_fail}',
                                 'success'
                             )
                         return redirect('document_list')
-                except Exception:
-                    errors = ['Failed to send bulk payslips from payroll data.']
+                except Exception as exc:
+                    errors = [f'Failed to send bulk payslips from payroll data. {str(exc).strip() or ""}'.strip()]
 
         elif action == 'send_offer_letter_pdf':
             permission_redirect = _require_module_permission(request, 'documents.create')

@@ -298,20 +298,36 @@
         </div>
         <div class="form-group">
             <label>Show Fields In Payslip</label>
+            {% set payslip_field_options = [
+                ('employee_name', 'Employee Name'),
+                ('employee_email', 'Employee Email'),
+                ('employee_no', 'Employee No'),
+                ('role', 'Role'),
+                ('joining_date', 'Joining Date'),
+                ('designation', 'Designation'),
+                ('department', 'Department'),
+                ('manager_name', 'Manager Name'),
+                ('hr_name', 'HR Name'),
+                ('location', 'Location'),
+                ('effective_work_days', 'Effective Work Days'),
+                ('lop', 'LOP'),
+                ('bank_name', 'Bank Name'),
+                ('account_holder_name', 'Account Holder Name'),
+                ('bank_account_no', 'Bank Account No'),
+                ('ifsc_code', 'IFSC Code'),
+                ('branch_name', 'Branch Name'),
+                ('upi_id', 'UPI ID'),
+                ('pan_number', 'PAN Number'),
+                ('pf_no', 'PF No'),
+                ('pf_uan', 'PF UAN')
+            ] %}
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;border:1px solid var(--border);border-radius:10px;padding:10px;background:rgba(255,255,255,0.01);">
-                <label class="addon-item"><input type="checkbox" name="payslip_visible_fields" value="employee_name" {% if 'employee_name' in payslip_visible_fields_selected %}checked{% endif %}><span>Employee Name</span></label>
-                <label class="addon-item"><input type="checkbox" name="payslip_visible_fields" value="employee_no" {% if 'employee_no' in payslip_visible_fields_selected %}checked{% endif %}><span>Employee No</span></label>
-                <label class="addon-item"><input type="checkbox" name="payslip_visible_fields" value="joining_date" {% if 'joining_date' in payslip_visible_fields_selected %}checked{% endif %}><span>Joining Date</span></label>
-                <label class="addon-item"><input type="checkbox" name="payslip_visible_fields" value="designation" {% if 'designation' in payslip_visible_fields_selected %}checked{% endif %}><span>Designation</span></label>
-                <label class="addon-item"><input type="checkbox" name="payslip_visible_fields" value="department" {% if 'department' in payslip_visible_fields_selected %}checked{% endif %}><span>Department</span></label>
-                <label class="addon-item"><input type="checkbox" name="payslip_visible_fields" value="location" {% if 'location' in payslip_visible_fields_selected %}checked{% endif %}><span>Location</span></label>
-                <label class="addon-item"><input type="checkbox" name="payslip_visible_fields" value="effective_work_days" {% if 'effective_work_days' in payslip_visible_fields_selected %}checked{% endif %}><span>Effective Work Days</span></label>
-                <label class="addon-item"><input type="checkbox" name="payslip_visible_fields" value="lop" {% if 'lop' in payslip_visible_fields_selected %}checked{% endif %}><span>LOP</span></label>
-                <label class="addon-item"><input type="checkbox" name="payslip_visible_fields" value="bank_name" {% if 'bank_name' in payslip_visible_fields_selected %}checked{% endif %}><span>Bank Name</span></label>
-                <label class="addon-item"><input type="checkbox" name="payslip_visible_fields" value="bank_account_no" {% if 'bank_account_no' in payslip_visible_fields_selected %}checked{% endif %}><span>Bank Account No</span></label>
-                <label class="addon-item"><input type="checkbox" name="payslip_visible_fields" value="pan_number" {% if 'pan_number' in payslip_visible_fields_selected %}checked{% endif %}><span>PAN Number</span></label>
-                <label class="addon-item"><input type="checkbox" name="payslip_visible_fields" value="pf_no" {% if 'pf_no' in payslip_visible_fields_selected %}checked{% endif %}><span>PF No</span></label>
-                <label class="addon-item"><input type="checkbox" name="payslip_visible_fields" value="pf_uan" {% if 'pf_uan' in payslip_visible_fields_selected %}checked{% endif %}><span>PF UAN</span></label>
+                {% for field_key, field_label in payslip_field_options %}
+                <label class="addon-item">
+                    <input type="checkbox" name="payslip_visible_fields" value="{{ field_key }}" {% if field_key in payslip_visible_fields_selected %}checked{% endif %}>
+                    <span>{{ field_label }}</span>
+                </label>
+                {% endfor %}
             </div>
             <div style="color:var(--text-muted);font-size:13px;margin-top:6px;">Uncheck any field you do not want to show in the payslip.</div>
         </div>
@@ -363,6 +379,16 @@
             <button type="submit" class="btn btn-primary">Generate Payslip PDF & Send Email</button>
         </div>
     </form>
+    <div class="confirm-overlay" id="payslipBulkConfirmOverlay" style="display:none;">
+        <div class="confirm-dialog" style="max-width:520px;">
+            <h3>Confirm Bulk Send</h3>
+            <p>Send payslips to all employees for selected month/year using payroll data?</p>
+            <div class="confirm-actions">
+                <button type="button" id="payslipBulkConfirmOk" class="btn btn-primary">OK</button>
+                <button type="button" id="payslipBulkConfirmCancel" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
     {% if payslip_bulk_preview_rows %}
     <div class="card" style="margin-top:14px;">
         <h4 style="margin:0 0 10px 0;">Bulk Payslip Preview ({{ payslip_bulk_preview_summary.month_name }} {{ payslip_bulk_preview_summary.year }})</h4>
@@ -1085,6 +1111,9 @@
     const yearEl = document.getElementById('payslipYear');
     const allowanceOptionsList = document.getElementById('payslipAllowanceOptions');
     const monthlySalaryEl = document.getElementById('payslipMonthlySalary');
+    const bulkConfirmOverlay = document.getElementById('payslipBulkConfirmOverlay');
+    const bulkConfirmOkBtn = document.getElementById('payslipBulkConfirmOk');
+    const bulkConfirmCancelBtn = document.getElementById('payslipBulkConfirmCancel');
     if (!form || !earningsWrap || !deductionsWrap || !addEarningBtn || !addDeductionBtn || !customFieldsWrap || !addCustomFieldBtn) return;
 
     function money(v) {
@@ -1345,36 +1374,52 @@
         if (payslipActionInput) payslipActionInput.value = 'send_payslip_pdf';
     });
 
+    function preparePayslipPayload(actionValue) {
+        const earnings = collectRows(earningsWrap);
+        if (!earnings.length) {
+            window.alert('Add at least one earning component.');
+            return false;
+        }
+        const deductions = collectRows(deductionsWrap);
+        const customFields = collectCustomFields();
+        if (earningsHidden) earningsHidden.value = JSON.stringify(earnings);
+        if (deductionsHidden) deductionsHidden.value = JSON.stringify(deductions);
+        if (customFieldsHidden) customFieldsHidden.value = JSON.stringify(customFields);
+        if (payslipActionInput) payslipActionInput.value = actionValue;
+        return true;
+    }
+
     if (payslipBulkSendBtn && form) {
         payslipBulkSendBtn.addEventListener('click', function () {
-            if (!window.confirm('Send payslips to all employees for selected month/year using payroll data?')) return;
-            const earnings = collectRows(earningsWrap);
-            if (!earnings.length) {
-                window.alert('Add at least one earning component.');
-                return;
+            if (!preparePayslipPayload('send_payslip_bulk_auto')) return;
+            if (bulkConfirmOverlay) {
+                bulkConfirmOverlay.style.display = 'flex';
+            } else {
+                form.submit();
             }
-            const deductions = collectRows(deductionsWrap);
-            const customFields = collectCustomFields();
-            if (earningsHidden) earningsHidden.value = JSON.stringify(earnings);
-            if (deductionsHidden) deductionsHidden.value = JSON.stringify(deductions);
-            if (customFieldsHidden) customFieldsHidden.value = JSON.stringify(customFields);
-            if (payslipActionInput) payslipActionInput.value = 'send_payslip_bulk_auto';
+        });
+    }
+    if (bulkConfirmOkBtn) {
+        bulkConfirmOkBtn.addEventListener('click', function () {
+            if (bulkConfirmOverlay) bulkConfirmOverlay.style.display = 'none';
             form.submit();
+        });
+    }
+    if (bulkConfirmCancelBtn) {
+        bulkConfirmCancelBtn.addEventListener('click', function () {
+            if (bulkConfirmOverlay) bulkConfirmOverlay.style.display = 'none';
+        });
+    }
+    if (bulkConfirmOverlay) {
+        bulkConfirmOverlay.addEventListener('click', function (event) {
+            if (event.target === bulkConfirmOverlay) {
+                bulkConfirmOverlay.style.display = 'none';
+            }
         });
     }
     if (payslipBulkPreviewBtn && form) {
         payslipBulkPreviewBtn.addEventListener('click', function () {
-            const earnings = collectRows(earningsWrap);
-            if (!earnings.length) {
-                window.alert('Add at least one earning component.');
-                return;
-            }
-            const deductions = collectRows(deductionsWrap);
-            const customFields = collectCustomFields();
-            if (earningsHidden) earningsHidden.value = JSON.stringify(earnings);
-            if (deductionsHidden) deductionsHidden.value = JSON.stringify(deductions);
-            if (customFieldsHidden) customFieldsHidden.value = JSON.stringify(customFields);
-            if (payslipActionInput) payslipActionInput.value = 'preview_payslip_bulk_auto';
+            if (!preparePayslipPayload('preview_payslip_bulk_auto')) return;
             form.submit();
         });
     }
