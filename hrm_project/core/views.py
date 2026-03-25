@@ -451,6 +451,7 @@ def _normalize_attendance_record(record):
         if not break_in:
             continue
         break_sessions.append({
+            'id': row.get('id'),
             'break_in': break_in,
             'break_out': str(row.get('break_out') or '').strip(),
         })
@@ -884,6 +885,7 @@ def _get_context(request):
         request.session.modified = True
 
     nav_dynamic_models = []
+    attendance_nav_model = None
     can_view_dynamic_models = (
         role == 'superadmin'
         or 'dynamic_models.view' in module_permissions
@@ -911,6 +913,7 @@ def _get_context(request):
                             role in ('superadmin', 'admin') or 'attendance.view' in module_permissions
                         ):
                             filtered.append(m)
+                            attendance_nav_model = m
                     elif 'dynamic_models' in enabled_addons and (
                         role in ('superadmin', 'admin')
                         or f"dynamic_model.{m.get('id')}.view" in module_permissions
@@ -927,6 +930,8 @@ def _get_context(request):
         'enabled_addons': enabled_addons,
         'app_settings': app_settings,
         'nav_dynamic_models': nav_dynamic_models,
+        'attendance_model_id': (attendance_nav_model or {}).get('id'),
+        'attendance_model_name': (attendance_nav_model or {}).get('name') or 'Attendance',
         'home_url_name': _default_route_name(request),
         'home_url': _default_home_url(request),
     }
@@ -8680,8 +8685,11 @@ def dynamic_entity_punch(request, model_id):
                     return redirect('dynamic_entity_list', model_id=model_id)
                 upd_resp = _api_post(
                     request,
-                    f"/api/attendance-records/{open_record['id']}/break-in/",
-                    {'at': now_time},
+                    '/api/attendance-breaks/',
+                    {
+                        'attendance': open_record['id'],
+                        'break_in': now_time,
+                    },
                 )
                 redir = _handle_unauthorized(upd_resp, request)
                 if redir:
@@ -8699,10 +8707,37 @@ def dynamic_entity_punch(request, model_id):
                 if not break_open:
                     _flash(request, 'No active break found. Please do Break In first.', 'error')
                     return redirect('dynamic_entity_list', model_id=model_id)
-                upd_resp = _api_post(
+                open_break_id = None
+                open_break_in = ''
+                breaks_resp = _api_get(
                     request,
-                    f"/api/attendance-records/{open_record['id']}/break-out/",
-                    {'at': now_time},
+                    '/api/attendance-breaks/',
+                    params={'attendance': open_record['id']},
+                )
+                redir = _handle_unauthorized(breaks_resp, request)
+                if redir:
+                    return redir
+                if breaks_resp.status_code == 200:
+                    payload = breaks_resp.json()
+                    break_rows = payload.get('results', payload) if isinstance(payload, dict) else payload
+                    for br in reversed(list(break_rows or [])):
+                        if str(br.get('break_out') or '').strip():
+                            continue
+                        open_break_id = br.get('id')
+                        open_break_in = str(br.get('break_in') or '').strip()
+                        if open_break_id:
+                            break
+                if not open_break_id:
+                    _flash(request, 'No active break found. Please do Break In first.', 'error')
+                    return redirect('dynamic_entity_list', model_id=model_id)
+                upd_resp = _api_put(
+                    request,
+                    f"/api/attendance-breaks/{open_break_id}/",
+                    {
+                        'attendance': open_record['id'],
+                        'break_in': open_break_in or now_time,
+                        'break_out': now_time,
+                    },
                 )
                 redir = _handle_unauthorized(upd_resp, request)
                 if redir:

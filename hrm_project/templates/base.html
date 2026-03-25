@@ -250,7 +250,34 @@
     </a>
     {% endif %}
 
+    {% if role == 'superadmin' or ('attendance' in enabled_addons and (role == 'admin' or 'attendance.view' in module_permissions)) %}
+    {% if attendance_model_id %}
+    <a href="{% if attendance_model_id %}{{ url('dynamic_entity_list', args=[attendance_model_id]) }}{% else %}{{ url('dynamic_model_create_attendance') }}{% endif %}"
+       class="nav-link {% if 'attendance' in request.resolver_match.url_name %}active{% endif %}">
+      <span class="nav-icon" data-module="attendance">
+        {% if module_icons.attendance %}
+        <img src="{{ module_icons.attendance }}" alt="Attendance" class="nav-icon-img">
+        {% else %}<span class="nav-icon-fallback"></span>{% endif %}
+      </span>
+      <span class="nav-label">{{ attendance_model_name or 'Attendance' }}</span>
+    </a>
+    {% else %}
+    <form method="post" action="{{ url('dynamic_model_create_attendance') }}" style="margin:0;">
+      {{ csrf_input }}
+      <button type="submit" class="nav-link" style="width:100%;border:0;background:transparent;cursor:pointer;text-align:left;">
+        <span class="nav-icon" data-module="attendance">
+          {% if module_icons.attendance %}
+          <img src="{{ module_icons.attendance }}" alt="Attendance" class="nav-icon-img">
+          {% else %}<span class="nav-icon-fallback"></span>{% endif %}
+        </span>
+        <span class="nav-label">{{ attendance_model_name or 'Attendance' }}</span>
+      </button>
+    </form>
+    {% endif %}
+    {% endif %}
+
     {% for dm in nav_dynamic_models %}
+    {% if (dm.slug or '')|lower != 'attendance' %}
     <a href="{{ url('dynamic_entity_list', args=[dm.id]) }}"
        class="nav-link {% if request.resolver_match.url_name in ['dynamic_entity_list', 'dynamic_entity_create', 'dynamic_entity_edit'] and request.resolver_match.kwargs.get('model_id') == dm.id %}active{% endif %}">
       {% set dm_slug = (dm.slug or '')|lower %}
@@ -263,6 +290,7 @@
       </span>
       <span class="nav-label">{{ dm.name }}</span>
     </a>
+    {% endif %}
     {% endfor %}
 
     <span class="nav-section-label" style="margin-top:16px;">Configuration</span>
