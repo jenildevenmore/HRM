@@ -394,6 +394,9 @@ def _attendance_total_time(data, end_override=None):
 
 def _attendance_break_metrics(data):
     sessions_raw = data.get('break_sessions')
+    if not isinstance(sessions_raw, list):
+        # Support new attendance app payload shape.
+        sessions_raw = data.get('breaks')
     sessions = []
     total_break_seconds = 0
     open_break_active = False
@@ -430,6 +433,67 @@ def _attendance_break_metrics(data):
         'total_break_seconds': total_break_seconds,
         'total_break_time': f'{hours:02d}:{minutes:02d}:{seconds:02d}',
     }
+
+
+def _normalize_attendance_record(record):
+    """Convert AttendanceRecord API response to legacy dynamic-record shape for templates."""
+    if not isinstance(record, dict):
+        return {}
+    if isinstance(record.get('data'), dict):
+        return record
+
+    breaks = record.get('breaks') if isinstance(record.get('breaks'), list) else []
+    break_sessions = []
+    for row in breaks:
+        if not isinstance(row, dict):
+            continue
+        break_in = str(row.get('break_in') or '').strip()
+        if not break_in:
+            continue
+        break_sessions.append({
+            'break_in': break_in,
+            'break_out': str(row.get('break_out') or '').strip(),
+        })
+
+    normalized = dict(record)
+    normalized['data'] = {
+        'attendance_date': record.get('attendance_date'),
+        'status': record.get('status'),
+        'shift': record.get('shift_name') or record.get('shift') or '',
+        'check_in': record.get('check_in'),
+        'check_out': record.get('check_out'),
+        'remarks': record.get('remarks') or '',
+        'break_sessions': break_sessions,
+        'breaks': break_sessions,
+    }
+    normalized['break_total_time'] = record.get('total_break_time') or '00:00:00'
+    normalized['total_time'] = record.get('total_time') or _attendance_total_time(normalized['data']) or '-'
+    return normalized
+
+
+def _resolve_shift_id(request, raw_shift):
+    """Accept shift id or name/code text and resolve to Shift.id."""
+    shift_text = str(raw_shift or '').strip()
+    if not shift_text:
+        return None
+    if shift_text.isdigit():
+        return int(shift_text)
+
+    try:
+        shift_resp = _api_get(request, '/api/shifts/')
+        if shift_resp.status_code != 200:
+            return None
+        payload = shift_resp.json()
+        shifts = payload.get('results', payload) if isinstance(payload, dict) else payload
+        wanted = shift_text.lower()
+        for shift in shifts or []:
+            name = str(shift.get('name') or '').strip().lower()
+            code = str(shift.get('code') or '').strip().lower()
+            if wanted == name or wanted == code:
+                return shift.get('id')
+    except requests.exceptions.ConnectionError:
+        return None
+    return None
 
 
 def _attendance_elapsed_seconds(check_in_value, end_value=None):
@@ -719,15 +783,6 @@ def _load_client_app_settings(request, access_token=None, client_id=None):
 def _load_auto_clockout_alerts(request, limit=8):
     """Load recent auto clock-out attendance events for UI cards."""
     try:
-        model_resp = _api_get(request, '/api/dynamic-models/')
-        if model_resp.status_code != 200:
-            return []
-        model_payload = model_resp.json()
-        models = model_payload.get('results', model_payload) if isinstance(model_payload, dict) else model_payload
-        attendance_model = next((m for m in models if str(m.get('slug', '')).lower() == 'attendance'), None)
-        if not attendance_model:
-            return []
-
         employees_resp = _api_get(request, '/api/employees/')
         employee_rows = []
         if employees_resp.status_code == 200:
@@ -738,11 +793,12 @@ def _load_auto_clockout_alerts(request, limit=8):
             )
         employee_map = {str(e.get('id')): e for e in employee_rows}
 
-        records_resp = _api_get(request, '/api/dynamic-records/', params={'dynamic_model': attendance_model.get('id')})
+        records_resp = _api_get(request, '/api/attendance-records/')
         if records_resp.status_code != 200:
             return []
         records_payload = records_resp.json()
         records = records_payload.get('results', records_payload) if isinstance(records_payload, dict) else records_payload
+        records = [_normalize_attendance_record(row) for row in (records or [])]
 
         session_role = request.session.get('role', 'employee')
         session_employee_role = (request.session.get('employee_role') or '').strip().lower()
@@ -2268,7 +2324,7 @@ def dashboard(request):
             holiday_payload = holiday_resp.json()
             holidays_rows = holiday_payload.get('results', holiday_payload) if isinstance(holiday_payload, dict) else holiday_payload
 
-        # Attendance (present today) from dynamic attendance model records.
+        # Keep attendance dynamic-model id for existing UI routes.
         dm_resp = _api_get(request, '/api/dynamic-models/')
         if dm_resp.status_code == 200:
             dm_payload = dm_resp.json()
@@ -2276,18 +2332,21 @@ def dashboard(request):
             attendance_model = next((m for m in dm_rows if str(m.get('slug', '')).lower() == 'attendance'), None)
             if attendance_model:
                 attendance_model_id = attendance_model.get('id')
-                rec_resp = _api_get(request, '/api/dynamic-records/', params={'dynamic_model': attendance_model.get('id')})
-                if rec_resp.status_code == 200:
-                    rec_payload = rec_resp.json()
-                    rec_rows = rec_payload.get('results', rec_payload) if isinstance(rec_payload, dict) else rec_payload
-                    for rec in rec_rows or []:
-                        data = rec.get('data') or {}
-                        att_date = str(data.get('attendance_date') or '')
-                        if att_date != today.isoformat():
-                            continue
-                        status = str(data.get('status') or '').strip().lower()
-                        if status == 'present' or data.get('check_in'):
-                            present_employee_ids.add(str(rec.get('employee')))
+
+        # Attendance (present today) from dedicated attendance records.
+        rec_resp = _api_get(request, '/api/attendance-records/', params={'attendance_date': today.isoformat()})
+        if rec_resp.status_code == 200:
+            rec_payload = rec_resp.json()
+            rec_rows = rec_payload.get('results', rec_payload) if isinstance(rec_payload, dict) else rec_payload
+            rec_rows = [_normalize_attendance_record(row) for row in (rec_rows or [])]
+            for rec in rec_rows or []:
+                data = rec.get('data') or {}
+                att_date = str(data.get('attendance_date') or '')
+                if att_date != today.isoformat():
+                    continue
+                status = str(data.get('status') or '').strip().lower()
+                if status == 'present' or data.get('check_in'):
+                    present_employee_ids.add(str(rec.get('employee')))
 
         employee_by_id = {str(e.get('id')): e for e in employees_rows or []}
 
@@ -5232,6 +5291,15 @@ def employee_detail(request, pk):
             if dr_resp.status_code == 200:
                 dr_data = dr_resp.json()
                 records = dr_data.get('results', dr_data) if isinstance(dr_data, dict) else dr_data
+            attendance_resp = _api_get(request, '/api/attendance-records/', params={'employee': pk})
+            attendance_records = []
+            if attendance_resp.status_code == 200:
+                attendance_payload = attendance_resp.json()
+                attendance_rows = (
+                    attendance_payload.get('results', attendance_payload)
+                    if isinstance(attendance_payload, dict) else attendance_payload
+                )
+                attendance_records = [_normalize_attendance_record(row) for row in (attendance_rows or [])]
 
             by_model = {r.get('dynamic_model'): r for r in records}
             fields_by_model = {}
@@ -5251,10 +5319,6 @@ def employee_detail(request, pk):
                     selected_month = today.month
                     selected_year = today.year
 
-                attendance_records = [
-                    r for r in records
-                    if r.get('dynamic_model') == attendance_model.get('id')
-                ]
                 attendance_calendar = _build_attendance_calendar(
                     employee,
                     attendance_records,
@@ -7326,6 +7390,10 @@ def dynamic_model_list(request):
             return redir
         data = resp.json() if resp.status_code == 200 else []
         dynamic_models = data.get('results', data) if isinstance(data, dict) else data
+        dynamic_models = [
+            m for m in (dynamic_models or [])
+            if str((m or {}).get('slug') or '').strip().lower() != 'attendance'
+        ]
 
         if role == 'superadmin':
             client_resp = _api_get(request, '/api/clients/')
@@ -7372,6 +7440,15 @@ def dynamic_model_create(request):
     if request.method == 'POST':
         form = DynamicModelForm(request.POST)
         if form.is_valid():
+            if str(form.cleaned_data.get('slug') or '').strip().lower() == 'attendance':
+                errors = ['Attendance is a separate system module. Please use Attendance module instead of Dynamic Model create.']
+                return render(request, 'dynamic_models/create.html', {
+                    'form': form,
+                    'errors': errors,
+                    'messages': messages,
+                    'role': role,
+                    **_get_context(request),
+                })
             payload = {
                 'name': form.cleaned_data['name'],
                 'slug': form.cleaned_data['slug'],
@@ -7433,6 +7510,9 @@ def dynamic_model_edit(request, pk):
         if get_resp.status_code == 404:
             return render(request, 'errors/404.html', status=404)
         model_data = get_resp.json()
+        if str(model_data.get('slug') or '').strip().lower() == 'attendance':
+            _flash(request, 'Attendance is managed in the separate Attendance module.', 'error')
+            return redirect('attendance_template_v2')
     except requests.exceptions.ConnectionError:
         return render(request, 'dynamic_models/edit.html', {
             'errors': ['Backend server unreachable.'],
@@ -7485,6 +7565,19 @@ def dynamic_model_delete(request, pk):
     addon_redirect = _require_addon(request, 'dynamic_models')
     if addon_redirect:
         return addon_redirect
+    try:
+        model_resp = _api_get(request, f'/api/dynamic-models/{pk}/')
+        redir = _handle_unauthorized(model_resp, request)
+        if redir:
+            return redir
+        if model_resp.status_code == 200:
+            model_data = model_resp.json() if isinstance(model_resp.json(), dict) else {}
+            if str(model_data.get('slug') or '').strip().lower() == 'attendance':
+                _flash(request, 'Attendance cannot be deleted from Dynamic Models. Manage it from Attendance module.', 'error')
+                return redirect('attendance_template_v2')
+    except requests.exceptions.ConnectionError:
+        _flash(request, 'Backend server unreachable.', 'error')
+        return redirect('dynamic_model_list')
     try:
         resp = _api_delete(request, f'/api/dynamic-models/{pk}/')
         redir = _handle_unauthorized(resp, request)
@@ -7549,6 +7642,9 @@ def dynamic_field_list(request, model_id):
         if model_resp.status_code == 404:
             return render(request, 'errors/404.html', status=404)
         dynamic_model = model_resp.json()
+        if str(dynamic_model.get('slug') or '').strip().lower() == 'attendance':
+            _flash(request, 'Attendance fields are managed in Attendance module.', 'error')
+            return redirect('attendance_template_v2')
 
         resp = _api_get(request, f'/api/dynamic-fields/?dynamic_model={model_id}')
         redir = _handle_unauthorized(resp, request)
@@ -7589,6 +7685,9 @@ def dynamic_field_create(request, model_id):
         if model_resp.status_code == 404:
             return render(request, 'errors/404.html', status=404)
         dynamic_model = model_resp.json()
+        if str(dynamic_model.get('slug') or '').strip().lower() == 'attendance':
+            _flash(request, 'Attendance fields are managed in Attendance module.', 'error')
+            return redirect('attendance_template_v2')
     except requests.exceptions.ConnectionError:
         return render(request, 'dynamic_fields/create.html', {
             'errors': ['Backend server unreachable.'],
@@ -7683,6 +7782,9 @@ def dynamic_field_edit(request, model_id, pk):
         if model_resp.status_code == 404:
             return render(request, 'errors/404.html', status=404)
         dynamic_model = model_resp.json()
+        if str(dynamic_model.get('slug') or '').strip().lower() == 'attendance':
+            _flash(request, 'Attendance fields are managed in Attendance module.', 'error')
+            return redirect('attendance_template_v2')
 
         get_resp = _api_get(request, f'/api/dynamic-fields/{pk}/')
         redir = _handle_unauthorized(get_resp, request)
@@ -7784,6 +7886,19 @@ def dynamic_field_delete(request, model_id, pk):
     if addon_redirect:
         return addon_redirect
     try:
+        model_resp = _api_get(request, f'/api/dynamic-models/{model_id}/')
+        redir = _handle_unauthorized(model_resp, request)
+        if redir:
+            return redir
+        if model_resp.status_code == 200:
+            dynamic_model = model_resp.json() if isinstance(model_resp.json(), dict) else {}
+            if str(dynamic_model.get('slug') or '').strip().lower() == 'attendance':
+                _flash(request, 'Attendance fields are managed in Attendance module.', 'error')
+                return redirect('attendance_template_v2')
+    except requests.exceptions.ConnectionError:
+        _flash(request, 'Backend server unreachable.', 'error')
+        return redirect('dynamic_model_list')
+    try:
         resp = _api_delete(request, f'/api/dynamic-fields/{pk}/')
         redir = _handle_unauthorized(resp, request)
         if redir:
@@ -7813,6 +7928,9 @@ def dynamic_record_list(request, model_id):
         if model_resp.status_code == 404:
             return render(request, 'errors/404.html', status=404)
         dynamic_model = model_resp.json()
+        if str(dynamic_model.get('slug') or '').strip().lower() == 'attendance':
+            _flash(request, 'Attendance records are managed in Attendance module.', 'error')
+            return redirect('dynamic_entity_list', model_id=model_id)
 
         resp = _api_get(request, f'/api/dynamic-records/?dynamic_model={model_id}')
         redir = _handle_unauthorized(resp, request)
@@ -7852,6 +7970,9 @@ def dynamic_record_create(request, model_id):
         if model_resp.status_code == 404:
             return render(request, 'errors/404.html', status=404)
         dynamic_model = model_resp.json()
+        if str(dynamic_model.get('slug') or '').strip().lower() == 'attendance':
+            _flash(request, 'Attendance records are managed in Attendance module.', 'error')
+            return redirect('dynamic_entity_list', model_id=model_id)
     except requests.exceptions.ConnectionError:
         return render(request, 'dynamic_records/create.html', {
             'errors': ['Backend server unreachable.'],
@@ -7919,6 +8040,9 @@ def dynamic_record_edit(request, model_id, pk):
         if model_resp.status_code == 404:
             return render(request, 'errors/404.html', status=404)
         dynamic_model = model_resp.json()
+        if str(dynamic_model.get('slug') or '').strip().lower() == 'attendance':
+            _flash(request, 'Attendance records are managed in Attendance module.', 'error')
+            return redirect('dynamic_entity_list', model_id=model_id)
 
         get_resp = _api_get(request, f'/api/dynamic-records/{pk}/')
         redir = _handle_unauthorized(get_resp, request)
@@ -7988,6 +8112,19 @@ def dynamic_record_delete(request, model_id, pk):
     addon_redirect = _require_addon(request, 'dynamic_models')
     if addon_redirect:
         return addon_redirect
+    try:
+        model_resp = _api_get(request, f'/api/dynamic-models/{model_id}/')
+        redir = _handle_unauthorized(model_resp, request)
+        if redir:
+            return redir
+        if model_resp.status_code == 200:
+            dynamic_model = model_resp.json() if isinstance(model_resp.json(), dict) else {}
+            if str(dynamic_model.get('slug') or '').strip().lower() == 'attendance':
+                _flash(request, 'Attendance records are managed in Attendance module.', 'error')
+                return redirect('dynamic_entity_list', model_id=model_id)
+    except requests.exceptions.ConnectionError:
+        _flash(request, 'Backend server unreachable.', 'error')
+        return redirect('dynamic_model_list')
     try:
         resp = _api_delete(request, f'/api/dynamic-records/{pk}/')
         redir = _handle_unauthorized(resp, request)
@@ -8091,7 +8228,7 @@ def dynamic_entity_list(request, model_id):
                 attendance_break_limit = 2
             attendance_break_limit = max(1, min(20, attendance_break_limit))
 
-        records_params = {'dynamic_model': model_id}
+        records_params = {}
         if is_attendance:
             can_view_all_attendance = (
                 request.session.get('role') in ('superadmin', 'admin')
@@ -8111,13 +8248,18 @@ def dynamic_entity_list(request, model_id):
                 records_params['employee'] = selected_employee_id
             elif not can_view_all_attendance and current_employee_id:
                 records_params['employee'] = current_employee_id
+        else:
+            records_params['dynamic_model'] = model_id
 
-        records_resp = _api_get(request, '/api/dynamic-records/', params=records_params)
+        records_path = '/api/attendance-records/' if is_attendance else '/api/dynamic-records/'
+        records_resp = _api_get(request, records_path, params=records_params)
         redir = _handle_unauthorized(records_resp, request)
         if redir:
             return redir
         records_data = records_resp.json() if records_resp.status_code == 200 else []
         records = records_data.get('results', records_data) if isinstance(records_data, dict) else records_data
+        if is_attendance:
+            records = [_normalize_attendance_record(row) for row in (records or [])]
 
         if is_attendance:
             employee_name_map = {
@@ -8294,7 +8436,8 @@ def dynamic_entity_punch(request, model_id):
         # Find open attendance for employee (today + check_in exists + check_out missing).
         rec_resp = _api_get(
             request,
-            f'/api/dynamic-records/?dynamic_model={model_id}&employee={employee_id}',
+            '/api/attendance-records/',
+            params={'employee': employee_id, 'attendance_date': today},
         )
         redir = _handle_unauthorized(rec_resp, request)
         if redir:
@@ -8304,6 +8447,7 @@ def dynamic_entity_punch(request, model_id):
         if rec_resp.status_code == 200:
             rec_data = rec_resp.json()
             records = rec_data.get('results', rec_data) if isinstance(rec_data, dict) else rec_data
+            records = [_normalize_attendance_record(row) for row in (records or [])]
 
         today_record = None
         open_record = None
@@ -8338,7 +8482,7 @@ def dynamic_entity_punch(request, model_id):
                     return redirect('dynamic_entity_list', model_id=model_id)
                 upd_resp = _api_post(
                     request,
-                    f"/api/dynamic-records/{open_record['id']}/break-in/",
+                    f"/api/attendance-records/{open_record['id']}/break-in/",
                     {'at': now_time},
                 )
                 redir = _handle_unauthorized(upd_resp, request)
@@ -8359,7 +8503,7 @@ def dynamic_entity_punch(request, model_id):
                     return redirect('dynamic_entity_list', model_id=model_id)
                 upd_resp = _api_post(
                     request,
-                    f"/api/dynamic-records/{open_record['id']}/break-out/",
+                    f"/api/attendance-records/{open_record['id']}/break-out/",
                     {'at': now_time},
                 )
                 redir = _handle_unauthorized(upd_resp, request)
@@ -8396,11 +8540,15 @@ def dynamic_entity_punch(request, model_id):
             if flags.get('attendance_selfie_required'):
                 data['selfie_url'] = selfie_url
             payload = {
-                'dynamic_model': model_id,
                 'employee': employee_id,
-                'data': data,
+                'attendance_date': data.get('attendance_date') or today,
+                'status': data.get('status') or 'present',
+                'shift': _resolve_shift_id(request, data.get('shift')),
+                'check_in': data.get('check_in'),
+                'check_out': now_time,
+                'remarks': data.get('remarks') or '',
             }
-            upd_resp = _api_put(request, f"/api/dynamic-records/{open_record['id']}/", payload)
+            upd_resp = _api_put(request, f"/api/attendance-records/{open_record['id']}/", payload)
             redir = _handle_unauthorized(upd_resp, request)
             if redir:
                 return redir
@@ -8420,27 +8568,19 @@ def dynamic_entity_punch(request, model_id):
             return redirect('dynamic_entity_list', model_id=model_id)
 
         # Punch In
-        data = {
+        payload = {
+            'employee': employee_id,
             'attendance_date': today,
             'status': 'present',
             'check_in': now_time,
         }
-        if shift:
-            data['shift'] = shift
+        shift_id = _resolve_shift_id(request, shift)
+        if shift_id:
+            payload['shift'] = shift_id
         if remarks:
-            data['remarks'] = remarks
-        if flags.get('attendance_location_required'):
-            data['location_lat'] = location_lat
-            data['location_lng'] = location_lng
-        if flags.get('attendance_selfie_required'):
-            data['selfie_url'] = selfie_url
+            payload['remarks'] = remarks
 
-        payload = {
-            'dynamic_model': model_id,
-            'employee': employee_id,
-            'data': data,
-        }
-        create_resp = _api_post(request, '/api/dynamic-records/', payload)
+        create_resp = _api_post(request, '/api/attendance-records/', payload)
         redir = _handle_unauthorized(create_resp, request)
         if redir:
             return redir
@@ -8500,10 +8640,21 @@ def dynamic_entity_create(request, model_id):
     attendance_flags = _attendance_feature_flags(request)
     current_time = timezone.localtime().strftime('%H:%M:%S')
     attendance_locked_employee_id = None
+    attendance_shifts = []
     if is_attendance:
         session_employee_role = (request.session.get('employee_role') or '').strip().lower()
         if request.session.get('role') == 'employee' and session_employee_role == 'employee':
             attendance_locked_employee_id = request.session.get('employee_id')
+        try:
+            shifts_resp = _api_get(request, '/api/shifts/')
+            if shifts_resp.status_code == 200:
+                shifts_payload = shifts_resp.json()
+                attendance_shifts = (
+                    shifts_payload.get('results', shifts_payload)
+                    if isinstance(shifts_payload, dict) else shifts_payload
+                )
+        except requests.exceptions.ConnectionError:
+            attendance_shifts = []
 
     if request.method == 'POST':
         data = {}
@@ -8528,6 +8679,7 @@ def dynamic_entity_create(request, model_id):
                     'is_attendance': is_attendance,
                     'current_time': current_time,
                     'attendance_locked_employee_id': attendance_locked_employee_id,
+                    'attendance_shifts': attendance_shifts,
                     'errors': errors,
                     'messages': messages,
                     **attendance_flags,
@@ -8537,7 +8689,8 @@ def dynamic_entity_create(request, model_id):
             today = timezone.localdate().isoformat()
             rec_resp = _api_get(
                 request,
-                f'/api/dynamic-records/?dynamic_model={model_id}&employee={employee_id}',
+                '/api/attendance-records/',
+                params={'employee': employee_id, 'attendance_date': today},
             )
             redir = _handle_unauthorized(rec_resp, request)
             if redir:
@@ -8545,10 +8698,7 @@ def dynamic_entity_create(request, model_id):
             if rec_resp.status_code == 200:
                 rec_data = rec_resp.json()
                 records = rec_data.get('results', rec_data) if isinstance(rec_data, dict) else rec_data
-                already_exists = any(
-                    str((r.get('data') or {}).get('attendance_date')) == today
-                    for r in records
-                )
+                already_exists = bool(records)
                 if already_exists:
                     errors = ['This employee already has attendance for today. Only one check-in/check-out is allowed per day.']
                     return render(request, 'dynamic_entities/create.html', {
@@ -8557,22 +8707,25 @@ def dynamic_entity_create(request, model_id):
                         'is_attendance': is_attendance,
                         'current_time': current_time,
                         'attendance_locked_employee_id': attendance_locked_employee_id,
+                        'attendance_shifts': attendance_shifts,
                         'errors': errors,
                         'messages': messages,
                         **attendance_flags,
                         **_get_context(request),
                     })
-
-            payload['employee'] = employee_id
-            data['attendance_date'] = today
-            data['status'] = (request.POST.get('status') or 'present').strip()
+            payload = {
+                'employee': employee_id,
+                'attendance_date': today,
+                'status': (request.POST.get('status') or 'present').strip(),
+                'check_in': current_time,
+            }
             shift = (request.POST.get('shift') or '').strip()
             remarks = (request.POST.get('remarks') or '').strip()
-            if shift:
-                data['shift'] = shift
+            shift_id = _resolve_shift_id(request, shift)
+            if shift_id:
+                payload['shift'] = shift_id
             if remarks:
-                data['remarks'] = remarks
-            data['check_in'] = current_time
+                payload['remarks'] = remarks
         else:
             for field in fields:
                 key = field.get('key')
@@ -8591,9 +8744,11 @@ def dynamic_entity_create(request, model_id):
                 if value != '':
                     data[key] = value
 
-        payload['data'] = data
+        if not is_attendance:
+            payload['data'] = data
         try:
-            resp = _api_post(request, '/api/dynamic-records/', payload)
+            create_path = '/api/attendance-records/' if is_attendance else '/api/dynamic-records/'
+            resp = _api_post(request, create_path, payload)
             redir = _handle_unauthorized(resp, request)
             if redir:
                 return redir
@@ -8611,6 +8766,7 @@ def dynamic_entity_create(request, model_id):
         'is_attendance': is_attendance,
         'current_time': current_time,
         'attendance_locked_employee_id': attendance_locked_employee_id,
+        'attendance_shifts': attendance_shifts,
         'errors': errors,
         'messages': messages,
         **attendance_flags,
@@ -8647,13 +8803,18 @@ def dynamic_entity_edit(request, model_id, pk):
         if redir:
             return redir
 
-        rec_resp = _api_get(request, f'/api/dynamic-records/{pk}/')
+        rec_resp = _api_get(
+            request,
+            f"/api/attendance-records/{pk}/" if str(dynamic_model.get('slug', '')).lower() == 'attendance' else f"/api/dynamic-records/{pk}/"
+        )
         redir = _handle_unauthorized(rec_resp, request)
         if redir:
             return redir
         if rec_resp.status_code == 404:
             return render(request, 'errors/404.html', status=404)
         record = rec_resp.json()
+        if str(dynamic_model.get('slug', '')).lower() == 'attendance':
+            record = _normalize_attendance_record(record)
     except requests.exceptions.ConnectionError:
         return render(request, 'dynamic_entities/edit.html', {
             'errors': ['Backend server unreachable.'],
@@ -8700,9 +8861,13 @@ def dynamic_entity_edit(request, model_id, pk):
                 existing['remarks'] = remarks
             existing['check_out'] = current_time
             payload = {
-                'dynamic_model': model_id,
                 'employee': record.get('employee'),
-                'data': existing,
+                'attendance_date': existing.get('attendance_date'),
+                'status': existing.get('status') or 'present',
+                'shift': _resolve_shift_id(request, existing.get('shift')),
+                'check_in': existing.get('check_in'),
+                'check_out': current_time,
+                'remarks': existing.get('remarks') or '',
             }
         else:
             data = {}
@@ -8726,7 +8891,8 @@ def dynamic_entity_edit(request, model_id, pk):
             payload = {'dynamic_model': model_id, 'data': data}
 
         try:
-            resp = _api_put(request, f'/api/dynamic-records/{pk}/', payload)
+            update_path = f'/api/attendance-records/{pk}/' if is_attendance else f'/api/dynamic-records/{pk}/'
+            resp = _api_put(request, update_path, payload)
             redir = _handle_unauthorized(resp, request)
             if redir:
                 return redir
@@ -8776,7 +8942,9 @@ def dynamic_entity_delete(request, model_id, pk):
     if addon_redirect:
         return addon_redirect
     try:
-        resp = _api_delete(request, f'/api/dynamic-records/{pk}/')
+        is_attendance = bool(probe_model and str(probe_model.get('slug', '')).lower() == 'attendance')
+        delete_path = f'/api/attendance-records/{pk}/' if is_attendance else f'/api/dynamic-records/{pk}/'
+        resp = _api_delete(request, delete_path)
         redir = _handle_unauthorized(resp, request)
         if redir:
             return redir

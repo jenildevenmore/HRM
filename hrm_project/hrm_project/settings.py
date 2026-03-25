@@ -101,6 +101,7 @@ INSTALLED_APPS = [
     'employees',
     'custom_fields',
     'dynamic_models',
+    'attendance',
     'leaves',
     'holidays',
     'payroll',

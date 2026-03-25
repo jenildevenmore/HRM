@@ -8,7 +8,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from dynamic_models.models import DynamicModel, DynamicRecord
+from attendance.models import AttendanceRecord
 from employees.models import Employee
 from leaves.models import LeaveRequest, LeaveType
 
@@ -141,36 +141,38 @@ class PayrollReportView(_PayrollAccessMixin, APIView):
     permission_classes = [IsAuthenticated]
 
     @staticmethod
-    def _parse_time(value):
-        if not value:
-            return None
-        raw = str(value).strip()
-        for fmt in ('%H:%M:%S', '%H:%M'):
-            try:
-                return datetime.strptime(raw, fmt)
-            except ValueError:
-                continue
-        return None
+    def _attendance_record_hours(record):
+        check_in = getattr(record, 'check_in', None)
+        check_out = getattr(record, 'check_out', None)
+        if not check_in or not check_out:
+            return Decimal('0')
 
-    @staticmethod
-    def _parse_duration_hours(value):
-        if value is None:
-            return None
-        raw = str(value).strip()
-        if not raw:
-            return None
-        parts = raw.split(':')
-        if len(parts) != 3:
-            return None
-        try:
-            hours = Decimal(parts[0])
-            minutes = Decimal(parts[1])
-            seconds = Decimal(parts[2])
-        except Exception:
-            return None
-        if minutes < 0 or minutes >= 60 or seconds < 0 or seconds >= 60:
-            return None
-        return hours + (minutes / Decimal('60')) + (seconds / Decimal('3600'))
+        check_in_dt = datetime.combine(date.today(), check_in)
+        check_out_dt = datetime.combine(date.today(), check_out)
+        if check_out_dt < check_in_dt:
+            check_out_dt = check_out_dt + timedelta(days=1)
+        total_seconds = Decimal((check_out_dt - check_in_dt).total_seconds())
+        if total_seconds <= 0:
+            return Decimal('0')
+
+        break_seconds = Decimal('0')
+        breaks_qs = getattr(record, 'breaks', None)
+        if breaks_qs is not None:
+            for br in breaks_qs.all():
+                if not br.break_in or not br.break_out:
+                    continue
+                br_in_dt = datetime.combine(date.today(), br.break_in)
+                br_out_dt = datetime.combine(date.today(), br.break_out)
+                if br_out_dt < br_in_dt:
+                    br_out_dt = br_out_dt + timedelta(days=1)
+                delta_seconds = Decimal((br_out_dt - br_in_dt).total_seconds())
+                if delta_seconds > 0:
+                    break_seconds += delta_seconds
+
+        net_seconds = total_seconds - break_seconds
+        if net_seconds <= 0:
+            return Decimal('0')
+        return net_seconds / Decimal('3600')
 
     def _resolve_month(self, request):
         today = date.today()
@@ -219,11 +221,6 @@ class PayrollReportView(_PayrollAccessMixin, APIView):
         if not employees:
             return Response([], status=status.HTTP_200_OK)
 
-        attendance_model_qs = DynamicModel.objects.filter(slug='attendance')
-        if client_id:
-            attendance_model_qs = attendance_model_qs.filter(client_id=client_id)
-        attendance_model = attendance_model_qs.only('id').first()
-
         policy_by_client = {}
         for policy in PayrollPolicy.objects.filter(client_id__in=list({e.client_id for e in employees})):
             policy_by_client[policy.client_id] = policy
@@ -231,42 +228,21 @@ class PayrollReportView(_PayrollAccessMixin, APIView):
         # Pull attendance records once and aggregate hours per employee.
         hours_by_employee = {emp_id: Decimal('0') for emp_id in employee_ids}
         present_days_by_employee = {emp_id: set() for emp_id in employee_ids}
-        if attendance_model:
-            records = DynamicRecord.objects.filter(
-                dynamic_model_id=attendance_model.id,
-                employee_id__in=employee_ids,
-            ).only('employee_id', 'data')
+        attendance_qs = AttendanceRecord.objects.filter(
+            employee_id__in=employee_ids,
+            attendance_date__gte=month_start,
+            attendance_date__lte=month_end,
+        ).exclude(status=AttendanceRecord.STATUS_ABSENT).prefetch_related('breaks')
+        if client_id:
+            attendance_qs = attendance_qs.filter(client_id=client_id)
 
-            for rec in records:
-                data = rec.data or {}
-                raw_date = str(data.get('attendance_date') or '')
-                try:
-                    att_date = date.fromisoformat(raw_date)
-                except ValueError:
-                    continue
-                if att_date < month_start or att_date > month_end:
-                    continue
-
-                if str(data.get('status') or 'present').strip().lower() in ('absent',):
-                    continue
-
-                worked_hours = self._parse_duration_hours(data.get('total_time'))
-                if worked_hours is None:
-                    check_in = self._parse_time(data.get('check_in'))
-                    check_out = self._parse_time(data.get('check_out'))
-                    if not check_in or not check_out:
-                        continue
-                    if check_out < check_in:
-                        check_out = check_out + timedelta(days=1)
-                    worked_seconds = Decimal((check_out - check_in).total_seconds())
-                    if worked_seconds <= 0:
-                        continue
-                    worked_hours = worked_seconds / Decimal('3600')
-                if worked_hours <= 0:
-                    continue
-
-                hours_by_employee[rec.employee_id] = hours_by_employee[rec.employee_id] + worked_hours
-                present_days_by_employee[rec.employee_id].add(att_date)
+        for rec in attendance_qs.only('employee_id', 'attendance_date', 'status', 'check_in', 'check_out'):
+            att_date = rec.attendance_date
+            worked_hours = self._attendance_record_hours(rec)
+            if worked_hours <= 0:
+                continue
+            hours_by_employee[rec.employee_id] = hours_by_employee[rec.employee_id] + worked_hours
+            present_days_by_employee[rec.employee_id].add(att_date)
 
         # Approved paid leave should contribute to payroll (days/hours).
         paid_leave_days_by_employee = {emp_id: set() for emp_id in employee_ids}
