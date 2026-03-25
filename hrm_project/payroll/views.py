@@ -384,6 +384,11 @@ class PayrollReportView(_PayrollAccessMixin, APIView):
                 present_days = valid_present_days
                 payable_present_days = payable_days
 
+            # Display helpers: if configured daily/hourly values are missing (0),
+            # show derived rates so Payroll Data columns are meaningful.
+            display_daily_salary = daily_salary if daily_salary > 0 else per_day_rate
+            display_hourly_salary = hourly_salary if hourly_salary > 0 else per_hour_rate
+
             rows.append({
                 'employee_id': emp.id,
                 'employee_name': f'{emp.first_name} {emp.last_name}'.strip(),
@@ -391,8 +396,8 @@ class PayrollReportView(_PayrollAccessMixin, APIView):
                 'client_id': emp.client_id,
                 'month': f'{year:04d}-{month:02d}',
                 'monthly_salary': float(round(monthly_salary, 2)),
-                'daily_salary': float(round(daily_salary, 2)),
-                'hourly_salary': float(round(hourly_salary, 2)),
+                'daily_salary': float(round(display_daily_salary, 2)),
+                'hourly_salary': float(round(display_hourly_salary, 2)),
                 'policy_monthly_working_days': float(round(monthly_working_days, 2)),
                 'policy_standard_hours_per_day': float(round(standard_hours_per_day, 2)),
                 'salary_basis': compensation_basis,
