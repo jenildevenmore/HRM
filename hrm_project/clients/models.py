@@ -1,3 +1,5 @@
+import secrets
+
 from django.db import models
 
 
@@ -11,8 +13,15 @@ class Client(models.Model):
     enabled_addons = models.JSONField(default=list, blank=True)
     app_settings = models.JSONField(default=dict, blank=True)
     role_limit = models.PositiveIntegerField(default=0)
+    execution_secret_key = models.CharField(max_length=128, default='', blank=True)
+    execution_key_activated_at = models.DateTimeField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if not self.execution_secret_key:
+            self.execution_secret_key = secrets.token_urlsafe(32)
+        return super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name
