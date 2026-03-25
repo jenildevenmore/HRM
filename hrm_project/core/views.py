@@ -2760,7 +2760,53 @@ def document_list(request):
         'account_holder_name', 'ifsc_code', 'branch_name', 'upi_id',
         'pan_number', 'pf_no', 'pf_uan'
     ]
+    payslip_visible_field_keys = set(default_visible_fields)
+
+    def _normalize_payslip_visible_fields(raw_values):
+        normalized = []
+        seen = set()
+        if not isinstance(raw_values, (list, tuple, set)):
+            return normalized
+        for item in raw_values:
+            key = str(item or '').strip()
+            if not key or key not in payslip_visible_field_keys or key in seen:
+                continue
+            normalized.append(key)
+            seen.add(key)
+        return normalized
+
+    app_settings = request.session.get('app_settings', {}) or {}
+    payslip_cfg = app_settings.get('payslip', {}) if isinstance(app_settings, dict) else {}
     payslip_visible_fields_selected = list(default_visible_fields)
+    if isinstance(payslip_cfg, dict) and 'visible_fields' in payslip_cfg:
+        payslip_visible_fields_selected = _normalize_payslip_visible_fields(
+            payslip_cfg.get('visible_fields')
+        )
+
+    def _save_payslip_visible_fields_snapshot(selected_fields):
+        try:
+            app_settings_live = request.session.get('app_settings', {}) or {}
+            if not isinstance(app_settings_live, dict):
+                return
+            settings_snapshot = copy.deepcopy(app_settings_live)
+            payslip_snapshot = settings_snapshot.get('payslip') if isinstance(settings_snapshot.get('payslip'), dict) else {}
+            payslip_snapshot['visible_fields'] = list(selected_fields)
+            payslip_snapshot['visible_fields_updated_at'] = timezone.now().isoformat()
+            settings_snapshot['payslip'] = payslip_snapshot
+
+            snapshot_payload = {'app_settings': settings_snapshot}
+            if request.session.get('role') == 'superadmin' and request.session.get('client_id'):
+                snapshot_payload['client_id'] = request.session.get('client_id')
+
+            snapshot_resp = _api_post(request, '/api/clients/settings/', snapshot_payload)
+            if snapshot_resp.status_code == 200:
+                saved_snapshot = snapshot_resp.json() if isinstance(snapshot_resp.json(), dict) else settings_snapshot
+                request.session['app_settings'] = saved_snapshot
+                request.session.modified = True
+        except Exception:
+            # Snapshot save is best-effort; do not block payslip flow.
+            pass
+
     payslip_form = {}
     payslip_builder_initial = {}
 
@@ -2883,8 +2929,11 @@ def document_list(request):
             'payslip_pf_no': (request.POST.get('payslip_pf_no') or '').strip(),
             'payslip_pf_uan': (request.POST.get('payslip_pf_uan') or '').strip(),
         }
-        posted_visible_fields = [str(v).strip() for v in request.POST.getlist('payslip_visible_fields') if str(v).strip()]
-        if posted_visible_fields:
+        posted_visible_fields = _normalize_payslip_visible_fields(request.POST.getlist('payslip_visible_fields'))
+        if action in ('send_payslip_pdf', 'preview_payslip_bulk_auto', 'send_payslip_bulk_auto'):
+            payslip_visible_fields_selected = posted_visible_fields
+            _save_payslip_visible_fields_snapshot(payslip_visible_fields_selected)
+        elif posted_visible_fields:
             payslip_visible_fields_selected = posted_visible_fields
         payslip_builder_initial = {
             'month_name': payslip_form.get('payslip_month_name') or '',
@@ -3152,7 +3201,7 @@ def document_list(request):
             earnings_raw = (request.POST.get('payslip_earnings_json') or '').strip()
             deductions_raw = (request.POST.get('payslip_deductions_json') or '').strip()
             custom_fields_raw = (request.POST.get('payslip_custom_fields_json') or '').strip()
-            visible_fields = [str(v).strip() for v in request.POST.getlist('payslip_visible_fields') if str(v).strip()]
+            visible_fields = list(payslip_visible_fields_selected)
 
             if not employee_name:
                 errors = ['Employee name is required for payslip.']
@@ -3324,7 +3373,7 @@ def document_list(request):
             earnings_raw = (request.POST.get('payslip_earnings_json') or '').strip()
             deductions_raw = (request.POST.get('payslip_deductions_json') or '').strip()
             custom_fields_raw = (request.POST.get('payslip_custom_fields_json') or '').strip()
-            visible_fields = [str(v).strip() for v in request.POST.getlist('payslip_visible_fields') if str(v).strip()]
+            visible_fields = list(payslip_visible_fields_selected)
 
             try:
                 year_int = int(year_raw)

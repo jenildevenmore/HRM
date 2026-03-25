@@ -248,13 +248,19 @@ class PayrollReportView(_PayrollAccessMixin, APIView):
         paid_leave_days_by_employee = {emp_id: set() for emp_id in employee_ids}
         paid_leave_half_days_by_employee = {emp_id: set() for emp_id in employee_ids}
         paid_leave_hours_by_employee = {emp_id: Decimal('0') for emp_id in employee_ids}
+        unpaid_leave_days_by_employee = {emp_id: set() for emp_id in employee_ids}
+        unpaid_leave_half_days_by_employee = {emp_id: set() for emp_id in employee_ids}
+        unpaid_leave_hours_by_employee = {emp_id: Decimal('0') for emp_id in employee_ids}
         paid_type_names_by_client = {}
+        unpaid_type_names_by_client = {}
         for leave_type in LeaveType.objects.filter(
             client_id__in=list({e.client_id for e in employees}),
             is_active=True,
-            is_paid=True,
-        ).only('client_id', 'name'):
-            paid_type_names_by_client.setdefault(leave_type.client_id, set()).add(str(leave_type.name or ''))
+        ).only('client_id', 'name', 'is_paid'):
+            if bool(getattr(leave_type, 'is_paid', True)):
+                paid_type_names_by_client.setdefault(leave_type.client_id, set()).add(str(leave_type.name or ''))
+            else:
+                unpaid_type_names_by_client.setdefault(leave_type.client_id, set()).add(str(leave_type.name or ''))
 
         leave_rows = LeaveRequest.objects.filter(
             employee_id__in=employee_ids,
@@ -264,24 +270,38 @@ class PayrollReportView(_PayrollAccessMixin, APIView):
         ).only('employee_id', 'start_date', 'end_date', 'leave_unit', 'leave_hours', 'leave_type', 'client_id')
 
         for leave in leave_rows:
+            leave_type_name = str(leave.leave_type or '')
             paid_types = paid_type_names_by_client.get(leave.client_id, set())
-            if str(leave.leave_type or '') not in paid_types:
+            unpaid_types = unpaid_type_names_by_client.get(leave.client_id, set())
+            is_paid_leave = leave_type_name in paid_types
+            is_unpaid_leave = leave_type_name in unpaid_types
+            if not is_paid_leave and not is_unpaid_leave:
                 continue
 
             leave_unit = str(getattr(leave, 'leave_unit', LeaveRequest.UNIT_DAY) or LeaveRequest.UNIT_DAY).lower()
             if leave_unit == LeaveRequest.UNIT_HOUR:
                 leave_hours = Decimal(str(getattr(leave, 'leave_hours', 0) or 0))
                 if leave_hours > 0:
-                    paid_leave_hours_by_employee[leave.employee_id] += leave_hours
+                    if is_paid_leave:
+                        paid_leave_hours_by_employee[leave.employee_id] += leave_hours
+                    elif is_unpaid_leave:
+                        unpaid_leave_hours_by_employee[leave.employee_id] += leave_hours
                 continue
 
             overlap_start = leave.start_date if leave.start_date >= month_start else month_start
             overlap_end = leave.end_date if leave.end_date <= month_end else month_end
-            target_set = (
-                paid_leave_half_days_by_employee[leave.employee_id]
-                if leave_unit == LeaveRequest.UNIT_HALF_DAY
-                else paid_leave_days_by_employee[leave.employee_id]
-            )
+            if is_paid_leave:
+                target_set = (
+                    paid_leave_half_days_by_employee[leave.employee_id]
+                    if leave_unit == LeaveRequest.UNIT_HALF_DAY
+                    else paid_leave_days_by_employee[leave.employee_id]
+                )
+            else:
+                target_set = (
+                    unpaid_leave_half_days_by_employee[leave.employee_id]
+                    if leave_unit == LeaveRequest.UNIT_HALF_DAY
+                    else unpaid_leave_days_by_employee[leave.employee_id]
+                )
             d = overlap_start
             while d <= overlap_end:
                 target_set.add(d)
@@ -301,6 +321,14 @@ class PayrollReportView(_PayrollAccessMixin, APIView):
             attendance_day_set = present_days_by_employee.get(emp.id, set())
             paid_leave_day_set = paid_leave_days_by_employee.get(emp.id, set())
             paid_leave_half_day_set = paid_leave_half_days_by_employee.get(emp.id, set())
+            unpaid_leave_day_set = unpaid_leave_days_by_employee.get(emp.id, set())
+            unpaid_leave_half_day_set = unpaid_leave_half_days_by_employee.get(emp.id, set())
+            unpaid_leave_hours = unpaid_leave_hours_by_employee.get(emp.id, Decimal('0'))
+            unpaid_half_day_credit_set = unpaid_leave_half_day_set - unpaid_leave_day_set
+            unpaid_half_day_count = Decimal(len(unpaid_half_day_credit_set)) * Decimal('0.5')
+            unpaid_leave_day_equivalent = Decimal(len(unpaid_leave_day_set)) + unpaid_half_day_count
+            if standard_hours_per_day > 0 and unpaid_leave_hours > 0:
+                unpaid_leave_day_equivalent += (unpaid_leave_hours / standard_hours_per_day)
             combined_paid_day_set = attendance_day_set.union(paid_leave_day_set)
             half_day_set = paid_leave_half_day_set - paid_leave_day_set
             half_day_count = Decimal(len(half_day_set)) * Decimal('0.5')
@@ -337,15 +365,24 @@ class PayrollReportView(_PayrollAccessMixin, APIView):
                 earned_salary_hour_based = hourly_salary * payable_hours
                 earned_salary = earned_salary_hour_based
             else:
-                per_day_rate = (monthly_salary / monthly_working_days) if monthly_working_days > 0 else Decimal('0')
+                selected_fixed_days = monthly_working_days if monthly_working_days > 0 else Decimal('0')
+                # Salary must always use client-selected fixed days (not calendar month days).
+                per_day_rate = (monthly_salary / selected_fixed_days) if selected_fixed_days > 0 else Decimal('0')
                 per_hour_rate = (per_day_rate / standard_hours_per_day) if standard_hours_per_day > 0 else Decimal('0')
-                earned_salary_day_based = per_day_rate * payable_present_days
+                # Cap present days to selected fixed days, then subtract unpaid leave.
+                valid_present_days = min(present_days, selected_fixed_days)
+                payable_days = valid_present_days - unpaid_leave_day_equivalent
+                if payable_days < 0:
+                    payable_days = Decimal('0')
+                # Monthly-basis formula:
+                # Per Day Salary = Monthly Salary / Selected Days
+                # Final Salary = Per Day Salary * Payable Days
+                earned_salary_day_based = per_day_rate * payable_days
                 earned_salary_hour_based = per_hour_rate * payable_hours
-                earned_salary = (
-                    earned_salary_hour_based
-                    if policy_salary_basis == PayrollPolicy.BASIS_HOUR
-                    else earned_salary_day_based
-                )
+                earned_salary = earned_salary_day_based
+                # Keep report fields consistent with fixed-day logic.
+                present_days = valid_present_days
+                payable_present_days = payable_days
 
             rows.append({
                 'employee_id': emp.id,
@@ -368,6 +405,7 @@ class PayrollReportView(_PayrollAccessMixin, APIView):
                 'present_days': float(round(present_days, 2)),
                 'paid_leave_days': float(round(paid_leave_days, 2)),
                 'paid_leave_hours': float(round(paid_leave_hours, 2)),
+                'unpaid_leave_days': float(round(unpaid_leave_day_equivalent, 2)),
                 'effective_present_days': float(round(effective_present_days, 2)),
                 'worked_hours': float(round(total_hours, 2)),
                 'worked_day_equivalent': float(round(day_equivalent, 2)),
