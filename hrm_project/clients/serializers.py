@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.hashers import make_password
 from django.utils.text import slugify
+import secrets
 import re
 from .models import Client, ClientRole
 from .services import build_schema_name, provision_client_schema
@@ -8,6 +9,7 @@ from .services import build_schema_name, provision_client_schema
 
 class ClientSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    execution_secret_key_plain = serializers.SerializerMethodField(read_only=True)
     ALLOWED_ADDONS = {
         'custom_fields',
         'dynamic_models',
@@ -39,9 +41,13 @@ class ClientSerializer(serializers.ModelSerializer):
             'enabled_addons',
             'app_settings',
             'role_limit',
+            'execution_secret_key_plain',
             'created_at',
         )
-        read_only_fields = ('id', 'schema_provisioned', 'created_at')
+        read_only_fields = ('id', 'schema_provisioned', 'execution_secret_key_plain', 'created_at')
+
+    def get_execution_secret_key_plain(self, obj):
+        return str(getattr(obj, '_execution_secret_key_plain', '') or '')
 
     def validate(self, attrs):
         if self.instance is None and not attrs.get('password'):
@@ -85,12 +91,15 @@ class ClientSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         password = validated_data.pop('password')
+        plain_execution_key = secrets.token_urlsafe(32)
         if not validated_data.get('schema_name'):
             # Auto-derive schema name from domain/name when not provided.
             temp = Client(**validated_data)
             validated_data['schema_name'] = build_schema_name(temp)
         validated_data['password'] = make_password(password)
+        validated_data['execution_secret_key'] = plain_execution_key
         client = super().create(validated_data)
+        client._execution_secret_key_plain = plain_execution_key
 
         ok, err = provision_client_schema(client)
         if not ok:

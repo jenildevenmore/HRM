@@ -174,3 +174,28 @@ class AttendanceBreakViewSet(_AttendanceAccessMixin, viewsets.ModelViewSet):
             return AttendanceBreak.objects.none()
         return qs.filter(attendance__client_id=client_id)
 
+    def perform_create(self, serializer):
+        if not self._can_manage():
+            raise PermissionDenied('Only superadmin/client admin can manage attendance breaks.')
+        attendance = serializer.validated_data.get('attendance')
+        if not attendance:
+            raise PermissionDenied('attendance is required.')
+        if not self._is_superadmin() and attendance.client_id != self._client_id():
+            raise PermissionDenied('Not allowed for this client.')
+        serializer.save()
+
+    def perform_update(self, serializer):
+        if not self._can_manage():
+            raise PermissionDenied('Only superadmin/client admin can manage attendance breaks.')
+        instance = serializer.instance
+        attendance = serializer.validated_data.get('attendance', instance.attendance)
+        if not self._is_superadmin() and attendance.client_id != self._client_id():
+            raise PermissionDenied('Not allowed for this client.')
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if not self._can_manage():
+            raise PermissionDenied('Only superadmin/client admin can manage attendance breaks.')
+        if not self._is_superadmin() and instance.attendance.client_id != self._client_id():
+            raise PermissionDenied('Not allowed for this client.')
+        instance.delete()

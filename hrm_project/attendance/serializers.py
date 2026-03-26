@@ -8,7 +8,7 @@ from .models import AttendanceBreak, AttendanceRecord
 class AttendanceBreakSerializer(serializers.ModelSerializer):
     class Meta:
         model = AttendanceBreak
-        fields = ('id', 'break_in', 'break_out', 'created_at', 'updated_at')
+        fields = ('id', 'attendance', 'break_in', 'break_out', 'created_at', 'updated_at')
         read_only_fields = ('id', 'created_at', 'updated_at')
 
 
@@ -140,4 +140,3 @@ class AttendanceRecordSerializer(serializers.ModelSerializer):
         instance = super().update(instance, validated_data)
         self._sync_breaks(instance, break_sessions)
         return instance
-
