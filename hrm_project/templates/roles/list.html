@@ -61,7 +61,7 @@
         {% if permission_options %}
         <div class="permission-sections-grid" style="margin-top:14px;">
             {% for section in permission_options %}
-            <div class="permission-section-card">
+            <div class="permission-section-card" data-section-title="{{ section.title }}">
                 <button type="button" class="permission-section-title role-section-toggle" data-role-section-scope="create" style="background:none;border:none;padding:0;text-align:left;cursor:pointer;width:100%;">
                     {{ section.title }}
                 </button>
@@ -152,7 +152,7 @@
             {% if permission_options %}
             <div class="permission-sections-grid" style="margin-top:14px;">
                 {% for section in permission_options %}
-                <div class="permission-section-card">
+                <div class="permission-section-card" data-section-title="{{ section.title }}">
                     <button type="button" class="permission-section-title role-section-toggle" data-role-section-scope="role-{{ role.id }}" style="background:none;border:none;padding:0;text-align:left;cursor:pointer;width:100%;">
                         {{ section.title }}
                     </button>
@@ -329,6 +329,61 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     function syncModuleAccess(form) {
+        var sectionKeyByTitle = {
+            'Dashboard': 'dashboard',
+            'Employees': 'employees',
+            'Attendance': 'attendance',
+            'Leave Management': 'leave_management',
+            'Holidays': 'holidays',
+            'Shifts': 'shift_management',
+            'Bank': 'bank_management',
+            'Policy': 'policy',
+            'Documents': 'documents',
+            'Import / Export': 'import_export',
+            'Custom Fields': 'custom_fields',
+            'Dynamic Model Setup': 'dynamic_models',
+            'Activity Logs': 'activity_logs'
+        };
+
+        function inferSectionKey(card) {
+            var title = (card.getAttribute('data-section-title') || '').trim();
+            if (sectionKeyByTitle[title]) {
+                return sectionKeyByTitle[title];
+            }
+            var firstPerm = card.querySelector('input[name="module_permissions"]');
+            var permValue = firstPerm ? String(firstPerm.value || '') : '';
+            if (permValue.indexOf('dynamic_model.') === 0) {
+                return 'dynamic_models';
+            }
+            return '';
+        }
+
+        function syncPermissionSectionVisibility() {
+            var selected = {};
+            moduleToggles.forEach(function (toggle) {
+                var key = String(toggle.value || '').trim();
+                if (key) {
+                    selected[key] = !!toggle.checked;
+                }
+            });
+
+            var sectionCards = Array.prototype.slice.call(form.querySelectorAll('.permission-section-card[data-section-title]'));
+            sectionCards.forEach(function (card) {
+                var sectionKey = inferSectionKey(card);
+                var shouldShow = sectionKey ? !!selected[sectionKey] : true;
+                card.style.display = shouldShow ? '' : 'none';
+                if (!shouldShow) {
+                    Array.prototype.slice.call(card.querySelectorAll('input[name="module_permissions"]')).forEach(function (input) {
+                        input.checked = false;
+                    });
+                    var btn = card.querySelector('.role-section-toggle');
+                    var body = card.querySelector('.role-section-body');
+                    if (btn) btn.classList.remove('active');
+                    if (body) body.style.display = 'none';
+                }
+            });
+        }
+
         var moduleToggles = Array.prototype.slice.call(form.querySelectorAll('input[data-module-toggle="true"]'));
         moduleToggles.forEach(function (toggle) {
             function applyModuleState() {
@@ -344,11 +399,13 @@ document.addEventListener('DOMContentLoaded', function () {
                         input.checked = toggle.checked;
                     });
                 }
+                syncPermissionSectionVisibility();
             }
 
             toggle.addEventListener('change', applyModuleState);
             applyModuleState();
         });
+        syncPermissionSectionVisibility();
     }
 
     Array.prototype.slice.call(document.querySelectorAll('form')).forEach(function (form) {
